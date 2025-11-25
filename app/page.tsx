@@ -107,8 +107,20 @@ export default function Home() {
                 value="19"
                 note="Units sold PTD (placeholder)"
               />
+
+              {/* middle row reordered: labor, cash, employees, training */}
               <MetricCard
-                label="Employees added / removed"
+                label="Current labor hours +/-"
+                value="+3.2"
+                note="Vs. target (placeholder)"
+              />
+              <MetricCard
+                label="Cash +/-"
+                value="+$21.34"
+                note="Over / short today (placeholder)"
+              />
+              <MetricCard
+                label="Employees +/-"
                 value="+1 / -0"
                 note="Staffing changes (placeholder)"
               />
@@ -117,16 +129,7 @@ export default function Home() {
                 value="92%"
                 note="Shop-wide (placeholder)"
               />
-              <MetricCard
-                label="Current labor hours +/-"
-                value="+3.2"
-                note="Vs. target (placeholder)"
-              />
-              <MetricCard
-                label="Cash over / short"
-                value="+$21.34"
-                note="Today (placeholder)"
-              />
+
               <MetricCard
                 label="Staffed %"
                 value="94%"
@@ -237,3 +240,4 @@ export default function Home() {
     </main>
   );
 }
+
