@@ -10,7 +10,9 @@ function MetricCard({ label, value, note }: MetricCardProps) {
   return (
     <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3 text-center">
       <p className="text-[11px] text-slate-400 mb-1">{label}</p>
-      <p className="text-lg font-semibold text-emerald-300">{value}</p>
+      <p className="text-lg font-semibold text-emerald-300 break-words">
+        {value}
+      </p>
       <p className="text-[10px] text-slate-500 mt-1">{note}</p>
     </div>
   );
@@ -35,7 +37,7 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Main dashboard: left KPIs / center 6x2 grid / right KPIs */}
+        {/* Main dashboard: left KPIs / center 4x3 grid / right KPIs */}
         <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)_minmax(0,1.1fr)] items-start">
           {/* LEFT COLUMN – CURRENT ACTIVITY (stacked KPI boxes) */}
           <div className="space-y-4">
@@ -49,16 +51,32 @@ export default function Home() {
               value="3 / 11"
               note="Completed challenges (placeholder)"
             />
+            {/* extra placeholders on left */}
+            <MetricCard
+              label="Placeholder metric 1"
+              value="—"
+              note="Placeholder (future KPI)"
+            />
+            <MetricCard
+              label="Placeholder metric 2"
+              value="—"
+              note="Placeholder (future KPI)"
+            />
+            <MetricCard
+              label="Placeholder metric 3"
+              value="—"
+              note="Placeholder (future KPI)"
+            />
           </div>
 
-          {/* CENTER COLUMN – SUMMARY ROLLUP (6x2 grid) */}
+          {/* CENTER COLUMN – SUMMARY ROLLUP (4x3 grid) */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30 space-y-4">
             <p className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 text-center">
               Summary rollup (Pocket Manager5 + Pulse Check5)
             </p>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 text-xs">
-              {/* TOP 6 */}
+            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-4 gap-4 text-xs">
+              {/* 12 metrics, now 4 columns x 3 rows on xl */}
               <MetricCard
                 label="Shops checked in today"
                 value="12 / 14"
@@ -89,8 +107,6 @@ export default function Home() {
                 value="19"
                 note="Units sold PTD (placeholder)"
               />
-
-              {/* BOTTOM 6 */}
               <MetricCard
                 label="Employees added / removed"
                 value="+1 / -0"
@@ -150,6 +166,12 @@ export default function Home() {
               label="Turned cars today"
               value="7"
               note="Turned away (placeholder)"
+            />
+            {/* extra placeholder on right */}
+            <MetricCard
+              label="Placeholder metric"
+              value="—"
+              note="Placeholder (future KPI)"
             />
           </div>
         </section>
