@@ -1,21 +1,5 @@
 // app/page.tsx
 
-type MetricCardProps = {
-  label: string;
-  value: string;
-  note: string;
-};
-
-function MetricCard({ label, value, note }: MetricCardProps) {
-  return (
-    <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-      <p className="text-[11px] text-slate-400 mb-1">{label}</p>
-      <p className="text-lg font-semibold text-emerald-300">{value}</p>
-      <p className="text-[10px] text-slate-500 mt-1">{note}</p>
-    </div>
-  );
-}
-
 export default function Home() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -35,42 +19,15 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Main dashboard row: left / center / right */}
-        <section className="grid gap-4 lg:grid-cols-3 items-start">
-          {/* Left – Current activity (long box) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-              Current activity
-            </h2>
-
-            <div className="text-xs text-slate-300 space-y-2">
-              <div>
-                <p className="font-semibold text-slate-100 text-sm">
-                  Current contests
-                </p>
-                <ul className="list-disc list-inside space-y-1">
-                  <li>Region Big 4 push (placeholder)</li>
-                  <li>Zero Zeros challenge (placeholder)</li>
-                </ul>
-              </div>
-
-              <div className="pt-2 border-t border-slate-800">
-                <p className="font-semibold text-slate-100 text-sm">
-                  Challenges done today / WTD
-                </p>
-                <p>Today: 3 completed (placeholder)</p>
-                <p>WTD: 11 completed (placeholder)</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Center – Summary rollup (12-box grid) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30 space-y-4">
+        {/* Summary rollup dashboard */}
+        <section className="flex justify-center">
+          <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30 space-y-4">
             <p className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 text-center">
               Summary rollup (Pocket Manager5 + Pulse Check5)
             </p>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+            {/* 12 metric tiles – 6 per row on large screens */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
               {/* TOP 6 */}
               <MetricCard
                 label="Shops checked in today"
@@ -141,43 +98,72 @@ export default function Home() {
               existing Supabase views for Pocket Manager5 and Pulse Check5.
             </p>
           </div>
+        </section>
 
-          {/* Right – Other stats (long box) */}
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
-            <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+        {/* Sidebars: Current activity / Other stats */}
+        <section className="grid gap-6 lg:grid-cols-3">
+          {/* Left – Current activity */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-300">
+              Current activity
+            </h2>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-2">
+              <p className="font-semibold text-slate-100 text-sm">
+                Current contests
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Region Big 4 push (placeholder)</li>
+                <li>Zero Zeros challenge (placeholder)</li>
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-2">
+              <p className="font-semibold text-slate-100 text-sm">
+                Challenges done today / WTD
+              </p>
+              <p>Today: 3 completed (placeholder)</p>
+              <p>WTD: 11 completed (placeholder)</p>
+            </div>
+          </div>
+
+          {/* Middle spacer / future content */}
+          <div className="hidden lg:block" />
+
+          {/* Right – Other stats */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-300">
               Other stats
             </h2>
 
-            <div className="text-xs text-slate-300 space-y-2">
-              <div>
-                <p className="font-semibold text-slate-100 text-sm">
-                  Current staffed %
-                </p>
-                <p>94% of target labor hours (placeholder)</p>
-              </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Current staffed %
+              </p>
+              <p>94% of target labor hours (placeholder)</p>
+            </div>
 
-              <div className="pt-2 border-t border-slate-800">
-                <p className="font-semibold text-slate-100 text-sm">
-                  Meetings today / WTD
-                </p>
-                <p>Today: 2 shop visits logged (placeholder)</p>
-                <p>WTD: 7 visits / meetings (placeholder)</p>
-              </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Meetings today / WTD
+              </p>
+              <p>Today: 2 shop visits logged (placeholder)</p>
+              <p>WTD: 7 visits / meetings (placeholder)</p>
+            </div>
 
-              <div className="pt-2 border-t border-slate-800">
-                <p className="font-semibold text-slate-100 text-sm">
-                  Claims submitted today / WTD
-                </p>
-                <p>Today: 1 claim (placeholder)</p>
-                <p>WTD: 3 claims (placeholder)</p>
-              </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Claims submitted today / WTD
+              </p>
+              <p>Today: 1 claim (placeholder)</p>
+              <p>WTD: 3 claims (placeholder)</p>
+            </div>
 
-              <div className="pt-2 border-t border-slate-800">
-                <p className="font-semibold text-slate-100 text-sm">
-                  Turned cars today
-                </p>
-                <p>7 turned away (placeholder)</p>
-              </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Turned cars today
+              </p>
+              <p>7 turned away (placeholder)</p>
             </div>
           </div>
         </section>
@@ -241,5 +227,22 @@ export default function Home() {
         </section>
       </div>
     </main>
+  );
+}
+
+/** Small helper component to keep the metric tiles clean */
+type MetricCardProps = {
+  label: string;
+  value: string;
+  note: string;
+};
+
+function MetricCard({ label, value, note }: MetricCardProps) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+      <p className="text-[11px] text-slate-400 mb-1">{label}</p>
+      <p className="text-lg font-semibold text-emerald-300">{value}</p>
+      <p className="text-[10px] text-slate-500 mt-1">{note}</p>
+    </div>
   );
 }
