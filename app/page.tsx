@@ -1,4 +1,5 @@
 // app/page.tsx
+import Link from "next/link";
 
 type MetricCardProps = {
   label: string;
@@ -35,6 +36,16 @@ export default function Home() {
             Your central hub for shop performance, visits, coaching, and KPIs –
             pulling together Pocket Manager5 and Pulse Check5 into one view.
           </p>
+
+          {/* Login button */}
+          <div className="mt-3">
+            <Link
+              href="/login"
+              className="inline-flex items-center justify-center rounded-xl border border-emerald-400/70 bg-emerald-500/10 px-4 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
+            >
+              Login
+            </Link>
+          </div>
         </header>
 
         {/* Main dashboard: left KPIs / center 4x3 grid / right KPIs */}
@@ -240,4 +251,5 @@ export default function Home() {
     </main>
   );
 }
+
 
