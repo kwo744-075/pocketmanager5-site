@@ -35,8 +35,8 @@ export default function Home() {
           </p>
         </header>
 
-        {/* Main dashboard row: left (current activity) / center (12-grid) / right (other stats) */}
-        <section className="grid gap-4 lg:grid-cols-[1fr_minmax(0,2fr)_1fr] items-start">
+        {/* Main dashboard row: left / center / right */}
+        <section className="grid gap-4 lg:grid-cols-3 items-start">
           {/* Left – Current activity (long box) */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 space-y-3">
             <h2 className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
@@ -64,13 +64,13 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Center – Summary rollup (12-box grid, 6x2 on large) */}
+          {/* Center – Summary rollup (12-box grid) */}
           <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30 space-y-4">
             <p className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 text-center">
               Summary rollup (Pocket Manager5 + Pulse Check5)
             </p>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4 text-xs">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs">
               {/* TOP 6 */}
               <MetricCard
                 label="Shops checked in today"
