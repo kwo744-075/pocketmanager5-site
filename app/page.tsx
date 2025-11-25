@@ -10,7 +10,8 @@ export default function Home() {
             Pocket Manager5 • Pulse Check5
           </p>
           <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold">
-            pocketmanager5.com
+            <span className="text-red-500">P</span>ocket&nbsp;Manager{" "}
+            <span className="text-red-500">5</span>
           </h1>
           <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto">
             Your central hub for shop performance, visits, coaching, and KPIs –
@@ -20,56 +21,150 @@ export default function Home() {
 
         {/* Summary rollup dashboard */}
         <section className="flex justify-center">
-          <div className="w-full md:w-4/5 rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30">
-            <p className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 mb-3 text-center">
+          <div className="w-full rounded-2xl border border-slate-800 bg-slate-900/60 p-5 md:p-6 shadow-lg shadow-black/30 space-y-4">
+            <p className="text-[10px] tracking-[0.25em] uppercase text-emerald-400 text-center">
               Summary rollup (Pocket Manager5 + Pulse Check5)
             </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                <p className="text-[11px] text-slate-400 mb-1">
-                  Shops checked in today
-                </p>
-                <p className="text-lg font-semibold text-emerald-400">
-                  12 / 14
-                </p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Live from Pulse Check5 (placeholder)
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                <p className="text-[11px] text-slate-400 mb-1">
-                  Big 4 performance (PTD)
-                </p>
-                <p className="text-lg font-semibold text-emerald-300">
-                  103.8%
-                </p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Region rollup (placeholder)
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                <p className="text-[11px] text-slate-400 mb-1">
-                  Coaching touchpoints (7 days)
-                </p>
-                <p className="text-lg font-semibold text-yellow-300">27</p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Logged via Pocket Manager5 (placeholder)
-                </p>
-              </div>
-              <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
-                <p className="text-[11px] text-slate-400 mb-1">
-                  Training compliance
-                </p>
-                <p className="text-lg font-semibold text-emerald-300">92%</p>
-                <p className="text-[10px] text-slate-500 mt-1">
-                  Ready to hook into Supabase
-                </p>
-              </div>
+
+            {/* 12 metric tiles – 6 per row on large screens */}
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 text-xs">
+              {/* TOP 6 */}
+              <MetricCard
+                label="Shops checked in today"
+                value="12 / 14"
+                note="Live from Pulse Check5 (placeholder)"
+              />
+              <MetricCard
+                label="Cars"
+                value="186"
+                note="Today (placeholder)"
+              />
+              <MetricCard
+                label="Sales"
+                value="$24,580"
+                note="PTD sales (placeholder)"
+              />
+              <MetricCard
+                label="Big 4 performance (PTD)"
+                value="103.8%"
+                note="Region rollup (placeholder)"
+              />
+              <MetricCard
+                label="Coolants"
+                value="42"
+                note="Units sold PTD (placeholder)"
+              />
+              <MetricCard
+                label="Diffs"
+                value="19"
+                note="Units sold PTD (placeholder)"
+              />
+
+              {/* BOTTOM 6 */}
+              <MetricCard
+                label="Employees added / removed"
+                value="+1 / -0"
+                note="Staffing changes (placeholder)"
+              />
+              <MetricCard
+                label="Training compliance"
+                value="92%"
+                note="Shop-wide (placeholder)"
+              />
+              <MetricCard
+                label="Current labor hours +/-"
+                value="+3.2"
+                note="Vs. target (placeholder)"
+              />
+              <MetricCard
+                label="Cash over / short"
+                value="+$21.34"
+                note="Today (placeholder)"
+              />
+              <MetricCard
+                label="Staffed %"
+                value="94%"
+                note="Scheduled vs. ideal (placeholder)"
+              />
+              <MetricCard
+                label="Turned cars"
+                value="7"
+                note="Today (placeholder)"
+              />
             </div>
-            <p className="text-[10px] text-slate-500 mt-3 text-center">
+
+            <p className="text-[10px] text-slate-500 mt-1 text-center">
               These values are static for now. Next step is wiring them to your
               existing Supabase views for Pocket Manager5 and Pulse Check5.
             </p>
+          </div>
+        </section>
+
+        {/* Sidebars: Current activity / Other stats */}
+        <section className="grid gap-6 lg:grid-cols-3">
+          {/* Left – Current activity */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-300">
+              Current activity
+            </h2>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-2">
+              <p className="font-semibold text-slate-100 text-sm">
+                Current contests
+              </p>
+              <ul className="list-disc list-inside space-y-1">
+                <li>Region Big 4 push (placeholder)</li>
+                <li>Zero Zeros challenge (placeholder)</li>
+              </ul>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-2">
+              <p className="font-semibold text-slate-100 text-sm">
+                Challenges done today / WTD
+              </p>
+              <p>Today: 3 completed (placeholder)</p>
+              <p>WTD: 11 completed (placeholder)</p>
+            </div>
+          </div>
+
+          {/* Middle spacer / future content */}
+          <div className="hidden lg:block" />
+
+          {/* Right – Other stats */}
+          <div className="space-y-3">
+            <h2 className="text-sm font-semibold uppercase tracking-[0.25em] text-slate-300">
+              Other stats
+            </h2>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Current staffed %
+              </p>
+              <p>94% of target labor hours (placeholder)</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Meetings today / WTD
+              </p>
+              <p>Today: 2 shop visits logged (placeholder)</p>
+              <p>WTD: 7 visits / meetings (placeholder)</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Claims submitted today / WTD
+              </p>
+              <p>Today: 1 claim (placeholder)</p>
+              <p>WTD: 3 claims (placeholder)</p>
+            </div>
+
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 text-xs text-slate-300 space-y-1">
+              <p className="font-semibold text-slate-100 text-sm">
+                Turned cars today
+              </p>
+              <p>7 turned away (placeholder)</p>
+            </div>
           </div>
         </section>
 
@@ -132,5 +227,22 @@ export default function Home() {
         </section>
       </div>
     </main>
+  );
+}
+
+/** Small helper component to keep the metric tiles clean */
+type MetricCardProps = {
+  label: string;
+  value: string;
+  note: string;
+};
+
+function MetricCard({ label, value, note }: MetricCardProps) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-950/70 p-3">
+      <p className="text-[11px] text-slate-400 mb-1">{label}</p>
+      <p className="text-lg font-semibold text-emerald-300">{value}</p>
+      <p className="text-[10px] text-slate-500 mt-1">{note}</p>
+    </div>
   );
 }
