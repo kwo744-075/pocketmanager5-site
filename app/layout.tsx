@@ -15,12 +15,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
     const loggedIn = localStorage.getItem("loggedIn") === "true";
 
-    // If NOT logged in and not already on /login → send to /login
+    // Force login if not logged in
     if (!loggedIn && pathname !== "/login") {
       router.replace("/login");
     }
 
-    // If logged in and on /login → send to home
+    // If logged in and on /login, go home
     if (loggedIn && pathname === "/login") {
       router.replace("/");
     }
@@ -34,3 +34,4 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     </html>
   );
 }
+

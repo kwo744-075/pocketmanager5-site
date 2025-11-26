@@ -17,26 +17,29 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
+    // normalize inputs
+    const loginEmail = email.trim().toLowerCase();
+    const loginPassword = password.trim();
+
     try {
-      // 🔐 Check company_alignment table
-      //   Login = Shop_Email
-      //   Password = Shop_Password
+      console.log("Trying login with:", loginEmail); // debug
+
       const { data, error: supaError } = await supabase
         .from("company_alignment")
         .select('store, "Shop_Email", "Shop_UserName"')
-        .eq("Shop_Email", email)
-        .eq("Shop_Password", password)
+        .eq("Shop_Email", loginEmail)
+        .eq("Shop_Password", loginPassword)
         .maybeSingle();
 
       if (supaError) {
         console.error("Supabase login error:", supaError);
-        setError("Login error – please try again.");
+        setError("Login error – please try again or contact admin.");
       } else if (!data) {
         setError("Invalid email or password.");
       } else {
         // ✅ Logged in – simple local flag for now
         localStorage.setItem("loggedIn", "true");
-        localStorage.setItem("loginEmail", email);
+        localStorage.setItem("loginEmail", loginEmail);
         localStorage.setItem("shopStore", String(data.store ?? ""));
         localStorage.setItem("shopUserName", data.Shop_UserName ?? "");
 
