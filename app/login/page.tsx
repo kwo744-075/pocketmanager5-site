@@ -17,35 +17,33 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
 
-    // 🔎 Table-based login against company_alignment
-    // Adjust column names if needed: here I assume
-    //   login column: "login"
-    //   password column: "password"
-    //
-    // Example row:
-    //   login: "18@t5.com"
-    //   password: "take5"
     try {
+      // 🔐 Check company_alignment table
+      //   Login = Shop_Email
+      //   Password = Shop_Password
       const { data, error: supaError } = await supabase
         .from("company_alignment")
-        .select("id, login")
-        .eq("login", email)
-        .eq("password", password)
+        .select('store, "Shop_Email", "Shop_UserName"')
+        .eq("Shop_Email", email)
+        .eq("Shop_Password", password)
         .maybeSingle();
 
       if (supaError) {
-        console.error(supaError);
+        console.error("Supabase login error:", supaError);
         setError("Login error – please try again.");
       } else if (!data) {
         setError("Invalid email or password.");
       } else {
-        // ✅ Logged in – store a simple flag for now
+        // ✅ Logged in – simple local flag for now
         localStorage.setItem("loggedIn", "true");
         localStorage.setItem("loginEmail", email);
+        localStorage.setItem("shopStore", String(data.store ?? ""));
+        localStorage.setItem("shopUserName", data.Shop_UserName ?? "");
+
         router.push("/"); // send them to the main dashboard
       }
     } catch (err) {
-      console.error(err);
+      console.error("Unexpected login error:", err);
       setError("Unexpected error – please try again.");
     } finally {
       setLoading(false);
@@ -77,7 +75,7 @@ export default function LoginPage() {
               htmlFor="email"
               className="block text-xs font-medium text-slate-300"
             >
-              Login
+              Login (Shop_Email)
             </label>
             <input
               id="email"
@@ -97,7 +95,7 @@ export default function LoginPage() {
               htmlFor="password"
               className="block text-xs font-medium text-slate-300"
             >
-              Password
+              Password (Shop_Password)
             </label>
             <input
               id="password"
@@ -139,4 +137,5 @@ export default function LoginPage() {
     </main>
   );
 }
+
 
