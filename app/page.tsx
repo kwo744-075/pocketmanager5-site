@@ -3,6 +3,27 @@
 // app/page.tsx
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { supabase } from "@/lib/supabaseClient";
+
+type RetailStampState = {
+  quarter: string;
+  period: string;
+  week: string;
+  dateLabel: string;
+};
+
+type HierarchySummary = {
+  scope_level: string | null;
+  division_name: string | null;
+  region_name: string | null;
+  district_name: string | null;
+  shop_number: string | null;
+  shops_in_district?: number | null;
+  districts_in_region?: number | null;
+  shops_in_region?: number | null;
+  regions_in_division?: number | null;
+  shops_in_division?: number | null;
+};
 
 type MetricCardProps = {
   label: string;
@@ -22,18 +43,80 @@ function MetricCard({ label, value, note }: MetricCardProps) {
   );
 }
 
+function RetailCalendarStamp({
+  quarter,
+  period,
+  week,
+  dateLabel,
+}: RetailStampState) {
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+      <span className="rounded-full bg-blue-500/90 px-3 py-1 text-white uppercase tracking-wide">
+        {quarter}
+      </span>
+      <span className="rounded-full bg-emerald-500/90 px-3 py-1 text-white uppercase tracking-wide">
+        {period}
+      </span>
+      <span className="rounded-full bg-orange-500/90 px-3 py-1 text-white uppercase tracking-wide">
+        {week}
+      </span>
+      <span className="text-sm font-semibold text-slate-100">{dateLabel}</span>
+    </div>
+  );
+}
+
+function HierarchyStamp({ line }: { line: string }) {
+  return (
+    <p className="text-[11px] text-slate-400 max-w-xs text-left md:text-right">
+      {line}
+    </p>
+  );
+}
+
 export default function Home() {
   const router = useRouter();
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("loggedIn") === "true";
+  });
+  const [retailStamp, setRetailStamp] = useState<RetailStampState>(() => {
+    const today = new Date();
+    const dateLabel = today.toISOString().slice(0, 10);
+    return { quarter: "Q?", period: "P?", week: "Wk?", dateLabel };
+  });
+  const [hierarchySummary, setHierarchySummary] = useState<HierarchySummary | null>(
+    () => {
+      if (typeof window === "undefined") return null;
+      const storedSummary = localStorage.getItem("hierarchySummary");
+      if (!storedSummary) return null;
+      try {
+        return JSON.parse(storedSummary);
+      } catch (err) {
+        console.error("Failed to parse hierarchySummary during init:", err);
+        return null;
+      }
+    }
+  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    setIsLoggedIn(localStorage.getItem("loggedIn") === "true");
-
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "loggedIn") {
         setIsLoggedIn(event.newValue === "true");
+      }
+
+      if (event.key === "hierarchySummary") {
+        if (event.newValue) {
+          try {
+            setHierarchySummary(JSON.parse(event.newValue));
+          } catch (err) {
+            console.error("Failed to parse hierarchySummary storage event:", err);
+            setHierarchySummary(null);
+          }
+        } else {
+          setHierarchySummary(null);
+        }
       }
     };
 
@@ -41,35 +124,93 @@ export default function Home() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const fetchRetailCalendar = async () => {
+      const today = new Date();
+      const todayISO = today.toISOString().slice(0, 10);
+
+      try {
+        // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
+        const { data, error } = await supabase
+          .from("retail_calendar")
+          .select("quarter, period_no, weeks, start_date, end_date")
+          .lte("start_date", todayISO)
+          .gte("end_date", todayISO)
+          .order("start_date", { ascending: false })
+          .maybeSingle();
+
+        if (error) {
+          console.error("Retail calendar fetch error:", error);
+          return;
+        }
+
+        if (data && isMounted) {
+          const startDate = new Date(data.start_date);
+          const cleanToday = new Date(todayISO);
+          const diffMs = cleanToday.getTime() - startDate.getTime();
+          const diffDays = Math.floor(diffMs / 86400000);
+          const rawWeek = Math.floor(diffDays / 7) + 1;
+          const maxWeeks = Number(data.weeks ?? 1);
+          const weekNumber = Math.min(Math.max(rawWeek, 1), maxWeeks || 1);
+
+          setRetailStamp({
+            quarter: data.quarter ? `Q${data.quarter}` : "Q?",
+            period: data.period_no ? `P${data.period_no}` : "P?",
+            week: `Wk${weekNumber}`,
+            dateLabel: todayISO,
+          });
+        }
+      } catch (err) {
+        console.error("Unexpected retail calendar error:", err);
+      }
+    };
+
+    fetchRetailCalendar();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleAuthClick = () => {
     router.push(isLoggedIn ? "/logout" : "/login");
   };
+
+  const hierarchyLine = getHierarchyLine(hierarchySummary);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
         {/* Header */}
-        <header className="text-center space-y-3">
-          <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">
-            Pocket Manager5 • Pulse Check5
-          </p>
-          <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold">
-            <span className="text-red-500">P</span>ocket&nbsp;Manager{" "}
-            <span className="text-red-500">5</span>
-          </h1>
-          <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto">
-            Your central hub for shop performance, visits, coaching, and KPIs –
-            pulling together Pocket Manager5 and Pulse Check5 into one view.
-          </p>
+        <header className="space-y-5">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <RetailCalendarStamp {...retailStamp} />
 
-          {/* Login button */}
-          <div className="mt-3">
-            <button
-              onClick={handleAuthClick}
-              className="inline-flex items-center justify-center rounded-xl border border-emerald-400/70 bg-emerald-500/10 px-4 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
-            >
-              {isLoggedIn ? "Logout" : "Login"}
-            </button>
+            <div className="flex flex-col items-start md:items-end gap-2">
+              <button
+                onClick={handleAuthClick}
+                className="inline-flex items-center justify-center rounded-full border border-emerald-400/80 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 hover:bg-emerald-500/20 transition"
+              >
+                {isLoggedIn ? "Logout" : "Login"}
+              </button>
+              <HierarchyStamp line={hierarchyLine} />
+            </div>
+          </div>
+
+          <div className="text-center space-y-3">
+            <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">
+              Pocket Manager5 • Pulse Check5
+            </p>
+            <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold">
+              <span className="text-red-500">P</span>ocket&nbsp;Manager{" "}
+              <span className="text-red-500">5</span>
+            </h1>
+            <p className="text-sm sm:text-base text-slate-300 max-w-2xl mx-auto">
+              Your central hub for shop performance, visits, coaching, and KPIs –
+              pulling together Pocket Manager5 and Pulse Check5 into one view.
+            </p>
           </div>
         </header>
 
@@ -275,6 +416,34 @@ export default function Home() {
       </div>
     </main>
   );
+}
+
+function getHierarchyLine(summary: HierarchySummary | null) {
+  if (!summary) {
+    return "Hierarchy loading from Supabase…";
+  }
+
+  const level = summary.scope_level?.toUpperCase();
+
+  switch (level) {
+    case "SHOP":
+      return `Shop ${summary.shop_number ?? "?"} • ${summary.district_name ?? "District"} • ${summary.region_name ?? "Region"}`;
+    case "DISTRICT":
+      return `${summary.district_name ?? "District"} • ${formatCount(summary.shops_in_district, "shops")}`;
+    case "REGION":
+      return `${summary.region_name ?? "Region"} • ${formatCount(summary.districts_in_region, "districts")} • ${formatCount(summary.shops_in_region, "shops")}`;
+    case "DIVISION":
+      return `${summary.division_name ?? "Division"} • ${formatCount(summary.regions_in_division, "regions")} • ${formatCount(summary.shops_in_division, "shops")}`;
+    default:
+      return "Hierarchy data unavailable";
+  }
+}
+
+function formatCount(value: number | null | undefined, label: string) {
+  if (typeof value === "number" && !Number.isNaN(value)) {
+    return `${value} ${label}`;
+  }
+  return `${label} data pending`;
 }
 
 

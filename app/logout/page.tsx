@@ -9,7 +9,13 @@ export default function LogoutPage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    ["loggedIn", "loginEmail", "shopStore", "shopUserName"].forEach((key) =>
+    [
+      "loggedIn",
+      "loginEmail",
+      "shopStore",
+      "shopUserName",
+      "hierarchySummary",
+    ].forEach((key) =>
       localStorage.removeItem(key)
     );
 

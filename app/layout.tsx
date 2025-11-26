@@ -27,7 +27,11 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       router.replace("/");
     }
 
-    setCheckedAuth(true);
+    const frameId = window.requestAnimationFrame(() => {
+      setCheckedAuth(true);
+    });
+
+    return () => window.cancelAnimationFrame(frameId);
   }, [pathname, router]);
 
   return (

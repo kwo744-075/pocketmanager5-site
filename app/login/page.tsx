@@ -5,6 +5,19 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
+type HierarchySummary = {
+  scope_level: string | null;
+  division_name: string | null;
+  region_name: string | null;
+  district_name: string | null;
+  shop_number: string | null;
+  shops_in_district?: number | null;
+  districts_in_region?: number | null;
+  shops_in_region?: number | null;
+  regions_in_division?: number | null;
+  shops_in_division?: number | null;
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -42,6 +55,19 @@ export default function LoginPage() {
         localStorage.setItem("loginEmail", loginEmail);
         localStorage.setItem("shopStore", String(data.store ?? ""));
         localStorage.setItem("shopUserName", data.Shop_UserName ?? "");
+
+        try {
+          // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
+          const summary = await fetchHierarchySummary(loginEmail);
+          if (summary) {
+            localStorage.setItem("hierarchySummary", JSON.stringify(summary));
+          } else {
+            localStorage.removeItem("hierarchySummary");
+          }
+        } catch (hierarchyErr) {
+          console.error("Hierarchy summary fetch error:", hierarchyErr);
+          localStorage.removeItem("hierarchySummary");
+        }
 
         router.push("/"); // send them to the main dashboard
       }
@@ -139,6 +165,20 @@ export default function LoginPage() {
       </div>
     </main>
   );
+}
+
+async function fetchHierarchySummary(loginEmail: string) {
+  const { data, error } = await supabase
+    .from("hierarchy_summary_vw")
+    .select("*")
+    .eq("login", loginEmail)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data as HierarchySummary | null;
 }
 
 
