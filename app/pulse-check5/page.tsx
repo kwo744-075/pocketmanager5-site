@@ -129,6 +129,12 @@ const temperatureChips: { value: Temperature; label: string; accent: string }[] 
 
 const slotOrder = Object.keys(SLOT_DEFINITIONS) as TimeSlotKey[];
 const EVENING_SLOTS: TimeSlotKey[] = ["17:00", "20:00"];
+const SLOT_UNLOCK_RULES: Record<TimeSlotKey, { hour: number; minute: number; label: string }> = {
+  "12:00": { hour: 12, minute: 0, label: "12:00 PM" },
+  "14:30": { hour: 14, minute: 30, label: "2:30 PM" },
+  "17:00": { hour: 17, minute: 0, label: "5:00 PM" },
+  "20:00": { hour: 20, minute: 0, label: "8:00 PM" },
+};
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -233,6 +239,15 @@ export default function PulseCheckPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
   const [eveningOnly, setEveningOnly] = useState(false);
+  const [clock, setClock] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const interval = window.setInterval(() => setClock(Date.now()), 60_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -320,31 +335,50 @@ export default function PulseCheckPage() {
 
     const fetchShopMetadata = async () => {
       try {
-        const { data, error } = await pulseSupabase
-          .from("shops")
-          .select("id, shop_number, shop_name, district_id, region_id")
-          .eq("shop_number", numericShop)
-          .limit(1)
-          .maybeSingle();
+        const clients = [pulseSupabase, supabase];
+        let resolved: ShopMeta | null = null;
+        let lastError: unknown = null;
+
+        for (const client of clients) {
+          try {
+            const { data, error } = await client
+              .from("shops")
+              .select("id, shop_number, shop_name, district_id, region_id")
+              .eq("shop_number", numericShop)
+              .limit(1)
+              .maybeSingle();
+
+            if (error && error.code !== "PGRST116") {
+              lastError = error;
+              continue;
+            }
+
+            if (data) {
+              resolved = data as ShopMeta;
+              break;
+            }
+          } catch (clientErr) {
+            lastError = clientErr;
+          }
+        }
 
         if (cancelled) {
           return;
         }
 
-        if (error) {
-          console.error("shops lookup error", error);
-          setHierarchyError("Unable to map hierarchy shop to a Pulse Check shop record.");
-          setShopMeta(null);
+        if (resolved) {
+          setHierarchyError(null);
+          setShopMeta(resolved);
           return;
         }
 
-        if (!data) {
-          setHierarchyError("No matching shop record was found for this login.");
-          setShopMeta(null);
-          return;
+        if (lastError) {
+          console.error("shops lookup error", lastError);
+          setHierarchyError("Unable to map your shop right now. Please refresh in a bit.");
+        } else {
+          setHierarchyError("This login isn't linked to a Pulse Check shop yet. Ask your admin to enable it.");
         }
-
-        setShopMeta(data as ShopMeta);
+        setShopMeta(null);
       } catch (err) {
         if (!cancelled) {
           console.error("Shop metadata error", err);
@@ -526,6 +560,26 @@ export default function PulseCheckPage() {
     return slotOrder.some((slot) => slots[slot]?.dirty);
   }, [slots]);
 
+  const isSlotUnlocked = useCallback(
+    (slotKey: TimeSlotKey) => {
+      const rule = SLOT_UNLOCK_RULES[slotKey];
+      if (!rule) {
+        return true;
+      }
+      const unlock = new Date();
+      unlock.setHours(rule.hour, rule.minute, 0, 0);
+      return clock >= unlock.getTime();
+    },
+    [clock]
+  );
+
+  const slotUnlockedMap = useMemo(() => {
+    return slotOrder.reduce<Record<TimeSlotKey, boolean>>((acc, slotKey) => {
+      acc[slotKey] = isSlotUnlocked(slotKey);
+      return acc;
+    }, {} as Record<TimeSlotKey, boolean>);
+  }, [isSlotUnlocked]);
+
   const eveningSlotTotals = useMemo(() => buildSlotTotals(slots, EVENING_SLOTS), [slots]);
 
   const resolvedDailyTotals = useMemo(
@@ -542,11 +596,22 @@ export default function PulseCheckPage() {
 
   const slotChoices = slotOrder;
 
+  useEffect(() => {
+    if (activeSlot && slotUnlockedMap[activeSlot]) {
+      return;
+    }
+    const firstUnlocked = slotChoices.find((slot) => slotUnlockedMap[slot]);
+    if (firstUnlocked && firstUnlocked !== activeSlot) {
+      setActiveSlot(firstUnlocked);
+    }
+  }, [activeSlot, slotChoices, slotUnlockedMap]);
+
   const resolvedSlotKey =
     activeSlot && slotChoices.includes(activeSlot) ? activeSlot : slotChoices[0];
   const currentSlotKey = resolvedSlotKey ?? slotOrder[0];
   const currentSlotState = slots[currentSlotKey] ?? createEmptySlotState();
   const currentDefinition = SLOT_DEFINITIONS[currentSlotKey];
+  const currentSlotLocked = !slotUnlockedMap[currentSlotKey];
 
   const updateMetric = useCallback(
     (slotKey: TimeSlotKey, key: MetricKey, value: string) => {
@@ -719,45 +784,29 @@ export default function PulseCheckPage() {
   };
 
   const busy = loadingHierarchy || loadingSlots || loadingTotals || submitting;
-  const todayStamp = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  });
-  const loginLabel = loginEmail ?? "Not signed in";
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-8">
         <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-6">
-            <header className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-5 shadow-2xl shadow-black/40">
-              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <header className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-4 shadow-2xl shadow-black/40">
+              <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                  <h1 className="text-2xl font-semibold text-white">Live KPI Board</h1>
+                  <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                  <h1 className="text-xl font-semibold text-white">Live KPI Board</h1>
+                </div>
+                <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+                  <span>5-8 only</span>
+                  <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
                 </div>
                 <RetailPills />
               </div>
-              <div className="mt-4 grid gap-4 text-xs text-slate-400 md:grid-cols-3">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">Day stamp</p>
-                  <p className="text-base font-semibold text-white">{todayStamp}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">Login</p>
-                  <p className="text-base font-semibold text-white">{loginLabel}</p>
-                </div>
-                <div className="flex items-center gap-3 md:justify-end">
-                  <span className="text-[10px] uppercase tracking-wide text-slate-400">5-8 performance only</span>
-                  <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
-                </div>
-              </div>
-              <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
                 <button
                   onClick={refreshAll}
                   disabled={!shopMeta?.id || busy}
-                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
                 >
                   Refresh data
                 </button>
@@ -765,21 +814,21 @@ export default function PulseCheckPage() {
               </div>
             </header>
 
-            <section className="space-y-4 rounded-3xl border border-slate-900 bg-slate-950/60 p-5 shadow-inner shadow-black/30">
-              <div className="grid gap-4 md:grid-cols-2">
+            <section className="space-y-3 rounded-3xl border border-slate-900 bg-slate-950/60 p-3 text-[13px] shadow-inner shadow-black/30">
+              <div className="grid gap-3 md:grid-cols-2">
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
-                  <h2 className="text-xl font-semibold text-white">{scope ?? "Unknown"}</h2>
-                  <p className="text-sm text-slate-400">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Scope</p>
+                  <h2 className="text-lg font-semibold text-white">{scope ?? "Unknown"}</h2>
+                  <p className="text-xs text-slate-400">
                     {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
                   </p>
                 </div>
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Shop</p>
-                  <h2 className="text-xl font-semibold text-white">
+                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Shop</p>
+                  <h2 className="text-lg font-semibold text-white">
                     {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
                   </h2>
-                  <p className="text-sm text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
+                  <p className="text-xs text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
                 </div>
               </div>
               <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
@@ -799,12 +848,12 @@ export default function PulseCheckPage() {
             </div>
           </div>
 
-          <aside className="w-full max-w-sm justify-self-center">
-            <div className="space-y-4 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-5 shadow-2xl shadow-black/50">
+          <aside className="w-full max-w-[18rem] justify-self-center">
+            <div className="space-y-3 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-4 shadow-2xl shadow-black/50">
               <div>
-                <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
-                <h2 className="text-xl font-semibold text-white">Quick 3x5 entry</h2>
-                <p className="text-xs text-slate-400">Capture slot metrics without overtaking the dashboard.</p>
+                <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
+                <h2 className="text-lg font-semibold text-white">Quick 3x5 entry</h2>
+                <p className="text-[11px] text-slate-400">Capture slot metrics without overtaking the dashboard.</p>
               </div>
 
               {!loginEmail ? (
@@ -819,23 +868,33 @@ export default function PulseCheckPage() {
                   {renderStatusBanner()}
 
                   <div className="space-y-2">
-                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Select slot</p>
-                    <div className="flex flex-wrap gap-2">
-                      {slotChoices.map((slotKey) => (
+                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Select slot</p>
+                    <div className="grid grid-cols-2 gap-1">
+                      {slotChoices.map((slotKey) => {
+                        const unlocked = slotUnlockedMap[slotKey];
+                        return (
                         <button
                           key={slotKey}
                           type="button"
-                          onClick={() => setActiveSlot(slotKey)}
-                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                          onClick={() => {
+                              if (unlocked) {
+                              setActiveSlot(slotKey);
+                            }
+                          }}
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
                             currentSlotKey === slotKey
                               ? "bg-emerald-500 text-emerald-900"
-                              : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                                : unlocked
+                                ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                                : "bg-slate-900/60 text-slate-500"
                           }`}
-                          disabled={loadingSlots}
+                          disabled={loadingSlots || !unlocked}
+                          title={unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`}
                         >
                           {SLOT_DEFINITIONS[slotKey].label}
                         </button>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 
@@ -846,6 +905,8 @@ export default function PulseCheckPage() {
                     onMetricChange={updateMetric}
                     onTemperatureChange={updateTemperature}
                     loading={loadingSlots}
+                    locked={currentSlotLocked}
+                    compact
                   />
 
                   <div className="flex flex-col gap-2">
@@ -861,7 +922,7 @@ export default function PulseCheckPage() {
                       type="button"
                       onClick={handleSubmit}
                       className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
-                      disabled={busy || !shopMeta?.id || (!hasDirtyFields && submissionCount === 0)}
+                      disabled={busy || !shopMeta?.id || currentSlotLocked || (!hasDirtyFields && submissionCount === 0)}
                     >
                       {submitting ? "Saving…" : "Submit check-in"}
                     </button>
@@ -879,14 +940,14 @@ export default function PulseCheckPage() {
 function ProgressOverview({ submitted, total, loading }: { submitted: number; total: number; loading: boolean }) {
   const percent = Math.round((submitted / total) * 100);
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="flex items-center justify-between text-sm text-slate-300">
+    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3 text-[12px]">
+      <div className="flex items-center justify-between text-slate-300">
         <span>Submission progress</span>
         <span>
-          {submitted}/{total} slots • {percent}%
+          {submitted}/{total} • {percent}%
         </span>
       </div>
-      <div className="mt-3 h-3 w-full rounded-full bg-slate-800">
+      <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
         <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${loading ? 0 : percent}%` }} />
       </div>
     </section>
@@ -905,15 +966,15 @@ function MetricsGrid({
   viewLabel: string;
 }) {
   return (
-    <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
+    <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 text-[12px]">
       <div>
-        <div className="flex items-center justify-between text-sm text-slate-300">
+        <div className="flex items-center justify-between text-slate-300">
           <span>Performance rollup</span>
           {loading && <span className="text-xs text-slate-500">Loading totals…</span>}
         </div>
         <p className="text-xs text-slate-500">{viewLabel}</p>
       </div>
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-3 md:grid-cols-2">
         {METRIC_FIELDS.map((field) => (
           <MetricCard
             key={field.key}
@@ -944,11 +1005,11 @@ function MetricCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{field.label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{format(dailyValue)}</p>
-      <p className="text-xs text-slate-400">Daily</p>
-      <p className="mt-2 text-sm text-slate-300">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
+      <p className="text-[10px] uppercase tracking-wide text-slate-500">{field.label}</p>
+      <p className="mt-1 text-xl font-semibold text-white">{format(dailyValue)}</p>
+      <p className="text-[11px] text-slate-400">Daily</p>
+      <p className="mt-1 text-xs text-slate-300">
         <span className="font-semibold">WTD:</span> {format(weeklyValue)}
       </p>
     </div>
@@ -1096,6 +1157,8 @@ function SlotForm({
   onMetricChange,
   onTemperatureChange,
   loading,
+  compact,
+  locked,
 }: {
   slotKey: TimeSlotKey;
   slotState: SlotState;
@@ -1103,21 +1166,29 @@ function SlotForm({
   onMetricChange: (slot: TimeSlotKey, key: MetricKey, value: string) => void;
   onTemperatureChange: (slot: TimeSlotKey, temp: Temperature) => void;
   loading: boolean;
+  compact?: boolean;
+  locked?: boolean;
 }) {
   const submittedLabel = slotState.submittedAt
     ? new Date(slotState.submittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : null;
+  const unlockLabel = SLOT_UNLOCK_RULES[slotKey]?.label ?? definition.label;
 
   return (
-    <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className={`${compact ? "space-y-3" : "space-y-4"} rounded-2xl border border-slate-800 bg-slate-900/70 p-3`}>
+      <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[11px] uppercase tracking-wide text-slate-400">{definition.description}</p>
-          <h3 className="text-lg font-semibold text-white">{definition.label}</h3>
+          <p className="text-[10px] uppercase tracking-wide text-slate-400">{definition.description}</p>
+          <h3 className="text-base font-semibold text-white">{definition.label}</h3>
         </div>
         <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
       </div>
-      <div className="flex flex-wrap gap-2 text-[11px]">
+      {locked && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+          Slot locked until {unlockLabel}. Check back later.
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1.5 text-[10px]">
         {temperatureChips.map((chip) => (
           <button
             key={chip.value}
@@ -1126,17 +1197,17 @@ function SlotForm({
             className={`rounded-full px-3 py-1 font-semibold transition ${chip.accent} ${
               slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
             }`}
-            disabled={loading}
+            disabled={loading || locked}
           >
             {chip.label}
           </button>
         ))}
       </div>
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-2 sm:grid-cols-2">
         {METRIC_FIELDS.map((field) => (
           <label
             key={field.key}
-            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
           >
             {field.label}
             <input
@@ -1144,9 +1215,9 @@ function SlotForm({
               inputMode="decimal"
               value={slotState.metrics[field.key]}
               onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-              className="mt-2 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 text-base font-semibold text-white outline-none focus:border-emerald-400"
+              className="mt-1 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 text-sm font-semibold text-white outline-none focus:border-emerald-400"
               placeholder="0"
-              disabled={loading}
+              disabled={loading || locked}
             />
           </label>
         ))}
