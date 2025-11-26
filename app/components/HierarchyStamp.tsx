@@ -80,7 +80,7 @@ export function HierarchyStamp() {
         }
 
         const { data, error } = await supabase
-          .from<HierarchyRow>("hierarchy_summary_vw")
+          .from("hierarchy_summary_vw")
           .select("*")
           .eq("login", loginEmail.toLowerCase())
           .maybeSingle();
@@ -89,7 +89,7 @@ export function HierarchyStamp() {
           console.error("hierarchy_summary_vw error", error);
           setSummary("Hierarchy unavailable");
         } else {
-          setSummary(formatSummary(data));
+          setSummary(formatSummary(data as HierarchyRow | null));
         }
       } catch (err) {
         console.error("HierarchyStamp error", err);
