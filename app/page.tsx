@@ -89,19 +89,19 @@ export default function Home() {
             />
             {/* extra placeholders on left */}
             <MetricCard
-              label="Placeholder metric 1"
-              value="—"
-              note="Placeholder (future KPI)"
+              label="Inventory saved/exported today"
+              value="12"
+              note="Inventory files saved or exported (placeholder)"
             />
             <MetricCard
-              label="Placeholder metric 2"
-              value="—"
-              note="Placeholder (future KPI)"
+              label="Cadence completion daily / WTD"
+              value="86% / 93%"
+              note="Daily / WTD cadence completion (placeholder)"
             />
             <MetricCard
-              label="Placeholder metric 3"
-              value="—"
-              note="Placeholder (future KPI)"
+              label="Games / flashcards played today"
+              value="18"
+              note="Pocket Manager games or flashcards played (placeholder)"
             />
           </div>
 
@@ -204,13 +204,13 @@ export default function Home() {
             <MetricCard
               label="Turned cars today"
               value="7 / $849.56"
-              note="Turned away (count / est. loss, placeholder)"
+              note="Count / est. loss (turned x ARO, placeholder)"
             />
             {/* extra placeholder on right */}
             <MetricCard
-              label="Placeholder metric"
-              value="—"
-              note="Placeholder (future KPI)"
+              label="Manual W/Os"
+              value="15 / $1784.00"
+              note="Manual work orders saved #/$"
             />
           </div>
         </section>
