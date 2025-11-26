@@ -4,6 +4,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { HierarchyStamp } from "@/app/components/HierarchyStamp";
 
 type RetailStampState = {
   quarter: string;
@@ -12,18 +13,6 @@ type RetailStampState = {
   dateLabel: string;
 };
 
-type HierarchySummary = {
-  scope_level: string | null;
-  division_name: string | null;
-  region_name: string | null;
-  district_name: string | null;
-  shop_number: string | null;
-  shops_in_district?: number | null;
-  districts_in_region?: number | null;
-  shops_in_region?: number | null;
-  regions_in_division?: number | null;
-  shops_in_division?: number | null;
-};
 
 type MetricCardProps = {
   label: string;
@@ -65,14 +54,6 @@ function RetailCalendarStamp({
   );
 }
 
-function HierarchyStamp({ line }: { line: string }) {
-  return (
-    <p className="text-[11px] text-slate-400 max-w-xs text-left md:text-right">
-      {line}
-    </p>
-  );
-}
-
 export default function Home() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
@@ -84,19 +65,6 @@ export default function Home() {
     const dateLabel = today.toISOString().slice(0, 10);
     return { quarter: "Q?", period: "P?", week: "Wk?", dateLabel };
   });
-  const [hierarchySummary, setHierarchySummary] = useState<HierarchySummary | null>(
-    () => {
-      if (typeof window === "undefined") return null;
-      const storedSummary = localStorage.getItem("hierarchySummary");
-      if (!storedSummary) return null;
-      try {
-        return JSON.parse(storedSummary);
-      } catch (err) {
-        console.error("Failed to parse hierarchySummary during init:", err);
-        return null;
-      }
-    }
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -104,19 +72,6 @@ export default function Home() {
     const handleStorage = (event: StorageEvent) => {
       if (event.key === "loggedIn") {
         setIsLoggedIn(event.newValue === "true");
-      }
-
-      if (event.key === "hierarchySummary") {
-        if (event.newValue) {
-          try {
-            setHierarchySummary(JSON.parse(event.newValue));
-          } catch (err) {
-            console.error("Failed to parse hierarchySummary storage event:", err);
-            setHierarchySummary(null);
-          }
-        } else {
-          setHierarchySummary(null);
-        }
       }
     };
 
@@ -177,9 +132,6 @@ export default function Home() {
   const handleAuthClick = () => {
     router.push(isLoggedIn ? "/logout" : "/login");
   };
-
-  const hierarchyLine = getHierarchyLine(hierarchySummary);
-
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
@@ -195,7 +147,7 @@ export default function Home() {
               >
                 {isLoggedIn ? "Logout" : "Login"}
               </button>
-              <HierarchyStamp line={hierarchyLine} />
+              <HierarchyStamp />
             </div>
           </div>
 
@@ -418,32 +370,5 @@ export default function Home() {
   );
 }
 
-function getHierarchyLine(summary: HierarchySummary | null) {
-  if (!summary) {
-    return "Hierarchy loading from Supabase…";
-  }
-
-  const level = summary.scope_level?.toUpperCase();
-
-  switch (level) {
-    case "SHOP":
-      return `Shop ${summary.shop_number ?? "?"} • ${summary.district_name ?? "District"} • ${summary.region_name ?? "Region"}`;
-    case "DISTRICT":
-      return `${summary.district_name ?? "District"} • ${formatCount(summary.shops_in_district, "shops")}`;
-    case "REGION":
-      return `${summary.region_name ?? "Region"} • ${formatCount(summary.districts_in_region, "districts")} • ${formatCount(summary.shops_in_region, "shops")}`;
-    case "DIVISION":
-      return `${summary.division_name ?? "Division"} • ${formatCount(summary.regions_in_division, "regions")} • ${formatCount(summary.shops_in_division, "shops")}`;
-    default:
-      return "Hierarchy data unavailable";
-  }
-}
-
-function formatCount(value: number | null | undefined, label: string) {
-  if (typeof value === "number" && !Number.isNaN(value)) {
-    return `${value} ${label}`;
-  }
-  return `${label} data pending`;
-}
 
 
