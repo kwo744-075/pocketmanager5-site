@@ -1,5 +1,8 @@
+"use client";
+
 // app/page.tsx
-import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 type MetricCardProps = {
   label: string;
@@ -20,6 +23,28 @@ function MetricCard({ label, value, note }: MetricCardProps) {
 }
 
 export default function Home() {
+  const router = useRouter();
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    setIsLoggedIn(localStorage.getItem("loggedIn") === "true");
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "loggedIn") {
+        setIsLoggedIn(event.newValue === "true");
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  const handleAuthClick = () => {
+    router.push(isLoggedIn ? "/logout" : "/login");
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
@@ -39,12 +64,12 @@ export default function Home() {
 
           {/* Login button */}
           <div className="mt-3">
-            <Link
-              href="/login"
+            <button
+              onClick={handleAuthClick}
               className="inline-flex items-center justify-center rounded-xl border border-emerald-400/70 bg-emerald-500/10 px-4 py-2 text-xs font-medium text-emerald-300 hover:bg-emerald-500/20 transition"
             >
-              Login
-            </Link>
+              {isLoggedIn ? "Logout" : "Login"}
+            </button>
           </div>
         </header>
 
@@ -110,13 +135,13 @@ export default function Home() {
               />
               <MetricCard
                 label="Coolants"
-                value="42"
-                note="Units sold PTD (placeholder)"
+                value="15 / 35.2%"
+                note="Units sold PTD / mix % (placeholder)"
               />
               <MetricCard
                 label="Diffs"
-                value="19"
-                note="Units sold PTD (placeholder)"
+                value="12 / 28.9%"
+                note="Units sold PTD / mix % (placeholder)"
               />
 
               {/* middle row reordered: labor, cash, employees, training */}
@@ -147,9 +172,9 @@ export default function Home() {
                 note="Scheduled vs. ideal (placeholder)"
               />
               <MetricCard
-                label="Turned cars"
-                value="7"
-                note="Today (placeholder)"
+                label="Average tenure"
+                value="3.2 yrs"
+                note="Average SM/ASM tenure (placeholder)"
               />
             </div>
 
@@ -178,8 +203,8 @@ export default function Home() {
             />
             <MetricCard
               label="Turned cars today"
-              value="7"
-              note="Turned away (placeholder)"
+              value="7 / $849.56"
+              note="Turned away (count / est. loss, placeholder)"
             />
             {/* extra placeholder on right */}
             <MetricCard
