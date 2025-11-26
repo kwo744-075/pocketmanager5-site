@@ -217,6 +217,7 @@ export default function PulseCheckPage() {
   const [loadingTotals, setLoadingTotals] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -659,91 +660,95 @@ export default function PulseCheckPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl space-y-8 px-4 py-8">
-        <header className="flex flex-col gap-4 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4 shadow-lg shadow-black/30 backdrop-blur md:flex-row md:items-center md:justify-between">
-          <div className="flex items-center gap-3">
-            <RetailPills />
-          </div>
-          <div className="text-center">
-            <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-            <h1 className="text-xl font-semibold text-slate-50">Check-in reliability dashboard</h1>
-          </div>
-          <div className="flex flex-col items-start gap-2 md:items-end">
-            <button
-              onClick={refreshAll}
-              disabled={!shopMeta?.id || busy}
-              className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
-            >
-              Refresh data
-            </button>
-            <HierarchyStamp />
-          </div>
-        </header>
+      <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4 py-8">
+        <div className="w-full max-w-2xl space-y-6">
+          <header className="rounded-2xl border border-slate-900/70 bg-slate-950/70 p-5 shadow-2xl shadow-black/40">
+            <div className="flex items-center justify-between">
+              <div className="text-left">
+                <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                <h1 className="text-lg font-semibold text-white">Compact check-in console</h1>
+              </div>
+              <RetailPills />
+            </div>
+            <div className="mt-4 flex flex-col gap-3">
+              <button
+                onClick={refreshAll}
+                disabled={!shopMeta?.id || busy}
+                className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+              >
+                Refresh data
+              </button>
+              <HierarchyStamp />
+            </div>
+          </header>
 
-        {!loginEmail && renderLoginCapture()}
+          {!loginEmail && renderLoginCapture()}
 
-        {hierarchyError && (
-          <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-4 py-3 text-sm text-rose-100">
-            {hierarchyError}
-          </div>
-        )}
+          {hierarchyError && (
+            <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-4 py-3 text-sm text-rose-100">
+              {hierarchyError}
+            </div>
+          )}
 
-        {renderStatusBanner()}
+          {renderStatusBanner()}
 
-        <section className="grid gap-4 rounded-2xl border border-slate-800 bg-slate-900/40 p-4 shadow-inner shadow-black/30 sm:grid-cols-2">
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">{scope ?? "Unknown"}</h2>
-            <p className="text-sm text-slate-400">
-              {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs uppercase tracking-wide text-slate-400">Shop</p>
-            <h2 className="mt-1 text-lg font-semibold text-white">
-              {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
-            </h2>
-            <p className="text-sm text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
-          </div>
-        </section>
+          <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 shadow-inner shadow-black/40">
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
+              <h2 className="text-lg font-semibold text-white">{scope ?? "Unknown"}</h2>
+              <p className="text-sm text-slate-400">
+                {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs uppercase tracking-wide text-slate-400">Shop</p>
+              <h2 className="text-lg font-semibold text-white">
+                {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
+              </h2>
+              <p className="text-sm text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
+            </div>
+            <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
+            <MetricsGrid dailyTotals={dailyTotals} weeklyTotals={weeklyTotals} loading={loadingTotals} />
+          </section>
 
-        <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
+          <section className="space-y-3">
+            {slotOrder.map((slotKey) => (
+              <TimeSlotCard
+                key={slotKey}
+                slotKey={slotKey}
+                slotState={slots[slotKey]}
+                definition={SLOT_DEFINITIONS[slotKey]}
+                onMetricChange={updateMetric}
+                onTemperatureChange={updateTemperature}
+                loading={loadingSlots}
+                expanded={activeSlot === slotKey}
+                onToggle={() => setActiveSlot(activeSlot === slotKey ? null : slotKey)}
+              />
+            ))}
+          </section>
 
-        <MetricsGrid dailyTotals={dailyTotals} weeklyTotals={weeklyTotals} loading={loadingTotals} />
-
-        <section className="space-y-4">
-          {slotOrder.map((slotKey) => (
-            <TimeSlotCard
-              key={slotKey}
-              slotKey={slotKey}
-              slotState={slots[slotKey]}
-              definition={SLOT_DEFINITIONS[slotKey]}
-              onMetricChange={updateMetric}
-              onTemperatureChange={updateTemperature}
-              loading={loadingSlots}
-            />
-          ))}
-        </section>
-
-        <div className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 shadow-inner shadow-black/40 sm:flex-row sm:items-center sm:justify-between">
-          <div className="text-sm text-slate-300">Need to start over? Reset reloads the last saved state.</div>
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={handleReset}
-              className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-400"
-              disabled={busy}
-            >
-              Reset form
-            </button>
-            <button
-              type="button"
-              onClick={handleSubmit}
-              className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
-              disabled={busy || !shopMeta?.id || (!hasDirtyFields && submissionCount === 0)}
-            >
-              {submitting ? "Saving…" : "Submit check-in"}
-            </button>
+          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-inner shadow-black/40">
+            <div className="space-y-3">
+              <div className="text-sm text-slate-300">Need to start over? Reset reloads the last saved state.</div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <button
+                  type="button"
+                  onClick={handleReset}
+                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-400"
+                  disabled={busy}
+                >
+                  Reset form
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                  disabled={busy || !shopMeta?.id || (!hasDirtyFields && submissionCount === 0)}
+                >
+                  {submitting ? "Saving…" : "Submit check-in"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -811,6 +816,8 @@ function TimeSlotCard({
   onMetricChange,
   onTemperatureChange,
   loading,
+  expanded,
+  onToggle,
 }: {
   slotKey: TimeSlotKey;
   slotState: SlotState;
@@ -818,54 +825,67 @@ function TimeSlotCard({
   onMetricChange: (slot: TimeSlotKey, key: MetricKey, value: string) => void;
   onTemperatureChange: (slot: TimeSlotKey, temp: Temperature) => void;
   loading: boolean;
+  expanded: boolean;
+  onToggle: () => void;
 }) {
   const submittedLabel = slotState.submittedAt
     ? new Date(slotState.submittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : null;
 
   return (
-    <article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 shadow-sm shadow-black/30">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+    <article className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 shadow-sm shadow-black/40">
+      <button
+        type="button"
+        onClick={onToggle}
+        className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
+      >
         <div>
-          <p className="text-sm text-slate-400">{definition.description}</p>
-          <h3 className="text-xl font-semibold text-white">{definition.label}</h3>
+          <p className="text-xs uppercase tracking-wide text-slate-400">{definition.description}</p>
+          <h3 className="text-lg font-semibold text-white">{definition.label}</h3>
         </div>
-        <div className="flex flex-wrap items-center gap-2 text-xs">
+        <div className="flex flex-col items-end gap-1 text-xs">
           <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
-          {temperatureChips.map((chip) => (
-            <button
-              key={chip.value}
-              type="button"
-              onClick={() => onTemperatureChange(slotKey, chip.value)}
-              className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${chip.accent} ${
-                slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
-              }`}
-              disabled={loading}
-            >
-              {chip.label}
-            </button>
-          ))}
+          <span className="text-[10px] text-slate-500">Tap to {expanded ? "collapse" : "expand"}</span>
         </div>
-      </div>
-      <div className="mt-4 grid gap-4 md:grid-cols-4">
-        {METRIC_FIELDS.map((field) => (
-          <label
-            key={field.key}
-            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-xs font-semibold uppercase tracking-wide text-slate-400"
-          >
-            {field.label}
-            <input
-              type="number"
-              inputMode="decimal"
-              value={slotState.metrics[field.key]}
-              onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-              className="mt-2 rounded-lg border border-slate-700 bg-slate-950/40 px-2 py-1 text-base font-semibold text-white outline-none focus:border-emerald-400"
-              placeholder="0"
-              disabled={loading}
-            />
-          </label>
-        ))}
-      </div>
+      </button>
+      {expanded && (
+        <div className="border-t border-slate-800 px-4 py-4">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            {temperatureChips.map((chip) => (
+              <button
+                key={chip.value}
+                type="button"
+                onClick={() => onTemperatureChange(slotKey, chip.value)}
+                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${chip.accent} ${
+                  slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
+                }`}
+                disabled={loading}
+              >
+                {chip.label}
+              </button>
+            ))}
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2">
+            {METRIC_FIELDS.map((field) => (
+              <label
+                key={field.key}
+                className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+              >
+                {field.label}
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  value={slotState.metrics[field.key]}
+                  onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
+                  className="mt-2 rounded-lg border border-slate-700 bg-slate-950/40 px-2 py-1 text-base font-semibold text-white outline-none focus:border-emerald-400"
+                  placeholder="0"
+                  disabled={loading}
+                />
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
     </article>
   );
 }
