@@ -3,15 +3,8 @@
 // app/page.tsx
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabase } from "@/lib/supabaseClient";
 import { HierarchyStamp } from "@/app/components/HierarchyStamp";
-
-type RetailStampState = {
-  quarter: string;
-  period: string;
-  week: string;
-  dateLabel: string;
-};
+import { RetailPills } from "@/app/components/RetailPills";
 
 
 type MetricCardProps = {
@@ -32,38 +25,11 @@ function MetricCard({ label, value, note }: MetricCardProps) {
   );
 }
 
-function RetailCalendarStamp({
-  quarter,
-  period,
-  week,
-  dateLabel,
-}: RetailStampState) {
-  return (
-    <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
-      <span className="rounded-full bg-blue-500/90 px-3 py-1 text-white uppercase tracking-wide">
-        {quarter}
-      </span>
-      <span className="rounded-full bg-emerald-500/90 px-3 py-1 text-white uppercase tracking-wide">
-        {period}
-      </span>
-      <span className="rounded-full bg-orange-500/90 px-3 py-1 text-white uppercase tracking-wide">
-        {week}
-      </span>
-      <span className="text-sm font-semibold text-slate-100">{dateLabel}</span>
-    </div>
-  );
-}
-
 export default function Home() {
   const router = useRouter();
   const [isLoggedIn, setIsLoggedIn] = useState(() => {
     if (typeof window === "undefined") return false;
     return localStorage.getItem("loggedIn") === "true";
-  });
-  const [retailStamp, setRetailStamp] = useState<RetailStampState>(() => {
-    const today = new Date();
-    const dateLabel = today.toISOString().slice(0, 10);
-    return { quarter: "Q?", period: "P?", week: "Wk?", dateLabel };
   });
 
   useEffect(() => {
@@ -79,56 +45,6 @@ export default function Home() {
     return () => window.removeEventListener("storage", handleStorage);
   }, []);
 
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchRetailCalendar = async () => {
-      const today = new Date();
-      const todayISO = today.toISOString().slice(0, 10);
-
-      try {
-        // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
-        const { data, error } = await supabase
-          .from("retail_calendar")
-          .select("quarter, period_no, weeks, start_date, end_date")
-          .lte("start_date", todayISO)
-          .gte("end_date", todayISO)
-          .order("start_date", { ascending: false })
-          .maybeSingle();
-
-        if (error) {
-          console.error("Retail calendar fetch error:", error);
-          return;
-        }
-
-        if (data && isMounted) {
-          const startDate = new Date(data.start_date);
-          const cleanToday = new Date(todayISO);
-          const diffMs = cleanToday.getTime() - startDate.getTime();
-          const diffDays = Math.floor(diffMs / 86400000);
-          const rawWeek = Math.floor(diffDays / 7) + 1;
-          const maxWeeks = Number(data.weeks ?? 1);
-          const weekNumber = Math.min(Math.max(rawWeek, 1), maxWeeks || 1);
-
-          setRetailStamp({
-            quarter: data.quarter ? `Q${data.quarter}` : "Q?",
-            period: data.period_no ? `P${data.period_no}` : "P?",
-            week: `Wk${weekNumber}`,
-            dateLabel: todayISO,
-          });
-        }
-      } catch (err) {
-        console.error("Unexpected retail calendar error:", err);
-      }
-    };
-
-    fetchRetailCalendar();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
   const handleAuthClick = () => {
     router.push(isLoggedIn ? "/logout" : "/login");
   };
@@ -138,7 +54,7 @@ export default function Home() {
         {/* Header */}
         <header className="space-y-5">
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-            <RetailCalendarStamp {...retailStamp} />
+            <RetailPills />
 
             <div className="flex flex-col items-start md:items-end gap-2">
               <button
