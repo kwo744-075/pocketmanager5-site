@@ -1,55 +1,68 @@
 -- View: public.hierarchy_summary_vw
--- NOTE: Adjust column names if your company_alignment table uses different casing.
--- This view can be shared by Pocket Manager5, Pulse Check5, and the web dashboard.
+-- Uses existing public.company_alignment schema
+-- Columns in company_alignment:
+--   "Division", "Region", "District", "store", "Shop_Email", ...
 
 create or replace view public.hierarchy_summary_vw as
 with base as (
   select
-    lower(coalesce("Shop_Email", login)::text) as login,
-    coalesce(scope_level, "Scope_Level", level, 'SHOP')::text as scope_level,
-    coalesce("Division_Name", division_name)::text as division_name,
-    coalesce("Region_Name", region_name)::text as region_name,
-    coalesce("District_Name", district_name)::text as district_name,
-    coalesce("Shop_Number", shop_number)::text as shop_number
+    lower("Shop_Email"::text)                     as login,          -- e.g. '18@t5.com'
+    'SHOP'::text                                  as scope_level,    -- for now everything is shop-level
+    "Division"::text                              as division_name,  -- e.g. 'East'
+    "Region"::text                                as region_name,    -- e.g. 'Gulf Coast'
+    "District"::text                              as district_name,  -- e.g. 'Baton Rouge South'
+    "store"::text                                 as shop_number     -- e.g. '18'
   from public.company_alignment
 ),
 
 district_shop_counts as (
-  select district_name, region_name, count(*) filter (where shop_number is not null) as shops_in_district
+  select
+    division_name,
+    region_name,
+    district_name,
+    count(*) filter (where shop_number is not null) as shops_in_district
   from base
-  group by district_name, region_name
+  group by division_name, region_name, district_name
 ),
 
 region_district_counts as (
   select
+    division_name,
     region_name,
-    count(distinct district_name) as districts_in_region,
-    count(*) filter (where shop_number is not null) as shops_in_region
+    count(distinct district_name)                          as districts_in_region,
+    count(*) filter (where shop_number is not null)        as shops_in_region
   from base
-  group by region_name
+  group by division_name, region_name
 ),
 
 division_region_counts as (
   select
     division_name,
-    count(distinct region_name) as regions_in_division,
-    count(*) filter (where shop_number is not null) as shops_in_division
+    count(distinct region_name)                            as regions_in_division,
+    count(*) filter (where shop_number is not null)        as shops_in_division
   from base
   group by division_name
 )
+
 select
-  base.login,
-  base.scope_level,
-  base.division_name,
-  base.region_name,
-  base.district_name,
-  base.shop_number,
-  district_shop_counts.shops_in_district,
-  region_district_counts.districts_in_region,
-  region_district_counts.shops_in_region,
-  division_region_counts.regions_in_division,
-  division_region_counts.shops_in_division
-from base
-left join district_shop_counts using (district_name, region_name)
-left join region_district_counts using (region_name)
-left join division_region_counts using (division_name);
+  b.login,
+  b.scope_level,
+  b.division_name,
+  b.region_name,
+  b.district_name,
+  b.shop_number,
+  dsc.shops_in_district,
+  rdc.districts_in_region,
+  rdc.shops_in_region,
+  drc.regions_in_division,
+  drc.shops_in_division
+from base b
+left join district_shop_counts dsc
+  on dsc.division_name = b.division_name
+ and dsc.region_name   = b.region_name
+ and dsc.district_name = b.district_name
+left join region_district_counts rdc
+  on rdc.division_name = b.division_name
+ and rdc.region_name   = b.region_name
+left join division_region_counts drc
+  on drc.division_name = b.division_name;
