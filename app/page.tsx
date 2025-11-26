@@ -138,6 +138,11 @@ export default function Home() {
                 note="PTD sales (placeholder)"
               />
               <MetricCard
+                label="ARO"
+                value="$105.32"
+                note="Avg. ticket (placeholder)"
+              />
+              <MetricCard
                 label="Big 4 performance (PTD)"
                 value="103.8%"
                 note="Region rollup (placeholder)"
@@ -147,13 +152,12 @@ export default function Home() {
                 value="15 / 35.2%"
                 note="Units sold PTD / mix % (placeholder)"
               />
+
               <MetricCard
                 label="Diffs"
                 value="12 / 28.9%"
                 note="Units sold PTD / mix % (placeholder)"
               />
-
-              {/* middle row reordered: labor, cash, employees, training */}
               <MetricCard
                 label="Current labor hours +/-"
                 value="+3.2"
@@ -165,25 +169,19 @@ export default function Home() {
                 note="Over / short today (placeholder)"
               />
               <MetricCard
-                label="Employees +/-"
-                value="+1 / -0"
-                note="Staffing changes (placeholder)"
+                label="Turned cars today"
+                value="7 / $849.56"
+                note="Count / est. loss (turned x ARO, placeholder)"
               />
               <MetricCard
-                label="Training compliance"
-                value="92%"
-                note="Shop-wide (placeholder)"
-              />
-
-              <MetricCard
-                label="Staffed %"
-                value="94%"
-                note="Scheduled vs. ideal (placeholder)"
+                label="Manual work orders today"
+                value="15 / $1784.00"
+                note="Manual work orders saved #/$"
               />
               <MetricCard
-                label="Average tenure"
-                value="3.2 yrs"
-                note="Average SM/ASM tenure (placeholder)"
+                label="Zero shops"
+                value="3"
+                note="Shops with zeros in FF, coolants, or diffs (placeholder)"
               />
             </div>
 
@@ -200,6 +198,28 @@ export default function Home() {
               value="94%"
               note="Of target labor hours (placeholder)"
             />
+            <div className="mt-4 grid grid-cols-2 gap-4">
+              <MetricCard
+                label="Employees +/-"
+                value="+1 / -0"
+                note="Staffing changes (placeholder)"
+              />
+              <MetricCard
+                label="Training compliance"
+                value="92%"
+                note="Shop-wide (placeholder)"
+              />
+              <MetricCard
+                label="Staffed %"
+                value="94%"
+                note="Scheduled vs. ideal (placeholder)"
+              />
+              <MetricCard
+                label="Average tenure"
+                value="3.2 yrs"
+                note="Average SM/ASM tenure (placeholder)"
+              />
+            </div>
             <MetricCard
               label="Meetings today / WTD"
               value="2 / 7"
@@ -209,17 +229,6 @@ export default function Home() {
               label="Claims submitted today / WTD"
               value="1 / 3"
               note="Warranty / damage claims (placeholder)"
-            />
-            <MetricCard
-              label="Turned cars today"
-              value="7 / $849.56"
-              note="Count / est. loss (turned x ARO, placeholder)"
-            />
-            {/* extra placeholder on right */}
-            <MetricCard
-              label="Manual W/Os"
-              value="15 / $1784.00"
-              note="Manual work orders saved #/$"
             />
           </div>
         </section>
