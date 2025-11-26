@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 
 type RetailRow = {
   year?: number;
@@ -30,26 +30,36 @@ export function RetailPills() {
   useEffect(() => {
     const fetchRetail = async () => {
       const todayISO = new Date().toISOString().slice(0, 10);
+      const clients = supabase === pulseSupabase ? [supabase] : [supabase, pulseSupabase];
+      let row: RetailRow | null = null;
 
-      // NOTE: Adjust the selected columns if your retail_calendar schema differs.
-      const { data, error } = await supabase
-        .from("retail_calendar")
-        .select(
-          "quarter, period_no, period, week_no, week, week_start, week_start_date, start_date, week_end, week_end_date, end_date, weeks"
-        )
-        .lte("start_date", todayISO)
-        .gte("end_date", todayISO)
-        .order("start_date", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      for (const client of clients) {
+        const { data, error } = await client
+          .from("retail_calendar")
+          .select(
+            "quarter, period_no, period, week_no, week, week_start, week_start_date, start_date, week_end, week_end_date, end_date, weeks"
+          )
+          .lte("start_date", todayISO)
+          .gte("end_date", todayISO)
+          .order("start_date", { ascending: false })
+          .limit(1)
+          .maybeSingle();
 
-      if (error) {
-        console.error("retail_calendar fetch error", error);
+        if (error) {
+          console.error("retail_calendar fetch error", error);
+          continue;
+        }
+
+        if (data) {
+          row = data as RetailRow;
+          break;
+        }
+      }
+
+      if (!row) {
+        console.warn("retail_calendar returned no row for today's date");
         return;
       }
-      if (!data) return;
-
-      const row = data as RetailRow;
 
       const period = row.period_no ?? row.period;
       let weekValue = row.week_no ?? row.week;

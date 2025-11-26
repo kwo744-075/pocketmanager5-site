@@ -36,8 +36,7 @@ type MetricKey =
   | "coolants"
   | "diffs"
   | "donations"
-  | "mobil1"
-  | "staffing";
+  | "mobil1";
 
 type MetricField = {
   key: MetricKey;
@@ -83,7 +82,6 @@ type CheckInRow = {
   diffs: number | null;
   donations: number | null;
   mobil1: number | null;
-  staffing: number | null;
   temperature: Temperature | null;
   is_submitted: boolean | null;
   submitted_at: string | null;
@@ -97,7 +95,6 @@ const METRIC_FIELDS: MetricField[] = [
   { key: "diffs", label: "Diffs" },
   { key: "donations", label: "Donations" },
   { key: "mobil1", label: "Mobil 1" },
-  { key: "staffing", label: "Staffing" },
 ];
 
 const SLOT_DEFINITIONS: Record<TimeSlotKey, { label: string; description: string; dbSlot: string }> = {
@@ -122,7 +119,6 @@ const EMPTY_TOTALS: Totals = {
   diffs: 0,
   donations: 0,
   mobil1: 0,
-  staffing: 0,
 };
 
 const temperatureChips: { value: Temperature; label: string; accent: string }[] = [
@@ -132,6 +128,7 @@ const temperatureChips: { value: Temperature; label: string; accent: string }[] 
 ];
 
 const slotOrder = Object.keys(SLOT_DEFINITIONS) as TimeSlotKey[];
+const EVENING_SLOTS: TimeSlotKey[] = ["17:00", "20:00"];
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -177,6 +174,22 @@ const cloneSlots = (source: SlotStateMap): SlotStateMap => {
   return next as SlotStateMap;
 };
 
+const createTotalsAccumulator = (): Totals => ({ ...EMPTY_TOTALS });
+
+const buildSlotTotals = (slotMap: SlotStateMap, slotKeys: TimeSlotKey[]): Totals => {
+  const totals = createTotalsAccumulator();
+  slotKeys.forEach((slotKey) => {
+    const slot = slotMap[slotKey];
+    if (!slot || slot.status !== "submitted") {
+      return;
+    }
+    METRIC_FIELDS.forEach((field) => {
+      totals[field.key] += toNumberValue(slot.metrics[field.key]);
+    });
+  });
+  return totals;
+};
+
 const toInputValue = (value: number | null | undefined): string => {
   if (value === null || value === undefined) {
     return "";
@@ -212,12 +225,14 @@ export default function PulseCheckPage() {
   const [slotSnapshot, setSlotSnapshot] = useState<SlotStateMap | null>(null);
   const [dailyTotals, setDailyTotals] = useState<Totals>(EMPTY_TOTALS);
   const [weeklyTotals, setWeeklyTotals] = useState<Totals>(EMPTY_TOTALS);
+  const [weeklyEveningTotals, setWeeklyEveningTotals] = useState<Totals>(EMPTY_TOTALS);
   const [loadingHierarchy, setLoadingHierarchy] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [loadingTotals, setLoadingTotals] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
+  const [eveningOnly, setEveningOnly] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -368,7 +383,6 @@ export default function PulseCheckPage() {
           diffs: toInputValue(row.diffs),
           donations: toInputValue(row.donations),
           mobil1: toInputValue(row.mobil1),
-          staffing: toInputValue(row.staffing),
         },
         temperature: row.temperature ?? "green",
         status: row.is_submitted ? "submitted" : "draft",
@@ -387,7 +401,7 @@ export default function PulseCheckPage() {
         const { data, error } = await pulseSupabase
           .from("check_ins")
           .select(
-            "time_slot,cars,sales,big4,coolants,diffs,donations,mobil1,staffing,temperature,is_submitted,submitted_at"
+            "time_slot,cars,sales,big4,coolants,diffs,donations,mobil1,temperature,is_submitted,submitted_at"
           )
           .eq("shop_id", shopId)
           .eq("check_in_date", todayISO());
@@ -445,7 +459,6 @@ export default function PulseCheckPage() {
         diffs: row?.total_diffs ?? 0,
         donations: row?.total_donations ?? 0,
         mobil1: row?.total_mobil1 ?? 0,
-        staffing: 0,
       });
 
       if (dailyResponse.error && dailyResponse.error.code !== "PGRST116") {
@@ -456,12 +469,18 @@ export default function PulseCheckPage() {
         throw weeklyResponse.error;
       }
 
+      if (weeklyEveningResponse.error && weeklyEveningResponse.error.code !== "PGRST116") {
+        throw weeklyEveningResponse.error;
+      }
+
       setDailyTotals(buildTotals(dailyResponse.data ?? null));
       setWeeklyTotals(buildTotals(weeklyResponse.data ?? null));
+      setWeeklyEveningTotals(buildTotals(weeklyEveningResponse.data ?? null));
     } catch (err) {
       console.error("loadTotals error", err);
       setDailyTotals(EMPTY_TOTALS);
       setWeeklyTotals(EMPTY_TOTALS);
+      setWeeklyEveningTotals(EMPTY_TOTALS);
     } finally {
       setLoadingTotals(false);
     }
@@ -487,124 +506,165 @@ export default function PulseCheckPage() {
     return slotOrder.filter((slot) => slots[slot].status === "submitted").length;
   }, [slots]);
 
+  const computeDirtyFlag = useCallback(
+    (slotKey: TimeSlotKey, candidate: SlotState) => {
+      const reference = slotSnapshot?.[slotKey];
+      if (!reference) {
+        const hasMetrics = METRIC_FIELDS.some((field) => candidate.metrics[field.key].trim() !== "");
+        return hasMetrics || candidate.temperature !== "green";
+      }
+      const metricsChanged = METRIC_FIELDS.some(
+        (field) => candidate.metrics[field.key] !== reference.metrics[field.key]
+      );
+      const temperatureChanged = candidate.temperature !== reference.temperature;
+      return metricsChanged || temperatureChanged;
+    },
+    [slotSnapshot]
+  );
+
   const hasDirtyFields = useMemo(() => {
-    return slotOrder.some((slot) => slots[slot].dirty);
+    return slotOrder.some((slot) => slots[slot]?.dirty);
   }, [slots]);
 
-  const updateMetric = (slot: TimeSlotKey, key: MetricKey, value: string) => {
-    setSlots((prev) => ({
-      ...prev,
-      [slot]: {
-        ...prev[slot],
-        metrics: {
-          ...prev[slot].metrics,
-          [key]: value,
-        },
-        status: prev[slot].status === "submitted" ? "submitted" : "draft",
-        dirty: true,
-      },
-    }));
-  };
+  const eveningSlotTotals = useMemo(() => buildSlotTotals(slots, EVENING_SLOTS), [slots]);
 
-  const updateTemperature = (slot: TimeSlotKey, value: Temperature) => {
-    setSlots((prev) => ({
-      ...prev,
-      [slot]: {
-        ...prev[slot],
-        temperature: value,
-        status: prev[slot].status === "submitted" ? "submitted" : "draft",
-        dirty: true,
-      },
-    }));
-  };
+  const resolvedDailyTotals = useMemo(
+    () => (eveningOnly ? eveningSlotTotals : dailyTotals),
+    [eveningOnly, eveningSlotTotals, dailyTotals]
+  );
 
-  const handleSubmit = async () => {
-    if (!shopMeta?.id) {
-      setStatusMessage("Missing shop mapping – cannot submit.");
-      return;
-    }
+  const resolvedWeeklyTotals = useMemo(
+    () => (eveningOnly ? weeklyEveningTotals : weeklyTotals),
+    [eveningOnly, weeklyEveningTotals, weeklyTotals]
+  );
 
-    const rowsPayload: CheckInRow[] = [];
+  const rollupLoading = loadingTotals || (eveningOnly && loadingSlots);
 
-    slotOrder.forEach((slotKey) => {
-      const slotState = slots[slotKey];
-      const hasValue = METRIC_FIELDS.some((field) => slotState.metrics[field.key].trim());
+  const slotChoices = slotOrder;
 
-      if (!hasValue && slotState.status === "pending") {
-        return;
-      }
+  const resolvedSlotKey =
+    activeSlot && slotChoices.includes(activeSlot) ? activeSlot : slotChoices[0];
+  const currentSlotKey = resolvedSlotKey ?? slotOrder[0];
+  const currentSlotState = slots[currentSlotKey] ?? createEmptySlotState();
+  const currentDefinition = SLOT_DEFINITIONS[currentSlotKey];
 
-      rowsPayload.push({
-        time_slot: SLOT_DEFINITIONS[slotKey].dbSlot,
-        cars: toNumberValue(slotState.metrics.cars),
-        sales: toNumberValue(slotState.metrics.sales),
-        big4: toNumberValue(slotState.metrics.big4),
-        coolants: toNumberValue(slotState.metrics.coolants),
-        diffs: toNumberValue(slotState.metrics.diffs),
-        donations: toNumberValue(slotState.metrics.donations),
-        mobil1: toNumberValue(slotState.metrics.mobil1),
-        staffing: toNumberValue(slotState.metrics.staffing),
-        temperature: slotState.temperature,
-        is_submitted: true,
-        submitted_at: new Date().toISOString(),
-      } as CheckInRow);
-    });
-
-    if (rowsPayload.length === 0) {
-      setStatusMessage("Enter at least one slot before submitting.");
-      return;
-    }
-
-    setSubmitting(true);
-    setStatusMessage(null);
-
-    try {
-      const today = todayISO();
-      const payload = rowsPayload.map((row) => ({
-        shop_id: shopMeta.id,
-        check_in_date: today,
-        time_slot: row.time_slot,
-        cars: row.cars ?? 0,
-        sales: row.sales ?? 0,
-        big4: row.big4 ?? 0,
-        coolants: row.coolants ?? 0,
-        diffs: row.diffs ?? 0,
-        donations: row.donations ?? 0,
-        mobil1: row.mobil1 ?? 0,
-        staffing: row.staffing ?? 0,
-        temperature: row.temperature ?? "green",
-        is_submitted: true,
-        status: "complete",
-        submitted_at: row.submitted_at ?? new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }));
-
-      const { error } = await pulseSupabase.from("check_ins").upsert(payload, {
-        onConflict: "shop_id,check_in_date,time_slot",
+  const updateMetric = useCallback(
+    (slotKey: TimeSlotKey, key: MetricKey, value: string) => {
+      setSlots((prev) => {
+        const existing = prev[slotKey] ?? createEmptySlotState();
+        const nextSlot: SlotState = {
+          ...existing,
+          metrics: {
+            ...existing.metrics,
+            [key]: value,
+          },
+          status: existing.status === "submitted" ? "draft" : existing.status,
+        };
+        nextSlot.dirty = computeDirtyFlag(slotKey, nextSlot);
+        return {
+          ...prev,
+          [slotKey]: nextSlot,
+        };
       });
+    },
+    [computeDirtyFlag]
+  );
 
-      if (error) {
-        throw error;
-      }
+  const updateTemperature = useCallback(
+    (slotKey: TimeSlotKey, temp: Temperature) => {
+      setSlots((prev) => {
+        const existing = prev[slotKey] ?? createEmptySlotState();
+        const nextSlot: SlotState = {
+          ...existing,
+          temperature: temp,
+          status: existing.status === "submitted" ? "draft" : existing.status,
+        };
+        nextSlot.dirty = computeDirtyFlag(slotKey, nextSlot);
+        return {
+          ...prev,
+          [slotKey]: nextSlot,
+        };
+      });
+    },
+    [computeDirtyFlag]
+  );
 
-      setStatusMessage("Check-in saved successfully.");
-      await refreshAll();
-    } catch (err) {
-      console.error("submit check-in error", err);
-      setStatusMessage("Unable to submit check-in. Please try again.");
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const handleReset = () => {
+  const handleReset = useCallback(() => {
     if (slotSnapshot) {
       setSlots(cloneSlots(slotSnapshot));
     } else {
       setSlots(buildInitialSlots());
     }
-    setStatusMessage("Form reset to last loaded values.");
-  };
+    setStatusMessage("Form reset");
+  }, [slotSnapshot]);
+
+  const handleSubmit = useCallback(async () => {
+    if (!shopMeta?.id) {
+      setStatusMessage("Resolve your shop before submitting.");
+      return;
+    }
+
+    const slotState = currentSlotState;
+    const submittedAt = new Date().toISOString();
+    const payload = {
+      shop_id: shopMeta.id,
+      check_in_date: todayISO(),
+      time_slot: currentDefinition.dbSlot,
+      cars: toNumberValue(slotState.metrics.cars),
+      sales: toNumberValue(slotState.metrics.sales),
+      big4: toNumberValue(slotState.metrics.big4),
+      coolants: toNumberValue(slotState.metrics.coolants),
+      diffs: toNumberValue(slotState.metrics.diffs),
+      donations: toNumberValue(slotState.metrics.donations),
+      mobil1: toNumberValue(slotState.metrics.mobil1),
+      temperature: slotState.temperature,
+      is_submitted: true,
+      submitted_at: submittedAt,
+    };
+
+    setSubmitting(true);
+    setStatusMessage(null);
+
+    try {
+      const { error } = await pulseSupabase
+        .from("check_ins")
+        .upsert(payload, { onConflict: "shop_id,check_in_date,time_slot" });
+
+      if (error) {
+        throw error;
+      }
+
+      setSlots((prev) => {
+        const next = { ...prev };
+        next[currentSlotKey] = {
+          ...slotState,
+          status: "submitted",
+          submittedAt,
+          dirty: false,
+        };
+        return next;
+      });
+
+      setSlotSnapshot((prev) => {
+        const base = prev ? { ...prev } : buildInitialSlots();
+        base[currentSlotKey] = {
+          ...slotState,
+          status: "submitted",
+          submittedAt,
+          dirty: false,
+        };
+        return base;
+      });
+
+      setStatusMessage(`${currentDefinition.label} slot submitted`);
+      await loadTotals(shopMeta.id);
+    } catch (err) {
+      console.error("handleSubmit error", err);
+      setStatusMessage("Unable to submit slot right now.");
+    } finally {
+      setSubmitting(false);
+    }
+  }, [shopMeta?.id, currentSlotKey, currentSlotState, currentDefinition, loadTotals]);
 
   const handleManualLogin = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -659,9 +719,12 @@ export default function PulseCheckPage() {
   };
 
   const busy = loadingHierarchy || loadingSlots || loadingTotals || submitting;
-  const currentSlotKey = activeSlot ?? slotOrder[0];
-  const currentSlotState = slots[currentSlotKey];
-  const currentDefinition = SLOT_DEFINITIONS[currentSlotKey];
+  const todayStamp = new Date().toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
+  const loginLabel = loginEmail ?? "Not signed in";
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -672,10 +735,23 @@ export default function PulseCheckPage() {
               <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                 <div>
                   <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                  <h1 className="text-2xl font-semibold text-white">Visit health overview</h1>
-                  <p className="text-sm text-slate-400">Track cadence, rankings, and contests in one glance.</p>
+                  <h1 className="text-2xl font-semibold text-white">Live KPI Board</h1>
                 </div>
                 <RetailPills />
+              </div>
+              <div className="mt-4 grid gap-4 text-xs text-slate-400 md:grid-cols-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">Day stamp</p>
+                  <p className="text-base font-semibold text-white">{todayStamp}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-emerald-400">Login</p>
+                  <p className="text-base font-semibold text-white">{loginLabel}</p>
+                </div>
+                <div className="flex items-center gap-3 md:justify-end">
+                  <span className="text-[10px] uppercase tracking-wide text-slate-400">5-8 performance only</span>
+                  <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
+                </div>
               </div>
               <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <button
@@ -707,8 +783,15 @@ export default function PulseCheckPage() {
                 </div>
               </div>
               <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
-              <MetricsGrid dailyTotals={dailyTotals} weeklyTotals={weeklyTotals} loading={loadingTotals} />
+              <MetricsGrid
+                dailyTotals={resolvedDailyTotals}
+                weeklyTotals={resolvedWeeklyTotals}
+                loading={rollupLoading}
+                viewLabel={eveningOnly ? "5-8 PM submitted slots" : "All-day performance"}
+              />
             </section>
+
+            <DistrictSummaryPanel hierarchy={hierarchy} />
 
             <div className="grid gap-4 md:grid-cols-2">
               <RankingsPanel />
@@ -738,7 +821,7 @@ export default function PulseCheckPage() {
                   <div className="space-y-2">
                     <p className="text-[11px] uppercase tracking-wide text-slate-400">Select slot</p>
                     <div className="flex flex-wrap gap-2">
-                      {slotOrder.map((slotKey) => (
+                      {slotChoices.map((slotKey) => (
                         <button
                           key={slotKey}
                           type="button"
@@ -798,7 +881,7 @@ function ProgressOverview({ submitted, total, loading }: { submitted: number; to
   return (
     <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
       <div className="flex items-center justify-between text-sm text-slate-300">
-        <span>Daily check-in cadence</span>
+        <span>Submission progress</span>
         <span>
           {submitted}/{total} slots • {percent}%
         </span>
@@ -810,23 +893,49 @@ function ProgressOverview({ submitted, total, loading }: { submitted: number; to
   );
 }
 
-function MetricsGrid({ dailyTotals, weeklyTotals, loading }: { dailyTotals: Totals; weeklyTotals: Totals; loading: boolean }) {
+function MetricsGrid({
+  dailyTotals,
+  weeklyTotals,
+  loading,
+  viewLabel,
+}: {
+  dailyTotals: Totals;
+  weeklyTotals: Totals;
+  loading: boolean;
+  viewLabel: string;
+}) {
   return (
     <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/40 p-4">
-      <div className="flex items-center justify-between text-sm text-slate-300">
-        <span>Performance rollup</span>
-        {loading && <span className="text-xs text-slate-500">Loading totals…</span>}
+      <div>
+        <div className="flex items-center justify-between text-sm text-slate-300">
+          <span>Performance rollup</span>
+          {loading && <span className="text-xs text-slate-500">Loading totals…</span>}
+        </div>
+        <p className="text-xs text-slate-500">{viewLabel}</p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
         {METRIC_FIELDS.map((field) => (
-          <MetricCard key={field.key} field={field} dailyValue={dailyTotals[field.key]} weeklyValue={weeklyTotals[field.key]} />
+          <MetricCard
+            key={field.key}
+            field={field}
+            dailyValue={dailyTotals[field.key]}
+            weeklyValue={weeklyTotals[field.key]}
+          />
         ))}
       </div>
     </section>
   );
 }
 
-function MetricCard({ field, dailyValue, weeklyValue }: { field: MetricField; dailyValue: number; weeklyValue: number }) {
+function MetricCard({
+  field,
+  dailyValue,
+  weeklyValue,
+}: {
+  field: MetricField;
+  dailyValue: number;
+  weeklyValue: number;
+}) {
   const format = (value: number) => {
     if (field.format === "currency") {
       return currencyFormatter.format(value);
@@ -846,17 +955,25 @@ function MetricCard({ field, dailyValue, weeklyValue }: { field: MetricField; da
   );
 }
 
-function RankingsPanel() {
+function RankingsPanel({ compact = false }: { compact?: boolean }) {
   const sample = [
-    { label: "District", value: "Baton Rouge South", detail: "92% cadence" },
-    { label: "Region", value: "Gulf Coast", detail: "88% cadence" },
-    { label: "Shop", value: "#18 Uptown", detail: "4/4 slots" },
+    { label: "Cars leader", value: "Baton Rouge South", detail: "128 cars" },
+    { label: "Sales leader", value: "Gulf Coast", detail: "$42K" },
+    { label: "Mobil 1 leader", value: "#18 Uptown", detail: "46 units" },
   ];
 
   return (
-    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/30">
-      <h3 className="text-lg font-semibold text-white">Rankings snapshot</h3>
-      <p className="text-xs text-slate-400">Live data coming soon – showing placeholder cadence leaders.</p>
+    <section
+      className={`rounded-3xl border border-slate-900 bg-slate-950/70 shadow-inner shadow-black/30 ${
+        compact ? "p-4 text-[11px]" : "p-5"
+      }`}
+    >
+      <h3 className={`${compact ? "text-base" : "text-lg"} font-semibold text-white`}>
+        Rankings snapshot
+      </h3>
+      <p className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>
+        Live data coming soon – placeholder Pulse KPI leaders.
+      </p>
       <ul className="mt-4 space-y-2 text-sm">
         {sample.map((row) => (
           <li
@@ -895,6 +1012,80 @@ function ContestPanel() {
         ))}
       </div>
     </section>
+  );
+}
+
+function DistrictSummaryPanel({ hierarchy }: { hierarchy: HierarchyRow | null }) {
+  const tiles = [
+    {
+      label: "Shops in district",
+      value: hierarchy?.shops_in_district ?? 0,
+      detail: "live hierarchy",
+    },
+    {
+      label: "Districts in region",
+      value: hierarchy?.districts_in_region ?? 0,
+      detail: hierarchy?.region_name ?? "--",
+    },
+    {
+      label: "Regions in division",
+      value: hierarchy?.regions_in_division ?? 0,
+      detail: hierarchy?.division_name ?? "--",
+    },
+  ];
+
+  const kpiHighlights = [
+    { name: "Cars", value: "--", note: "Pulse KPI" },
+    { name: "Big 4", value: "--", note: "Pulse KPI" },
+    { name: "Mobil 1", value: "--", note: "Pulse KPI" },
+  ];
+
+  return (
+    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-4 shadow-inner shadow-black/30">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.25em] text-emerald-400">District summary</p>
+          <h3 className="text-lg font-semibold text-white">{hierarchy?.district_name ?? "Resolve district"}</h3>
+        </div>
+        <p className="text-[11px] text-slate-400">Auto-calculated from company_alignment view.</p>
+      </div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
+        {tiles.map((tile) => (
+          <div key={tile.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-center">
+            <p className="text-[10px] uppercase tracking-wide text-slate-500">{tile.label}</p>
+            <p className="text-xl font-semibold text-white">{tile.value}</p>
+            <p className="text-[11px] text-slate-400">{tile.detail}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3 text-xs">
+        {kpiHighlights.map((item) => (
+          <div key={item.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+            <p className="uppercase tracking-wide text-slate-500">{item.name}</p>
+            <p className="text-lg font-semibold text-white">{item.value}</p>
+            <p className="text-slate-400">{item.note}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      onClick={() => onChange(!checked)}
+      className={`relative inline-flex h-5 w-9 items-center rounded-full border border-slate-600 transition ${
+        checked ? "bg-emerald-500 border-emerald-400" : "bg-slate-800"
+      }`}
+    >
+      <span
+        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+          checked ? "translate-x-4" : "translate-x-1"
+        }`}
+      />
+    </button>
   );
 }
 
