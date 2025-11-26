@@ -619,14 +619,16 @@ export default function PulseCheckPage() {
     setManualEmail("");
   };
 
-  const renderLoginCapture = () => (
+  const renderLoginCapture = (options?: { compact?: boolean }) => (
     <form
       onSubmit={handleManualLogin}
-      className="rounded-2xl border border-slate-800 bg-slate-900/40 p-6 shadow-inner shadow-black/20"
+      className={`rounded-2xl border border-slate-800 bg-slate-900/40 shadow-inner shadow-black/20 ${
+        options?.compact ? "p-4" : "p-6"
+      }`}
     >
       <h2 className="text-lg font-semibold text-white">Enter work login email</h2>
       <p className="mt-2 text-sm text-slate-400">We use this email to load your hierarchy scope from Supabase.</p>
-      <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+      <div className={`mt-4 flex flex-col gap-2 ${options?.compact ? "" : "sm:flex-row"}`}>
         <input
           type="email"
           placeholder="you@take5.com"
@@ -657,99 +659,134 @@ export default function PulseCheckPage() {
   };
 
   const busy = loadingHierarchy || loadingSlots || loadingTotals || submitting;
+  const currentSlotKey = activeSlot ?? slotOrder[0];
+  const currentSlotState = slots[currentSlotKey];
+  const currentDefinition = SLOT_DEFINITIONS[currentSlotKey];
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto flex min-h-screen max-w-5xl items-center justify-center px-4 py-8">
-        <div className="w-full max-w-2xl space-y-6">
-          <header className="rounded-2xl border border-slate-900/70 bg-slate-950/70 p-5 shadow-2xl shadow-black/40">
-            <div className="flex items-center justify-between">
-              <div className="text-left">
-                <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                <h1 className="text-lg font-semibold text-white">Compact check-in console</h1>
+      <div className="mx-auto max-w-6xl px-4 py-8">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-6">
+            <header className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-5 shadow-2xl shadow-black/40">
+              <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div>
+                  <p className="text-[10px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                  <h1 className="text-2xl font-semibold text-white">Visit health overview</h1>
+                  <p className="text-sm text-slate-400">Track cadence, rankings, and contests in one glance.</p>
+                </div>
+                <RetailPills />
               </div>
-              <RetailPills />
-            </div>
-            <div className="mt-4 flex flex-col gap-3">
-              <button
-                onClick={refreshAll}
-                disabled={!shopMeta?.id || busy}
-                className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
-              >
-                Refresh data
-              </button>
-              <HierarchyStamp />
-            </div>
-          </header>
-
-          {!loginEmail && renderLoginCapture()}
-
-          {hierarchyError && (
-            <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-4 py-3 text-sm text-rose-100">
-              {hierarchyError}
-            </div>
-          )}
-
-          {renderStatusBanner()}
-
-          <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/50 p-4 shadow-inner shadow-black/40">
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
-              <h2 className="text-lg font-semibold text-white">{scope ?? "Unknown"}</h2>
-              <p className="text-sm text-slate-400">
-                {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
-              </p>
-            </div>
-            <div className="space-y-1">
-              <p className="text-xs uppercase tracking-wide text-slate-400">Shop</p>
-              <h2 className="text-lg font-semibold text-white">
-                {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
-              </h2>
-              <p className="text-sm text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
-            </div>
-            <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
-            <MetricsGrid dailyTotals={dailyTotals} weeklyTotals={weeklyTotals} loading={loadingTotals} />
-          </section>
-
-          <section className="space-y-3">
-            {slotOrder.map((slotKey) => (
-              <TimeSlotCard
-                key={slotKey}
-                slotKey={slotKey}
-                slotState={slots[slotKey]}
-                definition={SLOT_DEFINITIONS[slotKey]}
-                onMetricChange={updateMetric}
-                onTemperatureChange={updateTemperature}
-                loading={loadingSlots}
-                expanded={activeSlot === slotKey}
-                onToggle={() => setActiveSlot(activeSlot === slotKey ? null : slotKey)}
-              />
-            ))}
-          </section>
-
-          <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4 shadow-inner shadow-black/40">
-            <div className="space-y-3">
-              <div className="text-sm text-slate-300">Need to start over? Reset reloads the last saved state.</div>
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="mt-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <button
-                  type="button"
-                  onClick={handleReset}
-                  className="rounded-xl border border-slate-600 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-400"
-                  disabled={busy}
+                  onClick={refreshAll}
+                  disabled={!shopMeta?.id || busy}
+                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
                 >
-                  Reset form
+                  Refresh data
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSubmit}
-                  className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
-                  disabled={busy || !shopMeta?.id || (!hasDirtyFields && submissionCount === 0)}
-                >
-                  {submitting ? "Saving…" : "Submit check-in"}
-                </button>
+                <HierarchyStamp />
               </div>
+            </header>
+
+            <section className="space-y-4 rounded-3xl border border-slate-900 bg-slate-950/60 p-5 shadow-inner shadow-black/30">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Scope</p>
+                  <h2 className="text-xl font-semibold text-white">{scope ?? "Unknown"}</h2>
+                  <p className="text-sm text-slate-400">
+                    {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-slate-400">Shop</p>
+                  <h2 className="text-xl font-semibold text-white">
+                    {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
+                  </h2>
+                  <p className="text-sm text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
+                </div>
+              </div>
+              <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
+              <MetricsGrid dailyTotals={dailyTotals} weeklyTotals={weeklyTotals} loading={loadingTotals} />
+            </section>
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <RankingsPanel />
+              <ContestPanel />
             </div>
           </div>
+
+          <aside className="w-full max-w-sm justify-self-center">
+            <div className="space-y-4 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-5 shadow-2xl shadow-black/50">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
+                <h2 className="text-xl font-semibold text-white">Quick 3x5 entry</h2>
+                <p className="text-xs text-slate-400">Capture slot metrics without overtaking the dashboard.</p>
+              </div>
+
+              {!loginEmail ? (
+                renderLoginCapture({ compact: true })
+              ) : (
+                <div className="space-y-4">
+                  {hierarchyError && (
+                    <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-3 py-2 text-xs text-rose-100">
+                      {hierarchyError}
+                    </div>
+                  )}
+                  {renderStatusBanner()}
+
+                  <div className="space-y-2">
+                    <p className="text-[11px] uppercase tracking-wide text-slate-400">Select slot</p>
+                    <div className="flex flex-wrap gap-2">
+                      {slotOrder.map((slotKey) => (
+                        <button
+                          key={slotKey}
+                          type="button"
+                          onClick={() => setActiveSlot(slotKey)}
+                          className={`rounded-full px-3 py-1 text-xs font-semibold transition ${
+                            currentSlotKey === slotKey
+                              ? "bg-emerald-500 text-emerald-900"
+                              : "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                          }`}
+                          disabled={loadingSlots}
+                        >
+                          {SLOT_DEFINITIONS[slotKey].label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <SlotForm
+                    slotKey={currentSlotKey}
+                    slotState={currentSlotState}
+                    definition={currentDefinition}
+                    onMetricChange={updateMetric}
+                    onTemperatureChange={updateTemperature}
+                    loading={loadingSlots}
+                  />
+
+                  <div className="flex flex-col gap-2">
+                    <button
+                      type="button"
+                      onClick={handleReset}
+                      className="rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-400"
+                      disabled={busy}
+                    >
+                      Reset form
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmit}
+                      className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                      disabled={busy || !shopMeta?.id || (!hasDirtyFields && submissionCount === 0)}
+                    >
+                      {submitting ? "Saving…" : "Submit check-in"}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </aside>
         </div>
       </div>
     </main>
@@ -809,15 +846,65 @@ function MetricCard({ field, dailyValue, weeklyValue }: { field: MetricField; da
   );
 }
 
-function TimeSlotCard({
+function RankingsPanel() {
+  const sample = [
+    { label: "District", value: "Baton Rouge South", detail: "92% cadence" },
+    { label: "Region", value: "Gulf Coast", detail: "88% cadence" },
+    { label: "Shop", value: "#18 Uptown", detail: "4/4 slots" },
+  ];
+
+  return (
+    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/30">
+      <h3 className="text-lg font-semibold text-white">Rankings snapshot</h3>
+      <p className="text-xs text-slate-400">Live data coming soon – showing placeholder cadence leaders.</p>
+      <ul className="mt-4 space-y-2 text-sm">
+        {sample.map((row) => (
+          <li
+            key={row.label}
+            className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/50 px-3 py-2"
+          >
+            <div>
+              <p className="text-[11px] uppercase tracking-wide text-slate-500">{row.label}</p>
+              <p className="font-semibold text-white">{row.value}</p>
+            </div>
+            <span className="text-xs text-emerald-300">{row.detail}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function ContestPanel() {
+  const contests = [
+    { name: "Mobil 1 push", status: "Week 3 of 4", metric: "122% to plan" },
+    { name: "Big 4 blitz", status: "175 stores participating", metric: "+8% WoW" },
+  ];
+
+  return (
+    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/30">
+      <h3 className="text-lg font-semibold text-white">Contest trackers</h3>
+      <p className="text-xs text-slate-400">Drive focus to current incentives and weekly pushes.</p>
+      <div className="mt-4 space-y-3 text-sm">
+        {contests.map((contest) => (
+          <div key={contest.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+            <p className="text-[11px] uppercase tracking-wide text-amber-300">{contest.name}</p>
+            <p className="text-slate-300">{contest.status}</p>
+            <p className="text-sm font-semibold text-white">{contest.metric}</p>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function SlotForm({
   slotKey,
   slotState,
   definition,
   onMetricChange,
   onTemperatureChange,
   loading,
-  expanded,
-  onToggle,
 }: {
   slotKey: TimeSlotKey;
   slotState: SlotState;
@@ -825,68 +912,55 @@ function TimeSlotCard({
   onMetricChange: (slot: TimeSlotKey, key: MetricKey, value: string) => void;
   onTemperatureChange: (slot: TimeSlotKey, temp: Temperature) => void;
   loading: boolean;
-  expanded: boolean;
-  onToggle: () => void;
 }) {
   const submittedLabel = slotState.submittedAt
     ? new Date(slotState.submittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : null;
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 shadow-sm shadow-black/40">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="flex w-full items-center justify-between gap-4 px-4 py-3 text-left"
-      >
+    <div className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+      <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-xs uppercase tracking-wide text-slate-400">{definition.description}</p>
+          <p className="text-[11px] uppercase tracking-wide text-slate-400">{definition.description}</p>
           <h3 className="text-lg font-semibold text-white">{definition.label}</h3>
         </div>
-        <div className="flex flex-col items-end gap-1 text-xs">
-          <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
-          <span className="text-[10px] text-slate-500">Tap to {expanded ? "collapse" : "expand"}</span>
-        </div>
-      </button>
-      {expanded && (
-        <div className="border-t border-slate-800 px-4 py-4">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            {temperatureChips.map((chip) => (
-              <button
-                key={chip.value}
-                type="button"
-                onClick={() => onTemperatureChange(slotKey, chip.value)}
-                className={`rounded-full px-3 py-1 text-[11px] font-semibold transition ${chip.accent} ${
-                  slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
-                }`}
-                disabled={loading}
-              >
-                {chip.label}
-              </button>
-            ))}
-          </div>
-          <div className="mt-4 grid gap-3 sm:grid-cols-2">
-            {METRIC_FIELDS.map((field) => (
-              <label
-                key={field.key}
-                className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/50 p-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
-              >
-                {field.label}
-                <input
-                  type="number"
-                  inputMode="decimal"
-                  value={slotState.metrics[field.key]}
-                  onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-                  className="mt-2 rounded-lg border border-slate-700 bg-slate-950/40 px-2 py-1 text-base font-semibold text-white outline-none focus:border-emerald-400"
-                  placeholder="0"
-                  disabled={loading}
-                />
-              </label>
-            ))}
-          </div>
-        </div>
-      )}
-    </article>
+        <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
+      </div>
+      <div className="flex flex-wrap gap-2 text-[11px]">
+        {temperatureChips.map((chip) => (
+          <button
+            key={chip.value}
+            type="button"
+            onClick={() => onTemperatureChange(slotKey, chip.value)}
+            className={`rounded-full px-3 py-1 font-semibold transition ${chip.accent} ${
+              slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
+            }`}
+            disabled={loading}
+          >
+            {chip.label}
+          </button>
+        ))}
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {METRIC_FIELDS.map((field) => (
+          <label
+            key={field.key}
+            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-3 text-[11px] font-semibold uppercase tracking-wide text-slate-400"
+          >
+            {field.label}
+            <input
+              type="number"
+              inputMode="decimal"
+              value={slotState.metrics[field.key]}
+              onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
+              className="mt-2 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 text-base font-semibold text-white outline-none focus:border-emerald-400"
+              placeholder="0"
+              disabled={loading}
+            />
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 
