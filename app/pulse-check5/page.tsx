@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
 import { HierarchyStamp } from "@/app/components/HierarchyStamp";
 
@@ -304,7 +304,7 @@ export default function PulseCheckPage() {
 
     const fetchShopMetadata = async () => {
       try {
-        const { data, error } = await supabase
+        const { data, error } = await pulseSupabase
           .from("shops")
           .select("id, shop_number, shop_name, district_id, region_id")
           .eq("shop_number", numericShop)
@@ -383,7 +383,7 @@ export default function PulseCheckPage() {
     async (shopId: string) => {
       setLoadingSlots(true);
       try {
-        const { data, error } = await supabase
+        const { data, error } = await pulseSupabase
           .from("check_ins")
           .select(
             "time_slot,cars,sales,big4,coolants,diffs,donations,mobil1,staffing,temperature,is_submitted,submitted_at"
@@ -416,7 +416,7 @@ export default function PulseCheckPage() {
 
     try {
       const [dailyResponse, weeklyResponse] = await Promise.all([
-        supabase
+        pulseSupabase
           .from("shop_daily_totals")
           .select(
             "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
@@ -424,7 +424,7 @@ export default function PulseCheckPage() {
           .eq("shop_id", shopId)
           .eq("check_in_date", dailyDate)
           .maybeSingle(),
-        supabase
+        pulseSupabase
           .from("shop_wtd_totals")
           .select(
             "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
@@ -578,7 +578,7 @@ export default function PulseCheckPage() {
         updated_at: new Date().toISOString(),
       }));
 
-      const { error } = await supabase.from("check_ins").upsert(payload, {
+      const { error } = await pulseSupabase.from("check_ins").upsert(payload, {
         onConflict: "shop_id,check_in_date,time_slot",
       });
 
