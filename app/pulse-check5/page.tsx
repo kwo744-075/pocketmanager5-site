@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import Image from "next/image";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
 import { HierarchyStamp } from "@/app/components/HierarchyStamp";
@@ -784,6 +785,15 @@ export default function PulseCheckPage() {
   };
 
   const busy = loadingHierarchy || loadingSlots || loadingTotals || submitting;
+  const headerRecap = useMemo(() => {
+    if (shopMeta?.shop_number) {
+      return `Shop ${shopMeta.shop_number} • ${hierarchy?.district_name ?? "--"} • ${hierarchy?.region_name ?? "--"}`;
+    }
+    if (hierarchy?.shop_number) {
+      return `Shop ${hierarchy.shop_number} • ${hierarchy.district_name ?? "--"} • ${hierarchy.region_name ?? "--"}`;
+    }
+    return "Resolve your login to load shop context.";
+  }, [shopMeta?.shop_number, hierarchy?.shop_number, hierarchy?.district_name, hierarchy?.region_name]);
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -792,25 +802,33 @@ export default function PulseCheckPage() {
           <div className="space-y-6">
             <header className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-4 shadow-2xl shadow-black/40">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                  <h1 className="text-xl font-semibold text-white">Live KPI Board</h1>
+                <div className="flex items-center gap-3">
+                  <div>
+                    <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                    <h1 className="text-xl font-semibold text-white">Live KPI Board</h1>
+                  </div>
+                  <button
+                    onClick={refreshAll}
+                    disabled={!shopMeta?.id || busy}
+                    className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                  >
+                    Refresh data
+                  </button>
                 </div>
+                <div className="flex flex-1 justify-center">
+                  <Image src="/window.svg" alt="Pulse Check" width={120} height={32} priority />
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-slate-400">
+                  <RetailPills />
+                  <HierarchyStamp />
+                </div>
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-300">
+                <p className="font-semibold text-white/80">{headerRecap}</p>
                 <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[10px] uppercase tracking-wide text-slate-400">
                   <span>5-8 only</span>
                   <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
                 </div>
-                <RetailPills />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-400">
-                <button
-                  onClick={refreshAll}
-                  disabled={!shopMeta?.id || busy}
-                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
-                >
-                  Refresh data
-                </button>
-                <HierarchyStamp />
               </div>
             </header>
 
@@ -966,15 +984,13 @@ function MetricsGrid({
   viewLabel: string;
 }) {
   return (
-    <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/40 p-3 text-[12px]">
-      <div>
-        <div className="flex items-center justify-between text-slate-300">
-          <span>Performance rollup</span>
-          {loading && <span className="text-xs text-slate-500">Loading totals…</span>}
-        </div>
+    <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/40 p-2 text-center text-[11px]">
+      <div className="space-y-0.5">
+        <p className="text-slate-300 font-semibold">Performance rollup</p>
+        {loading && <p className="text-xs text-slate-500">Loading totals…</p>}
         <p className="text-xs text-slate-500">{viewLabel}</p>
       </div>
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="mx-auto grid max-w-2xl gap-2 sm:grid-cols-2">
         {METRIC_FIELDS.map((field) => (
           <MetricCard
             key={field.key}
@@ -1005,11 +1021,11 @@ function MetricCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-3">
-      <p className="text-[10px] uppercase tracking-wide text-slate-500">{field.label}</p>
-      <p className="mt-1 text-xl font-semibold text-white">{format(dailyValue)}</p>
-      <p className="text-[11px] text-slate-400">Daily</p>
-      <p className="mt-1 text-xs text-slate-300">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-2 text-center">
+      <p className="text-[9px] uppercase tracking-wide text-slate-500">{field.label}</p>
+      <p className="mt-1 text-lg font-semibold text-white">{format(dailyValue)}</p>
+      <p className="text-[10px] text-slate-400">Daily</p>
+      <p className="mt-1 text-[11px] text-slate-300">
         <span className="font-semibold">WTD:</span> {format(weeklyValue)}
       </p>
     </div>
