@@ -5,6 +5,12 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
+import {
+  fetchActiveContests,
+  fetchContestById,
+  subscribeToContestStream,
+  type ContestSummary,
+} from "@/lib/contests";
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
 
@@ -1068,26 +1074,106 @@ function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: st
 }
 
 function ContestPanel() {
-  const contests = [
-    { name: "Mobil 1 push", status: "Week 3 of 4", metric: "122% to plan" },
-    { name: "Big 4 blitz", status: "175 stores participating", metric: "+8% WoW" },
-  ];
+  const [contests, setContests] = useState<ContestSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetchActiveContests(3)
+      .then((records) => {
+        if (!cancelled) {
+          setContests(records);
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.error("contest panel fetch error", err);
+        if (!cancelled) {
+          setLoading(false);
+        }
+      });
+
+    const unsubscribe = subscribeToContestStream(
+      (contest) => {
+        fetchContestById(contest.id).then((summary) => {
+          if (summary && !cancelled) {
+            setContests((prev) => upsertContestSummary(prev, summary, 3));
+          }
+        });
+      },
+      (progress) => {
+        fetchContestById(progress.contest_id).then((summary) => {
+          if (summary && !cancelled) {
+            setContests((prev) => upsertContestSummary(prev, summary, 3));
+          }
+        });
+      }
+    );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   return (
     <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/30">
-      <h3 className="text-lg font-semibold text-white">Contest trackers</h3>
-      <p className="text-xs text-slate-400">Drive focus to current incentives and weekly pushes.</p>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-lg font-semibold text-white">Contest trackers</h3>
+          <p className="text-xs text-slate-400">Drive focus to current incentives and weekly pushes.</p>
+        </div>
+        <Link
+          href="/contests"
+          className="rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
+        >
+          Contest portal →
+        </Link>
+      </div>
       <div className="mt-4 space-y-3 text-sm">
-        {contests.map((contest) => (
-          <div key={contest.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <p className="text-[11px] uppercase tracking-wide text-amber-300">{contest.name}</p>
-            <p className="text-slate-300">{contest.status}</p>
-            <p className="text-sm font-semibold text-white">{contest.metric}</p>
-          </div>
-        ))}
+        {loading && <p className="text-xs text-slate-500">Loading contests…</p>}
+        {!loading && !contests.length && (
+          <p className="text-xs text-slate-500">No live contests yet. Use the portal to launch one.</p>
+        )}
+        {contests.map((contest) => {
+          const [leader] = [...contest.leaderboard].sort(
+            (a, b) => (b.total_value ?? 0) - (a.total_value ?? 0)
+          );
+          return (
+            <div key={contest.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-amber-300">{contest.title}</p>
+              <p className="text-[11px] text-slate-500">
+                {contest.start_date} → {contest.end_date}
+              </p>
+              {leader ? (
+                <p className="text-sm font-semibold text-white">
+                  #{leader.shop_number ?? "--"} • {leader.total_value ?? 0}
+                </p>
+              ) : (
+                <p className="text-sm text-slate-400">Awaiting entries</p>
+              )}
+              <p className="text-xs text-emerald-300">{contest.status}</p>
+            </div>
+          );
+        })}
       </div>
     </section>
   );
+}
+
+function upsertContestSummary(list: ContestSummary[], summary: ContestSummary, cap: number) {
+  const next = [...list];
+  const index = next.findIndex((contest) => contest.id === summary.id);
+  if (index >= 0) {
+    next[index] = summary;
+  } else {
+    next.unshift(summary);
+  }
+  if (next.length > cap) {
+    next.length = cap;
+  }
+  return next;
 }
 
 
