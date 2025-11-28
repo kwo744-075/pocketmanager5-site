@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
 import { HierarchyStamp } from "@/app/components/HierarchyStamp";
@@ -223,8 +225,9 @@ const getWeekStartISO = () => {
 };
 
 export default function PulseCheckPage() {
+  const router = useRouter();
   const [loginEmail, setLoginEmail] = useState<string | null>(null);
-  const [manualEmail, setManualEmail] = useState("");
+  const [authChecked, setAuthChecked] = useState(false);
   const [hierarchy, setHierarchy] = useState<HierarchyRow | null>(null);
   const [shopMeta, setShopMeta] = useState<ShopMeta | null>(null);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
@@ -241,6 +244,7 @@ export default function PulseCheckPage() {
   const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
   const [eveningOnly, setEveningOnly] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
+  const needsLogin = authChecked && !loginEmail;
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -255,17 +259,19 @@ export default function PulseCheckPage() {
       return;
     }
 
-    const params = new URLSearchParams(window.location.search);
-    const queryEmail = params.get("email");
-    const storedEmail = window.localStorage.getItem("loginEmail");
-    const resolved = (queryEmail ?? storedEmail ?? "").trim().toLowerCase();
+    const storedEmail = (window.localStorage.getItem("loginEmail") ?? "").trim().toLowerCase();
+    const loggedIn = window.localStorage.getItem("loggedIn") === "true";
 
-    if (queryEmail && resolved) {
-      window.localStorage.setItem("loginEmail", resolved);
+    if (!storedEmail || !loggedIn) {
+      setLoginEmail(null);
+      setAuthChecked(true);
+      router.replace("/login?redirect=/pulse-check5");
+      return;
     }
 
-    setLoginEmail(resolved || null);
-  }, []);
+    setLoginEmail(storedEmail);
+    setAuthChecked(true);
+  }, [router]);
 
   useEffect(() => {
     if (!loginEmail) {
@@ -536,7 +542,7 @@ export default function PulseCheckPage() {
       return;
     }
     await Promise.all([loadCheckIns(shopMeta.id), loadTotals(shopMeta.id)]);
-    setStatusMessage("Data refreshed");
+    setStatusMessage(null);
   }, [loadCheckIns, loadTotals, shopMeta?.id]);
 
   useEffect(() => {
@@ -742,47 +748,6 @@ export default function PulseCheckPage() {
     }
   }, [shopMeta?.id, currentSlotKey, currentSlotState, currentDefinition, loadTotals]);
 
-  const handleManualLogin = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const normalized = manualEmail.trim().toLowerCase();
-    if (!normalized) {
-      return;
-    }
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("loginEmail", normalized);
-    }
-    setLoginEmail(normalized);
-    setManualEmail("");
-  };
-
-  const renderLoginCapture = (options?: { compact?: boolean }) => (
-    <form
-      onSubmit={handleManualLogin}
-      className={`rounded-2xl border border-slate-800 bg-slate-900/40 shadow-inner shadow-black/20 ${
-        options?.compact ? "p-4" : "p-6"
-      }`}
-    >
-      <h2 className="text-lg font-semibold text-white">Enter work login email</h2>
-      <p className="mt-2 text-sm text-slate-400">We use this email to load your hierarchy scope from Supabase.</p>
-      <div className={`mt-4 flex flex-col gap-2 ${options?.compact ? "" : "sm:flex-row"}`}>
-        <input
-          type="email"
-          placeholder="you@take5.com"
-          value={manualEmail}
-          onChange={(event) => setManualEmail(event.target.value)}
-          className="w-full rounded-xl border border-slate-700 bg-slate-950/60 px-4 py-2 text-sm text-white outline-none focus:border-emerald-400"
-          required
-        />
-        <button
-          type="submit"
-          className="rounded-xl bg-emerald-500 px-4 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400"
-        >
-          Save & Load
-        </button>
-      </div>
-    </form>
-  );
-
   const renderStatusBanner = () => {
     if (!statusMessage) {
       return null;
@@ -804,6 +769,14 @@ export default function PulseCheckPage() {
     }
     return "Resolve your login to load shop context.";
   }, [shopMeta?.shop_number, hierarchy?.shop_number, hierarchy?.district_name, hierarchy?.region_name]);
+
+  if (!authChecked) {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+        <p className="text-sm text-slate-400">Checking your Pulse Check access…</p>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -877,12 +850,10 @@ export default function PulseCheckPage() {
             <div className="space-y-3 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-4 shadow-2xl shadow-black/50">
               <div>
                 <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
-                <h2 className="text-lg font-semibold text-white">Quick 3x5 entry</h2>
-                <p className="text-[11px] text-slate-400">Capture slot metrics without overtaking the dashboard.</p>
               </div>
 
-              {!loginEmail ? (
-                renderLoginCapture({ compact: true })
+              {needsLogin ? (
+                <LoginPrompt />
               ) : (
                 <div className="space-y-4">
                   {hierarchyError && (
@@ -953,7 +924,7 @@ export default function PulseCheckPage() {
                     </button>
                   </div>
 
-                  <RankingsPanel compact />
+                  <RankingsPanel compact href="/rankings/detail" />
                 </div>
               )}
             </div>
@@ -1058,18 +1029,18 @@ function MetricCard({
   );
 }
 
-function RankingsPanel({ compact = false }: { compact?: boolean }) {
+function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: string }) {
   const sample = [
     { label: "Cars leader", value: "Baton Rouge South", detail: "128 cars" },
     { label: "Sales leader", value: "Gulf Coast", detail: "$42K" },
     { label: "Mobil 1 leader", value: "#18 Uptown", detail: "46 units" },
   ];
 
-  return (
+  const body = (
     <section
-      className={`rounded-3xl border border-slate-900 bg-slate-950/70 shadow-inner shadow-black/30 ${
+      className={`rounded-3xl border border-slate-900 bg-slate-950/70 shadow-inner shadow-black/30 transition ${
         compact ? "p-3 text-[10px]" : "p-5"
-      }`}
+      } ${href ? "hover:border-emerald-500/40" : ""}`}
     >
       <h3 className={`${compact ? "text-base" : "text-lg"} font-semibold text-white`}>
         Rankings snapshot
@@ -1093,6 +1064,20 @@ function RankingsPanel({ compact = false }: { compact?: boolean }) {
       </ul>
     </section>
   );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
+        aria-label="Open detailed rankings"
+      >
+        {body}
+      </Link>
+    );
+  }
+
+  return body;
 }
 
 function ContestPanel() {
@@ -1295,5 +1280,19 @@ function StatusChip({ status, submittedLabel }: { status: SlotStatus; submittedL
     <span className="rounded-full bg-slate-800 px-3 py-1 text-[10px] font-semibold text-slate-200">
       Pending entry
     </span>
+  );
+}
+
+function LoginPrompt() {
+  return (
+    <div className="rounded-2xl border border-slate-700 bg-slate-900/60 p-4 text-center text-sm text-slate-300">
+      <p>Sign in to Pocket Manager5 to submit Pulse Check slots on the web.</p>
+      <Link
+        href="/login"
+        className="mt-3 inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+      >
+        Go to login
+      </Link>
+    </div>
   );
 }
