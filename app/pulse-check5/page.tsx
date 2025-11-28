@@ -760,16 +760,6 @@ export default function PulseCheckPage() {
   };
 
   const busy = loadingHierarchy || loadingSlots || loadingTotals || submitting;
-  const headerRecap = useMemo(() => {
-    if (shopMeta?.shop_number) {
-      return `Shop ${shopMeta.shop_number} • ${hierarchy?.district_name ?? "--"} • ${hierarchy?.region_name ?? "--"}`;
-    }
-    if (hierarchy?.shop_number) {
-      return `Shop ${hierarchy.shop_number} • ${hierarchy.district_name ?? "--"} • ${hierarchy.region_name ?? "--"}`;
-    }
-    return "Resolve your login to load shop context.";
-  }, [shopMeta?.shop_number, hierarchy?.shop_number, hierarchy?.district_name, hierarchy?.region_name]);
-
   if (!authChecked) {
     return (
       <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
@@ -794,6 +784,14 @@ export default function PulseCheckPage() {
                   <HierarchyStamp />
                 </div>
               </div>
+              <ShopMicroCard
+                scopeLabel={scope ?? "Resolve scope"}
+                hierarchy={hierarchy}
+                shopMeta={shopMeta}
+                submissionCount={submissionCount}
+                totalSlots={slotOrder.length}
+                loading={loadingSlots}
+              />
               <div className="flex flex-wrap items-start gap-4 text-[10px] text-slate-400">
                 <div className="flex flex-col gap-1 text-left">
                   <RetailPills />
@@ -810,38 +808,14 @@ export default function PulseCheckPage() {
                   <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
                 </div>
               </div>
-              <p className="text-[11px] font-semibold text-white/80">{headerRecap}</p>
             </header>
 
-            <section className="space-y-2 rounded-3xl border border-slate-900 bg-slate-950/60 p-2 text-[12px] shadow-inner shadow-black/30">
-              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(120px,0.4fr)] md:items-start">
-                <div>
-                  <p className="text-[9px] uppercase tracking-wide text-slate-500">Scope</p>
-                  <h2 className="text-base font-semibold text-white">{scope ?? "Unknown"}</h2>
-                  <p className="text-[11px] text-slate-400">
-                    {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-[9px] uppercase tracking-wide text-slate-500">Shop</p>
-                  <h2 className="text-base font-semibold text-white">
-                    {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
-                  </h2>
-                  <p className="text-[11px] text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
-                </div>
-                <div className="md:ml-auto md:w-full md:max-w-[180px]">
-                  <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} compact />
-                </div>
-              </div>
-              <MetricsGrid
-                dailyTotals={resolvedDailyTotals}
-                weeklyTotals={resolvedWeeklyTotals}
-                loading={rollupLoading}
-                viewLabel={eveningOnly ? "5-8 PM submitted slots" : "All-day performance"}
-              />
-            </section>
-
-            <DistrictSummaryPanel hierarchy={hierarchy} />
+            <MetricsGrid
+              dailyTotals={resolvedDailyTotals}
+              weeklyTotals={resolvedWeeklyTotals}
+              loading={rollupLoading}
+              viewLabel={eveningOnly ? "5-8 PM submitted slots" : "All-day performance"}
+            />
 
             <ContestPanel />
           </div>
@@ -935,37 +909,56 @@ export default function PulseCheckPage() {
   );
 }
 
-function ProgressOverview({
-  submitted,
-  total,
+function ShopMicroCard({
+  scopeLabel,
+  hierarchy,
+  shopMeta,
+  submissionCount,
+  totalSlots,
   loading,
-  compact = false,
 }: {
-  submitted: number;
-  total: number;
+  scopeLabel: string;
+  hierarchy: HierarchyRow | null;
+  shopMeta: ShopMeta | null;
+  submissionCount: number;
+  totalSlots: number;
   loading: boolean;
-  compact?: boolean;
 }) {
-  const percent = total === 0 ? 0 : Math.round((submitted / total) * 100);
-  const baseText = compact ? "text-[10px]" : "text-[12px]";
-  const containerClasses = compact
-    ? "rounded-2xl border border-slate-800 bg-slate-900/60 p-2"
-    : "rounded-2xl border border-slate-800 bg-slate-900/40 p-3";
-  const barHeight = compact ? "h-1.5" : "h-2";
+  const shopLabel = shopMeta?.shop_name
+    ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})`
+    : hierarchy?.shop_number
+    ? `Shop #${hierarchy.shop_number}`
+    : "Resolving shop…";
+
+  const locationLabel = [hierarchy?.district_name, hierarchy?.region_name]
+    .filter(Boolean)
+    .join(" • ") || "Update hierarchy mapping";
+
+  const percent = totalSlots === 0 ? 0 : Math.round((submissionCount / totalSlots) * 100);
 
   return (
-    <section className={`${containerClasses} ${baseText}`}>
-      <div className="flex items-center justify-between text-slate-300">
-        <span>Daily cadence</span>
-        <span className="font-semibold text-white">
-          {submitted}/{total}
-        </span>
+    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-[10px] text-slate-300">
+      <div className="flex-1 min-w-[180px]">
+        <p className="text-[8px] uppercase tracking-[0.35em] text-emerald-400">{scopeLabel}</p>
+        <p className="text-base font-semibold text-white">{shopLabel}</p>
+        <p className="text-[10px] text-slate-400">{locationLabel}</p>
       </div>
-      <div className={`mt-2 ${barHeight} w-full rounded-full bg-slate-800`}>
-        <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${loading ? 0 : percent}%` }} />
+      <div className="min-w-[140px] flex-1">
+        <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-slate-500">
+          <span>Daily cadence</span>
+          <span className="text-xs font-semibold text-white">
+            {submissionCount}/{totalSlots}
+          </span>
+        </div>
+        <div className="mt-1 h-1.5 w-full rounded-full bg-slate-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-all"
+            style={{ width: `${loading ? 0 : percent}%` }}
+          />
+        </div>
+        <p className="mt-1 text-[9px] text-slate-500">{percent}% of slots submitted</p>
       </div>
-      <p className="mt-1 text-[9px] uppercase tracking-wide text-slate-500">{percent}% of slots submitted</p>
-    </section>
+    </div>
   );
 }
 
@@ -1103,61 +1096,6 @@ function ContestPanel() {
   );
 }
 
-function DistrictSummaryPanel({ hierarchy }: { hierarchy: HierarchyRow | null }) {
-  const tiles = [
-    {
-      label: "Shops in district",
-      value: hierarchy?.shops_in_district ?? 0,
-      detail: "live hierarchy",
-    },
-    {
-      label: "Districts in region",
-      value: hierarchy?.districts_in_region ?? 0,
-      detail: hierarchy?.region_name ?? "--",
-    },
-    {
-      label: "Regions in division",
-      value: hierarchy?.regions_in_division ?? 0,
-      detail: hierarchy?.division_name ?? "--",
-    },
-  ];
-
-  const kpiHighlights = [
-    { name: "Cars", value: "--", note: "Pulse KPI" },
-    { name: "Big 4", value: "--", note: "Pulse KPI" },
-    { name: "Mobil 1", value: "--", note: "Pulse KPI" },
-  ];
-
-  return (
-    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-4 shadow-inner shadow-black/30">
-      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.25em] text-emerald-400">District summary</p>
-          <h3 className="text-lg font-semibold text-white">{hierarchy?.district_name ?? "Resolve district"}</h3>
-        </div>
-        <p className="text-[11px] text-slate-400">Auto-calculated from company_alignment view.</p>
-      </div>
-      <div className="mt-4 grid gap-3 sm:grid-cols-3 text-sm">
-        {tiles.map((tile) => (
-          <div key={tile.label} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-center">
-            <p className="text-[10px] uppercase tracking-wide text-slate-500">{tile.label}</p>
-            <p className="text-xl font-semibold text-white">{tile.value}</p>
-            <p className="text-[11px] text-slate-400">{tile.detail}</p>
-          </div>
-        ))}
-      </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-3 text-xs">
-        {kpiHighlights.map((item) => (
-          <div key={item.name} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-            <p className="uppercase tracking-wide text-slate-500">{item.name}</p>
-            <p className="text-lg font-semibold text-white">{item.value}</p>
-            <p className="text-slate-400">{item.note}</p>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
 
 function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
   return (
