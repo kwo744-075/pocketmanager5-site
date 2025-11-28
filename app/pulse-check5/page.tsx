@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
-import { HierarchyStamp } from "@/app/components/HierarchyStamp";
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
 
@@ -779,9 +777,21 @@ export default function PulseCheckPage() {
                   <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
                   <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
                 </div>
-                <div className="ml-auto flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
-                  <Image src="/window.svg" alt="Pulse Check" width={90} height={28} priority />
-                  <HierarchyStamp />
+                <div className="ml-auto flex flex-col items-end gap-2 text-[10px] text-slate-400">
+                  <RetailPills />
+                  <div className="flex flex-wrap items-center justify-end gap-2">
+                    <button
+                      onClick={refreshAll}
+                      disabled={!shopMeta?.id || busy}
+                      className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                    >
+                      Refresh data
+                    </button>
+                    <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[9px] uppercase tracking-wide text-slate-400">
+                      <span>5-8 only</span>
+                      <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
+                    </div>
+                  </div>
                 </div>
               </div>
               <ShopMicroCard
@@ -792,22 +802,6 @@ export default function PulseCheckPage() {
                 totalSlots={slotOrder.length}
                 loading={loadingSlots}
               />
-              <div className="flex flex-wrap items-start gap-4 text-[10px] text-slate-400">
-                <div className="flex flex-col gap-1 text-left">
-                  <RetailPills />
-                  <button
-                    onClick={refreshAll}
-                    disabled={!shopMeta?.id || busy}
-                    className="inline-flex w-fit items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
-                  >
-                    Refresh data
-                  </button>
-                </div>
-                <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[9px] uppercase tracking-wide text-slate-400">
-                  <span>5-8 only</span>
-                  <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
-                </div>
-              </div>
             </header>
 
             <MetricsGrid
