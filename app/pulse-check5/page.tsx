@@ -465,7 +465,7 @@ export default function PulseCheckPage() {
     const weekStart = getWeekStartISO();
 
     try {
-      const [dailyResponse, weeklyResponse] = await Promise.all([
+      const [dailyResponse, weeklyResponse, weeklyEveningResponse] = await Promise.all([
         pulseSupabase
           .from("shop_daily_totals")
           .select(
@@ -476,6 +476,16 @@ export default function PulseCheckPage() {
           .maybeSingle(),
         pulseSupabase
           .from("shop_wtd_totals")
+          .select(
+            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
+          )
+          .eq("shop_id", shopId)
+          .eq("week_start", weekStart)
+          .order("current_date", { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        pulseSupabase
+          .from("shop_wtd_evening_totals")
           .select(
             "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
           )
@@ -797,59 +807,59 @@ export default function PulseCheckPage() {
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-6">
-            <header className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-4 shadow-2xl shadow-black/40">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3">
-                  <div>
-                    <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                    <h1 className="text-xl font-semibold text-white">Live KPI Board</h1>
-                  </div>
+      <div className="mx-auto max-w-5xl px-3 py-6">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+          <div className="space-y-4">
+            <header className="space-y-3 rounded-3xl border border-slate-900/70 bg-slate-950/70 p-3 shadow-2xl shadow-black/40">
+              <div className="flex flex-wrap items-center gap-3">
+                <div>
+                  <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                  <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
+                </div>
+                <div className="ml-auto flex flex-wrap items-center gap-2 text-[10px] text-slate-400">
+                  <Image src="/window.svg" alt="Pulse Check" width={90} height={28} priority />
+                  <HierarchyStamp />
+                </div>
+              </div>
+              <div className="flex flex-wrap items-start gap-4 text-[10px] text-slate-400">
+                <div className="flex flex-col gap-1 text-left">
+                  <RetailPills />
                   <button
                     onClick={refreshAll}
                     disabled={!shopMeta?.id || busy}
-                    className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                    className="inline-flex w-fit items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
                   >
                     Refresh data
                   </button>
                 </div>
-                <div className="flex flex-1 justify-center">
-                  <Image src="/window.svg" alt="Pulse Check" width={120} height={32} priority />
-                </div>
-                <div className="flex flex-wrap items-center justify-end gap-3 text-[11px] text-slate-400">
-                  <RetailPills />
-                  <HierarchyStamp />
-                </div>
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-[11px] text-slate-300">
-                <p className="font-semibold text-white/80">{headerRecap}</p>
-                <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[10px] uppercase tracking-wide text-slate-400">
+                <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[9px] uppercase tracking-wide text-slate-400">
                   <span>5-8 only</span>
                   <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
                 </div>
               </div>
+              <p className="text-[11px] font-semibold text-white/80">{headerRecap}</p>
             </header>
 
-            <section className="space-y-3 rounded-3xl border border-slate-900 bg-slate-950/60 p-3 text-[13px] shadow-inner shadow-black/30">
-              <div className="grid gap-3 md:grid-cols-2">
+            <section className="space-y-2 rounded-3xl border border-slate-900 bg-slate-950/60 p-2 text-[12px] shadow-inner shadow-black/30">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(120px,0.4fr)] md:items-start">
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Scope</p>
-                  <h2 className="text-lg font-semibold text-white">{scope ?? "Unknown"}</h2>
-                  <p className="text-xs text-slate-400">
+                  <p className="text-[9px] uppercase tracking-wide text-slate-500">Scope</p>
+                  <h2 className="text-base font-semibold text-white">{scope ?? "Unknown"}</h2>
+                  <p className="text-[11px] text-slate-400">
                     {hierarchy?.district_name} • {hierarchy?.region_name} • {hierarchy?.division_name}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] uppercase tracking-wide text-slate-500">Shop</p>
-                  <h2 className="text-lg font-semibold text-white">
+                  <p className="text-[9px] uppercase tracking-wide text-slate-500">Shop</p>
+                  <h2 className="text-base font-semibold text-white">
                     {shopMeta?.shop_name ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})` : "Resolving shop…"}
                   </h2>
-                  <p className="text-xs text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
+                  <p className="text-[11px] text-slate-400">{submissionCount} of {slotOrder.length} slots submitted today</p>
+                </div>
+                <div className="md:ml-auto md:w-full md:max-w-[180px]">
+                  <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} compact />
                 </div>
               </div>
-              <ProgressOverview submitted={submissionCount} total={slotOrder.length} loading={loadingSlots} />
               <MetricsGrid
                 dailyTotals={resolvedDailyTotals}
                 weeklyTotals={resolvedWeeklyTotals}
@@ -860,13 +870,10 @@ export default function PulseCheckPage() {
 
             <DistrictSummaryPanel hierarchy={hierarchy} />
 
-            <div className="grid gap-4 md:grid-cols-2">
-              <RankingsPanel />
-              <ContestPanel />
-            </div>
+            <ContestPanel />
           </div>
 
-          <aside className="w-full max-w-[18rem] justify-self-center">
+          <aside className="w-full max-w-[15rem] justify-self-center">
             <div className="space-y-3 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-4 shadow-2xl shadow-black/50">
               <div>
                 <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
@@ -927,11 +934,11 @@ export default function PulseCheckPage() {
                     compact
                   />
 
-                  <div className="flex flex-col gap-2">
+                  <div className="flex flex-col gap-1.5">
                     <button
                       type="button"
                       onClick={handleReset}
-                      className="rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-400"
+                      className="rounded-xl border border-slate-600 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-400"
                       disabled={busy}
                     >
                       Reset form
@@ -939,12 +946,14 @@ export default function PulseCheckPage() {
                     <button
                       type="button"
                       onClick={handleSubmit}
-                      className="rounded-xl bg-emerald-500 px-3 py-2 text-sm font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                      className="rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
                       disabled={busy || !shopMeta?.id || currentSlotLocked || (!hasDirtyFields && submissionCount === 0)}
                     >
                       {submitting ? "Saving…" : "Submit check-in"}
                     </button>
                   </div>
+
+                  <RankingsPanel compact />
                 </div>
               )}
             </div>
@@ -955,19 +964,36 @@ export default function PulseCheckPage() {
   );
 }
 
-function ProgressOverview({ submitted, total, loading }: { submitted: number; total: number; loading: boolean }) {
-  const percent = Math.round((submitted / total) * 100);
+function ProgressOverview({
+  submitted,
+  total,
+  loading,
+  compact = false,
+}: {
+  submitted: number;
+  total: number;
+  loading: boolean;
+  compact?: boolean;
+}) {
+  const percent = total === 0 ? 0 : Math.round((submitted / total) * 100);
+  const baseText = compact ? "text-[10px]" : "text-[12px]";
+  const containerClasses = compact
+    ? "rounded-2xl border border-slate-800 bg-slate-900/60 p-2"
+    : "rounded-2xl border border-slate-800 bg-slate-900/40 p-3";
+  const barHeight = compact ? "h-1.5" : "h-2";
+
   return (
-    <section className="rounded-2xl border border-slate-800 bg-slate-900/40 p-3 text-[12px]">
+    <section className={`${containerClasses} ${baseText}`}>
       <div className="flex items-center justify-between text-slate-300">
-        <span>Submission progress</span>
-        <span>
-          {submitted}/{total} • {percent}%
+        <span>Daily cadence</span>
+        <span className="font-semibold text-white">
+          {submitted}/{total}
         </span>
       </div>
-      <div className="mt-2 h-2 w-full rounded-full bg-slate-800">
+      <div className={`mt-2 ${barHeight} w-full rounded-full bg-slate-800`}>
         <div className="h-full rounded-full bg-emerald-500 transition-all" style={{ width: `${loading ? 0 : percent}%` }} />
       </div>
+      <p className="mt-1 text-[9px] uppercase tracking-wide text-slate-500">{percent}% of slots submitted</p>
     </section>
   );
 }
@@ -984,13 +1010,13 @@ function MetricsGrid({
   viewLabel: string;
 }) {
   return (
-    <section className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/40 p-2 text-center text-[11px]">
+    <section className="space-y-1.5 rounded-2xl border border-slate-800 bg-slate-900/40 p-1.5 text-center text-[10px]">
       <div className="space-y-0.5">
-        <p className="text-slate-300 font-semibold">Performance rollup</p>
-        {loading && <p className="text-xs text-slate-500">Loading totals…</p>}
-        <p className="text-xs text-slate-500">{viewLabel}</p>
+        <p className="text-slate-300 text-sm font-semibold">Performance rollup</p>
+        {loading && <p className="text-[10px] text-slate-500">Loading totals…</p>}
+        <p className="text-[10px] text-slate-500">{viewLabel}</p>
       </div>
-      <div className="mx-auto grid max-w-2xl gap-2 sm:grid-cols-2">
+      <div className="mx-auto grid max-w-2xl gap-1.5 sm:grid-cols-2">
         {METRIC_FIELDS.map((field) => (
           <MetricCard
             key={field.key}
@@ -1021,11 +1047,11 @@ function MetricCard({
   };
 
   return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-2 text-center">
-      <p className="text-[9px] uppercase tracking-wide text-slate-500">{field.label}</p>
-      <p className="mt-1 text-lg font-semibold text-white">{format(dailyValue)}</p>
-      <p className="text-[10px] text-slate-400">Daily</p>
-      <p className="mt-1 text-[11px] text-slate-300">
+    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-1.5 text-center">
+      <p className="text-[8px] uppercase tracking-wide text-slate-500">{field.label}</p>
+      <p className="mt-1 text-base font-semibold text-white">{format(dailyValue)}</p>
+      <p className="text-[9px] text-slate-400">Daily</p>
+      <p className="mt-1 text-[10px] text-slate-300">
         <span className="font-semibold">WTD:</span> {format(weeklyValue)}
       </p>
     </div>
@@ -1042,16 +1068,16 @@ function RankingsPanel({ compact = false }: { compact?: boolean }) {
   return (
     <section
       className={`rounded-3xl border border-slate-900 bg-slate-950/70 shadow-inner shadow-black/30 ${
-        compact ? "p-4 text-[11px]" : "p-5"
+        compact ? "p-3 text-[10px]" : "p-5"
       }`}
     >
       <h3 className={`${compact ? "text-base" : "text-lg"} font-semibold text-white`}>
         Rankings snapshot
       </h3>
-      <p className={`${compact ? "text-[10px]" : "text-xs"} text-slate-400`}>
+      <p className={`${compact ? "text-[9px]" : "text-xs"} text-slate-400`}>
         Live data coming soon – placeholder Pulse KPI leaders.
       </p>
-      <ul className="mt-4 space-y-2 text-sm">
+      <ul className={`mt-3 space-y-1.5 ${compact ? "text-[11px]" : "text-sm"}`}>
         {sample.map((row) => (
           <li
             key={row.label}
@@ -1189,28 +1215,34 @@ function SlotForm({
     ? new Date(slotState.submittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
     : null;
   const unlockLabel = SLOT_UNLOCK_RULES[slotKey]?.label ?? definition.label;
+  const subLabelClass = compact ? "text-[9px]" : "text-[10px]";
+  const headingSize = compact ? "text-sm" : "text-base";
+  const temperatureText = compact ? "text-[9px]" : "text-[10px]";
+  const inputText = compact ? "text-xs" : "text-sm";
+  const spacing = compact ? "space-y-2 p-2" : "space-y-4 p-3";
+  const gridGap = compact ? "gap-1.5" : "gap-2";
 
   return (
-    <div className={`${compact ? "space-y-3" : "space-y-4"} rounded-2xl border border-slate-800 bg-slate-900/70 p-3`}>
+    <div className={`${spacing} rounded-2xl border border-slate-800 bg-slate-900/70`}>
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p className="text-[10px] uppercase tracking-wide text-slate-400">{definition.description}</p>
-          <h3 className="text-base font-semibold text-white">{definition.label}</h3>
+          <p className={`${subLabelClass} uppercase tracking-wide text-slate-400`}>{definition.description}</p>
+          <h3 className={`${headingSize} font-semibold text-white`}>{definition.label}</h3>
         </div>
         <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
       </div>
       {locked && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-200">
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200">
           Slot locked until {unlockLabel}. Check back later.
         </div>
       )}
-      <div className="flex flex-wrap gap-1.5 text-[10px]">
+      <div className={`flex flex-wrap gap-1 ${temperatureText}`}>
         {temperatureChips.map((chip) => (
           <button
             key={chip.value}
             type="button"
             onClick={() => onTemperatureChange(slotKey, chip.value)}
-            className={`rounded-full px-3 py-1 font-semibold transition ${chip.accent} ${
+            className={`rounded-full px-2.5 py-0.5 font-semibold transition ${chip.accent} ${
               slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
             }`}
             disabled={loading || locked}
@@ -1219,11 +1251,11 @@ function SlotForm({
           </button>
         ))}
       </div>
-      <div className="grid gap-2 sm:grid-cols-2">
+      <div className={`grid ${gridGap} sm:grid-cols-2`}>
         {METRIC_FIELDS.map((field) => (
           <label
             key={field.key}
-            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-2 text-[10px] font-semibold uppercase tracking-wide text-slate-400"
+            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400"
           >
             {field.label}
             <input
@@ -1231,7 +1263,7 @@ function SlotForm({
               inputMode="decimal"
               value={slotState.metrics[field.key]}
               onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-              className="mt-1 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 text-sm font-semibold text-white outline-none focus:border-emerald-400"
+              className={`mt-1 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 ${inputText} font-semibold text-white outline-none focus:border-emerald-400`}
               placeholder="0"
               disabled={loading || locked}
             />
@@ -1245,7 +1277,7 @@ function SlotForm({
 function StatusChip({ status, submittedLabel }: { status: SlotStatus; submittedLabel: string | null }) {
   if (status === "submitted") {
     return (
-      <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[11px] font-semibold text-emerald-200">
+      <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[10px] font-semibold text-emerald-200">
         Submitted {submittedLabel ? `@ ${submittedLabel}` : ""}
       </span>
     );
@@ -1253,14 +1285,14 @@ function StatusChip({ status, submittedLabel }: { status: SlotStatus; submittedL
 
   if (status === "draft") {
     return (
-      <span className="rounded-full bg-amber-400/20 px-3 py-1 text-[11px] font-semibold text-amber-200">
+      <span className="rounded-full bg-amber-400/20 px-3 py-1 text-[10px] font-semibold text-amber-200">
         Draft saved
       </span>
     );
   }
 
   return (
-    <span className="rounded-full bg-slate-700/60 px-3 py-1 text-[11px] font-semibold text-slate-200">
+    <span className="rounded-full bg-slate-800 px-3 py-1 text-[10px] font-semibold text-slate-200">
       Pending entry
     </span>
   );
