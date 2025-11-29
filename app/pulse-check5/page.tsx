@@ -5,12 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { RetailPills } from "@/app/components/RetailPills";
-import {
-  fetchActiveContests,
-  fetchContestById,
-  subscribeToContestStream,
-  type ContestSummary,
-} from "@/lib/contests";
+import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
+import { fetchRetailContext } from "@/lib/retailCalendar";
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
 
@@ -81,6 +77,8 @@ type SlotState = {
 type SlotStateMap = Record<TimeSlotKey, SlotState>;
 
 type CheckInRow = {
+  shop_id?: string | null;
+  check_in_date?: string | null;
   time_slot: string | null;
   cars: number | null;
   sales: number | null;
@@ -151,6 +149,19 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
 
 const numberFormatter = new Intl.NumberFormat("en-US");
 
+const formatDecimal = (value: number | null) => {
+  if (value === null) return "--";
+  return value.toFixed(1);
+};
+
+const formatPercent = (value: number | null) => {
+  if (value === null || Number.isNaN(value)) {
+    return "--";
+  }
+  return `${value.toFixed(1)}%`;
+};
+
+
 const createEmptySlotState = (): SlotState => {
   const metrics = METRIC_FIELDS.reduce<Record<MetricKey, string>>((acc, field) => {
     acc[field.key] = "";
@@ -218,6 +229,45 @@ const toNumberValue = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+
+const buildRetailTimestampLabel = (targetDate: Date = new Date()): string => {
+  const date = new Date(targetDate);
+  const fiscalStartMonth = 1; // February (0-based index)
+  const fiscalStartDay = 1;
+  let fiscalYear = date.getFullYear();
+  const fiscalStart = new Date(fiscalYear, fiscalStartMonth, fiscalStartDay);
+  if (date < fiscalStart) {
+    fiscalYear -= 1;
+  }
+  const fiscalYearStart = new Date(fiscalYear, fiscalStartMonth, fiscalStartDay);
+  const fiscalStartSunday = new Date(fiscalYearStart);
+  const startDay = fiscalYearStart.getDay();
+  if (startDay !== 0) {
+    fiscalStartSunday.setDate(fiscalYearStart.getDate() - startDay);
+  }
+  const msPerDay = 86_400_000;
+  const weeksSinceStart = Math.floor((date.getTime() - fiscalStartSunday.getTime()) / msPerDay / 7);
+  const periodPattern = [5, 4, 4];
+  let remainingWeeks = weeksSinceStart + 1;
+  let period = 1;
+  let quarter = 1;
+  let weekOfPeriod = 1;
+  for (let p = 1; p <= 12; p += 1) {
+    const weeksInPeriod = periodPattern[(p - 1) % periodPattern.length];
+    if (remainingWeeks <= weeksInPeriod) {
+      period = p;
+      quarter = Math.floor((p - 1) / 3) + 1;
+      weekOfPeriod = Math.max(remainingWeeks, 1);
+      break;
+    }
+    remainingWeeks -= weeksInPeriod;
+  }
+  const month = (date.getMonth() + 1).toString().padStart(2, "0");
+  const day = date.getDate().toString().padStart(2, "0");
+  const formattedDate = `${month}/${day}/${date.getFullYear()}`;
+  return `Q${quarter}-P${period}-W${weekOfPeriod} ${formattedDate}`;
+};
+
 const todayISO = () => new Date().toISOString().split("T")[0];
 
 const getWeekStartISO = () => {
@@ -248,7 +298,14 @@ export default function PulseCheckPage() {
   const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
   const [eveningOnly, setEveningOnly] = useState(false);
   const [clock, setClock] = useState(() => Date.now());
+  const [retailLabel, setRetailLabel] = useState<string>(() => buildRetailTimestampLabel());
   const needsLogin = authChecked && !loginEmail;
+  const panelBaseClasses =
+    "relative overflow-hidden rounded-[30px] border border-white/5 bg-[#040c1c]/95 p-5 shadow-[0_30px_80px_rgba(1,6,20,0.8)] backdrop-blur";
+  const emeraldPanelClasses =
+    "relative overflow-hidden rounded-[30px] border border-emerald-500/30 bg-[#040c1c]/95 p-4 shadow-[0_30px_80px_rgba(1,6,20,0.8)] backdrop-blur";
+  const panelOverlayClasses =
+    "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.2),_transparent_45%)]";
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -406,6 +463,38 @@ export default function PulseCheckPage() {
     };
   }, [hierarchy]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const run = async () => {
+      try {
+        const context = await fetchRetailContext();
+        if (cancelled) {
+          return;
+        }
+
+        if (context) {
+          setRetailLabel(
+            `${context.quarterLabel}-${context.periodLabel}-${context.weekLabel} ${context.dateLabel}`
+          );
+        } else {
+          setRetailLabel(buildRetailTimestampLabel());
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Pulse Check retail context error", err);
+          setRetailLabel(buildRetailTimestampLabel());
+        }
+      }
+    };
+
+    run();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const hydrateSlotsFromRows = useCallback((rows: CheckInRow[]): SlotStateMap => {
     const next = buildInitialSlots();
 
@@ -556,7 +645,67 @@ export default function PulseCheckPage() {
     refreshAll();
   }, [shopMeta?.id, refreshAll]);
 
+  useEffect(() => {
+    if (!shopMeta?.id) {
+      return;
+    }
+
+    let refreshToken: number | null = null;
+    const scheduleRefresh = () => {
+      if (typeof window === "undefined") {
+        refreshAll();
+        return;
+      }
+      if (refreshToken) {
+        return;
+      }
+      refreshToken = window.setTimeout(() => {
+        refreshToken = null;
+        refreshAll();
+      }, 400);
+    };
+
+    const channel = pulseSupabase
+      .channel(`pulse-check-ins:${shopMeta.id}`)
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "check_ins", filter: `shop_id=eq.${shopMeta.id}` },
+        (payload) => {
+          const record = (payload.new ?? payload.old) as CheckInRow | null;
+          if (!record) {
+            return;
+          }
+          if (record.time_slot && record.shop_id === shopMeta.id) {
+            // Only refresh for today's data to avoid unnecessary churn.
+            if (record.check_in_date ? record.check_in_date === todayISO() : true) {
+              scheduleRefresh();
+            }
+          } else {
+            scheduleRefresh();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      if (refreshToken) {
+        window.clearTimeout(refreshToken);
+      }
+      pulseSupabase.removeChannel(channel);
+    };
+  }, [shopMeta?.id, refreshAll]);
+
   const scope = hierarchy?.scope_level?.toUpperCase() as ScopeLevel | undefined;
+  const resolvedShopNumber = useMemo(() => {
+    if (typeof shopMeta?.shop_number === "number" && Number.isFinite(shopMeta.shop_number)) {
+      return shopMeta.shop_number;
+    }
+    if (hierarchy?.shop_number) {
+      const numeric = Number(hierarchy.shop_number);
+      return Number.isFinite(numeric) ? numeric : null;
+    }
+    return null;
+  }, [shopMeta?.shop_number, hierarchy?.shop_number]);
   const submissionCount = useMemo(() => {
     return slotOrder.filter((slot) => slots[slot].status === "submitted").length;
   }, [slots]);
@@ -614,6 +763,41 @@ export default function PulseCheckPage() {
   );
 
   const rollupLoading = loadingTotals || (eveningOnly && loadingSlots);
+  const viewLabel = eveningOnly ? "5-8 PM submitted slots" : "All-day performance";
+  const bannerTitle = shopMeta?.shop_name
+    ? resolvedShopNumber
+      ? `${shopMeta.shop_name} (#${resolvedShopNumber})`
+      : shopMeta.shop_name
+    : resolvedShopNumber
+    ? `Shop #${resolvedShopNumber}`
+    : "Pulse Check rollup";
+  const dailySummary = `${numberFormatter.format(resolvedDailyTotals.cars)} cars today • ${currencyFormatter.format(
+    resolvedDailyTotals.sales
+  )} sales`;
+  const bannerSubtitle = [retailLabel, viewLabel, dailySummary].filter(Boolean).join(" • ");
+  const bannerError = hierarchyError || (!shopMeta?.id ? "Resolve your shop to load live totals." : undefined);
+  const bannerMetrics = useMemo<BannerMetric[]>(() => {
+    const daily = resolvedDailyTotals;
+    const weekly = resolvedWeeklyTotals;
+    const dailyAro = daily.cars > 0 ? daily.sales / daily.cars : null;
+    const weeklyAro = weekly.cars > 0 ? weekly.sales / weekly.cars : null;
+    const mix = (part: number, total: number) => (total > 0 ? (part / total) * 100 : null);
+
+    return [
+      { label: "Cars today", value: numberFormatter.format(daily.cars) },
+      { label: "Sales today", value: currencyFormatter.format(daily.sales) },
+      { label: "ARO today", value: dailyAro === null ? "--" : `$${formatDecimal(dailyAro)}` },
+      { label: "Donations today", value: currencyFormatter.format(daily.donations) },
+      { label: "Cars WTD", value: numberFormatter.format(weekly.cars) },
+      { label: "Sales WTD", value: currencyFormatter.format(weekly.sales) },
+      { label: "ARO WTD", value: weeklyAro === null ? "--" : `$${formatDecimal(weeklyAro)}` },
+      { label: "Donations WTD", value: currencyFormatter.format(weekly.donations) },
+      { label: "Big 4 mix", value: formatPercent(mix(weekly.big4, weekly.cars)) },
+      { label: "Coolants mix", value: formatPercent(mix(weekly.coolants, weekly.cars)) },
+      { label: "Diffs mix", value: formatPercent(mix(weekly.diffs, weekly.cars)) },
+      { label: "Mobil 1 mix", value: formatPercent(mix(weekly.mobil1, weekly.cars)) },
+    ];
+  }, [resolvedDailyTotals, resolvedWeeklyTotals]);
 
   const slotChoices = slotOrder;
 
@@ -777,15 +961,25 @@ export default function PulseCheckPage() {
       <div className="mx-auto max-w-5xl px-3 py-6">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="space-y-4">
-            <header className="space-y-3 rounded-3xl border border-slate-900/70 bg-slate-950/70 p-3 shadow-2xl shadow-black/40">
-              <div className="flex flex-wrap items-center gap-3">
-                <div>
-                  <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                  <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
+            <header className={panelBaseClasses}>
+              <div className={panelOverlayClasses} />
+              <div className="relative space-y-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div>
+                    <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                    <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
+                  </div>
+                  <Link
+                    href="/contests"
+                    className="ml-auto inline-flex items-center rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
+                  >
+                    Contest portal →
+                  </Link>
                 </div>
-                <div className="ml-auto flex flex-col items-end gap-2 text-[10px] text-slate-400">
+
+                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950/50 px-3 py-2 text-[10px] text-slate-300">
                   <RetailPills />
-                  <div className="flex flex-wrap items-center justify-end gap-2">
+                  <div className="ml-auto flex flex-wrap items-center gap-2">
                     <button
                       onClick={refreshAll}
                       disabled={!shopMeta?.id || busy}
@@ -793,114 +987,117 @@ export default function PulseCheckPage() {
                     >
                       Refresh data
                     </button>
-                    <div className="flex items-center gap-2 rounded-full border border-slate-800/70 bg-slate-900/60 px-3 py-1 text-[9px] uppercase tracking-wide text-slate-400">
-                      <span>5-8 only</span>
-                      <ToggleSwitch checked={eveningOnly} onChange={setEveningOnly} />
-                    </div>
                   </div>
                 </div>
+
+                <ShopMicroCard
+                  scopeLabel={scope ?? "Resolve scope"}
+                  hierarchy={hierarchy}
+                  shopMeta={shopMeta}
+                  submissionCount={submissionCount}
+                  totalSlots={slotOrder.length}
+                  loading={loadingSlots}
+                  compact
+                  viewLabel={viewLabel}
+                  eveningOnly={eveningOnly}
+                  onViewModeChange={setEveningOnly}
+                />
               </div>
-              <ShopMicroCard
-                scopeLabel={scope ?? "Resolve scope"}
-                hierarchy={hierarchy}
-                shopMeta={shopMeta}
-                submissionCount={submissionCount}
-                totalSlots={slotOrder.length}
-                loading={loadingSlots}
-              />
             </header>
 
-            <MetricsGrid
-              dailyTotals={resolvedDailyTotals}
-              weeklyTotals={resolvedWeeklyTotals}
+            <ShopPulseBanner
+              title={bannerTitle}
+              subtitle={bannerSubtitle}
+              metrics={bannerMetrics}
               loading={rollupLoading}
-              viewLabel={eveningOnly ? "5-8 PM submitted slots" : "All-day performance"}
+              error={bannerError}
             />
-
-            <ContestPanel />
           </div>
 
           <aside className="w-full max-w-[15rem] justify-self-center">
-            <div className="space-y-3 rounded-3xl border border-emerald-700/30 bg-slate-950/90 p-4 shadow-2xl shadow-black/50">
-              <div>
-                <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
-              </div>
-
-              {needsLogin ? (
-                <LoginPrompt />
-              ) : (
-                <div className="space-y-4">
-                  {hierarchyError && (
-                    <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-3 py-2 text-xs text-rose-100">
-                      {hierarchyError}
-                    </div>
-                  )}
-                  {renderStatusBanner()}
-
-                  <div className="space-y-2">
-                    <p className="text-[10px] uppercase tracking-wide text-slate-400">Select slot</p>
-                    <div className="grid grid-cols-2 gap-1">
-                      {slotChoices.map((slotKey) => {
-                        const unlocked = slotUnlockedMap[slotKey];
-                        return (
-                        <button
-                          key={slotKey}
-                          type="button"
-                          onClick={() => {
-                              if (unlocked) {
-                              setActiveSlot(slotKey);
-                            }
-                          }}
-                          className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                            currentSlotKey === slotKey
-                              ? "bg-emerald-500 text-emerald-900"
-                                : unlocked
-                                ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-                                : "bg-slate-900/60 text-slate-500"
-                          }`}
-                          disabled={loadingSlots || !unlocked}
-                          title={unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`}
-                        >
-                          {SLOT_DEFINITIONS[slotKey].label}
-                        </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <SlotForm
-                    slotKey={currentSlotKey}
-                    slotState={currentSlotState}
-                    definition={currentDefinition}
-                    onMetricChange={updateMetric}
-                    onTemperatureChange={updateTemperature}
-                    loading={loadingSlots}
-                    locked={currentSlotLocked}
-                    compact
-                  />
-
-                  <div className="flex flex-col gap-1.5">
-                    <button
-                      type="button"
-                      onClick={handleReset}
-                      className="rounded-xl border border-slate-600 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-400"
-                      disabled={busy}
-                    >
-                      Reset form
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSubmit}
-                      className="rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
-                      disabled={busy || !shopMeta?.id || currentSlotLocked || (!hasDirtyFields && submissionCount === 0)}
-                    >
-                      {submitting ? "Saving…" : "Submit check-in"}
-                    </button>
-                  </div>
-
-                  <RankingsPanel compact href="/rankings/detail" />
+            <div className={emeraldPanelClasses}>
+              <div className={panelOverlayClasses} />
+              <div className="relative space-y-3">
+                <div>
+                  <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
                 </div>
-              )}
+
+                {needsLogin ? (
+                  <LoginPrompt />
+                ) : (
+                  <div className="space-y-4">
+                    {hierarchyError && (
+                      <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-3 py-2 text-xs text-rose-100">
+                        {hierarchyError}
+                      </div>
+                    )}
+                    {renderStatusBanner()}
+
+                    <div className="space-y-2">
+                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Select slot</p>
+                      <div className="grid grid-cols-2 gap-1">
+                        {slotChoices.map((slotKey) => {
+                          const unlocked = slotUnlockedMap[slotKey];
+                          return (
+                          <button
+                            key={slotKey}
+                            type="button"
+                            onClick={() => {
+                                if (unlocked) {
+                                setActiveSlot(slotKey);
+                              }
+                            }}
+                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                              currentSlotKey === slotKey
+                                ? "bg-emerald-500 text-emerald-900"
+                                  : unlocked
+                                  ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
+                                  : "bg-slate-900/60 text-slate-500"
+                            }`}
+                            disabled={loadingSlots || !unlocked}
+                            title={unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`}
+                          >
+                            {SLOT_DEFINITIONS[slotKey].label}
+                          </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    <SlotForm
+                      slotKey={currentSlotKey}
+                      slotState={currentSlotState}
+                      definition={currentDefinition}
+                      onMetricChange={updateMetric}
+                      onTemperatureChange={updateTemperature}
+                      loading={loadingSlots}
+                      locked={currentSlotLocked}
+                      compact
+                    />
+
+                    <div className="flex flex-col gap-1.5">
+                      <button
+                        type="button"
+                        onClick={handleReset}
+                        className="rounded-xl border border-slate-600 px-2.5 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-slate-400"
+                        disabled={busy}
+                      >
+                        Reset form
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSubmit}
+                        className="rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                        disabled={busy || !shopMeta?.id || currentSlotLocked || (!hasDirtyFields && submissionCount === 0)}
+                      >
+                        {submitting ? "Saving…" : "Submit check-in"}
+                      </button>
+                    </div>
+
+                    <RankingsPanel compact href="/rankings/detail" />
+                  </div>
+                )}
+              </div>
             </div>
           </aside>
         </div>
@@ -916,6 +1113,10 @@ function ShopMicroCard({
   submissionCount,
   totalSlots,
   loading,
+  compact = false,
+  viewLabel,
+  eveningOnly,
+  onViewModeChange,
 }: {
   scopeLabel: string;
   hierarchy: HierarchyRow | null;
@@ -923,6 +1124,10 @@ function ShopMicroCard({
   submissionCount: number;
   totalSlots: number;
   loading: boolean;
+  compact?: boolean;
+  viewLabel: string;
+  eveningOnly: boolean;
+  onViewModeChange: (value: boolean) => void;
 }) {
   const shopLabel = shopMeta?.shop_name
     ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})`
@@ -936,88 +1141,51 @@ function ShopMicroCard({
 
   const percent = totalSlots === 0 ? 0 : Math.round((submissionCount / totalSlots) * 100);
 
+  const basePadding = compact ? "p-2" : "p-3";
+  const containerClass = `flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f1f3c]/80 via-[#07142d]/85 to-[#020914]/95 shadow-[0_15px_35px_rgba(1,6,20,0.7)] ${basePadding}`;
+  const leftBlockClass = compact ? "flex-1 min-w-[160px] text-[9px] text-slate-400" : "flex-1 min-w-[220px] text-[10px] text-slate-400";
+  const cadenceBlockClass = compact ? "min-w-[140px] flex-1 text-[9px]" : "min-w-[180px] flex-1 text-[10px]";
+  const scopeTextClass = compact
+    ? "text-[8px] uppercase tracking-[0.35em] text-emerald-400"
+    : "text-[9px] uppercase tracking-[0.35em] text-emerald-400";
+  const shopNameClass = compact ? "text-base font-semibold text-white" : "text-lg font-semibold text-white";
+  const viewBlockClass = compact
+    ? "min-w-[150px] flex items-center gap-2 rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-1 text-[9px] text-slate-200"
+    : "min-w-[200px] flex items-center gap-2 rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-1.5 text-[10px] text-slate-200";
+
   return (
-    <div className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-[10px] text-slate-300">
-      <div className="flex-1 min-w-[180px]">
-        <p className="text-[8px] uppercase tracking-[0.35em] text-emerald-400">{scopeLabel}</p>
-        <p className="text-base font-semibold text-white">{shopLabel}</p>
-        <p className="text-[10px] text-slate-400">{locationLabel}</p>
+    <div className={containerClass}>
+      <div className={leftBlockClass}>
+        <p className={scopeTextClass}>{scopeLabel}</p>
+        <p className={shopNameClass}>{shopLabel}</p>
+        <p>{locationLabel}</p>
       </div>
-      <div className="min-w-[140px] flex-1">
-        <div className="flex items-center justify-between text-[9px] uppercase tracking-wide text-slate-500">
+
+      <div className={viewBlockClass}>
+        <div className="flex flex-col">
+          <span className="text-[8px] uppercase tracking-[0.35em] text-slate-500">View mode</span>
+          <span className="text-xs font-semibold text-slate-100">{viewLabel}</span>
+        </div>
+        <ToggleSwitch checked={eveningOnly} onChange={onViewModeChange} />
+      </div>
+
+      <div className={`${cadenceBlockClass} text-slate-400`}>
+        <div className="flex items-center justify-between text-[9px] uppercase tracking-wide">
           <span>Daily cadence</span>
           <span className="text-xs font-semibold text-white">
             {submissionCount}/{totalSlots}
           </span>
         </div>
-        <div className="mt-1 h-1.5 w-full rounded-full bg-slate-800">
+        <div className={`mt-1 ${compact ? "h-1" : "h-1.5"} w-full rounded-full bg-slate-800`}>
           <div
             className="h-full rounded-full bg-emerald-500 transition-all"
             style={{ width: `${loading ? 0 : percent}%` }}
           />
         </div>
-        <p className="mt-1 text-[9px] text-slate-500">{percent}% of slots submitted</p>
+        <p className={`${compact ? "mt-0.5 text-[9px]" : "mt-1 text-[10px]"} text-slate-500`}>
+          {percent}% of slots submitted
+        </p>
       </div>
-    </div>
-  );
-}
-
-function MetricsGrid({
-  dailyTotals,
-  weeklyTotals,
-  loading,
-  viewLabel,
-}: {
-  dailyTotals: Totals;
-  weeklyTotals: Totals;
-  loading: boolean;
-  viewLabel: string;
-}) {
-  return (
-    <section className="space-y-1.5 rounded-2xl border border-slate-800 bg-slate-900/40 p-1.5 text-center text-[10px]">
-      <div className="space-y-0.5">
-        <p className="text-slate-300 text-sm font-semibold">Performance rollup</p>
-        {loading && <p className="text-[10px] text-slate-500">Loading totals…</p>}
-        <p className="text-[10px] text-slate-500">{viewLabel}</p>
-      </div>
-      <div className="mx-auto grid max-w-2xl gap-1.5 sm:grid-cols-2">
-        {METRIC_FIELDS.map((field) => (
-          <MetricCard
-            key={field.key}
-            field={field}
-            dailyValue={dailyTotals[field.key]}
-            weeklyValue={weeklyTotals[field.key]}
-          />
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function MetricCard({
-  field,
-  dailyValue,
-  weeklyValue,
-}: {
-  field: MetricField;
-  dailyValue: number;
-  weeklyValue: number;
-}) {
-  const format = (value: number) => {
-    if (field.format === "currency") {
-      return currencyFormatter.format(value);
-    }
-    return numberFormatter.format(value);
-  };
-
-  return (
-    <div className="rounded-2xl border border-slate-800 bg-slate-950/40 p-1.5 text-center">
-      <p className="text-[8px] uppercase tracking-wide text-slate-500">{field.label}</p>
-      <p className="mt-1 text-base font-semibold text-white">{format(dailyValue)}</p>
-      <p className="text-[9px] text-slate-400">Daily</p>
-      <p className="mt-1 text-[10px] text-slate-300">
-        <span className="font-semibold">WTD:</span> {format(weeklyValue)}
-      </p>
     </div>
   );
 }
@@ -1031,7 +1199,7 @@ function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: st
 
   const body = (
     <section
-      className={`rounded-3xl border border-slate-900 bg-slate-950/70 shadow-inner shadow-black/30 transition ${
+      className={`rounded-3xl border border-white/5 bg-gradient-to-br from-[#0f213f]/85 via-[#07142d]/85 to-[#020915]/95 shadow-[0_18px_40px_rgba(1,6,20,0.7)] transition ${
         compact ? "p-3 text-[10px]" : "p-5"
       } ${href ? "hover:border-emerald-500/40" : ""}`}
     >
@@ -1045,7 +1213,7 @@ function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: st
         {sample.map((row) => (
           <li
             key={row.label}
-            className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-900/50 px-3 py-2"
+            className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-2"
           >
             <div>
               <p className="text-[11px] uppercase tracking-wide text-slate-500">{row.label}</p>
@@ -1071,109 +1239,6 @@ function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: st
   }
 
   return body;
-}
-
-function ContestPanel() {
-  const [contests, setContests] = useState<ContestSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchActiveContests(3)
-      .then((records) => {
-        if (!cancelled) {
-          setContests(records);
-          setLoading(false);
-        }
-      })
-      .catch((err) => {
-        console.error("contest panel fetch error", err);
-        if (!cancelled) {
-          setLoading(false);
-        }
-      });
-
-    const unsubscribe = subscribeToContestStream(
-      (contest) => {
-        fetchContestById(contest.id).then((summary) => {
-          if (summary && !cancelled) {
-            setContests((prev) => upsertContestSummary(prev, summary, 3));
-          }
-        });
-      },
-      (progress) => {
-        fetchContestById(progress.contest_id).then((summary) => {
-          if (summary && !cancelled) {
-            setContests((prev) => upsertContestSummary(prev, summary, 3));
-          }
-        });
-      }
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
-
-  return (
-    <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/30">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h3 className="text-lg font-semibold text-white">Contest trackers</h3>
-          <p className="text-xs text-slate-400">Drive focus to current incentives and weekly pushes.</p>
-        </div>
-        <Link
-          href="/contests"
-          className="rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
-        >
-          Contest portal →
-        </Link>
-      </div>
-      <div className="mt-4 space-y-3 text-sm">
-        {loading && <p className="text-xs text-slate-500">Loading contests…</p>}
-        {!loading && !contests.length && (
-          <p className="text-xs text-slate-500">No live contests yet. Use the portal to launch one.</p>
-        )}
-        {contests.map((contest) => {
-          const [leader] = [...contest.leaderboard].sort(
-            (a, b) => (b.total_value ?? 0) - (a.total_value ?? 0)
-          );
-          return (
-            <div key={contest.id} className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-              <p className="text-[11px] uppercase tracking-wide text-amber-300">{contest.title}</p>
-              <p className="text-[11px] text-slate-500">
-                {contest.start_date} → {contest.end_date}
-              </p>
-              {leader ? (
-                <p className="text-sm font-semibold text-white">
-                  #{leader.shop_number ?? "--"} • {leader.total_value ?? 0}
-                </p>
-              ) : (
-                <p className="text-sm text-slate-400">Awaiting entries</p>
-              )}
-              <p className="text-xs text-emerald-300">{contest.status}</p>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function upsertContestSummary(list: ContestSummary[], summary: ContestSummary, cap: number) {
-  const next = [...list];
-  const index = next.findIndex((contest) => contest.id === summary.id);
-  if (index >= 0) {
-    next[index] = summary;
-  } else {
-    next.unshift(summary);
-  }
-  if (next.length > cap) {
-    next.length = cap;
-  }
-  return next;
 }
 
 
@@ -1226,7 +1291,7 @@ function SlotForm({
   const gridGap = compact ? "gap-1.5" : "gap-2";
 
   return (
-    <div className={`${spacing} rounded-2xl border border-slate-800 bg-slate-900/70`}>
+    <div className={`${spacing} rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f203f]/80 via-[#07142d]/80 to-[#020915]/95 shadow-[0_15px_35px_rgba(1,6,20,0.65)]`}>
       <div className="flex items-start justify-between gap-2">
         <div>
           <p className={`${subLabelClass} uppercase tracking-wide text-slate-400`}>{definition.description}</p>

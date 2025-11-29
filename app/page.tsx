@@ -232,9 +232,9 @@ type MetricsPanelProps = {
 
 function MetricsPanel({ title, eyebrow, metrics }: MetricsPanelProps) {
   return (
-    <div className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-4 shadow-2xl shadow-black/20 space-y-3">
+    <div className="rounded-[28px] border border-white/5 bg-[#050f24]/80 p-4 shadow-[0_25px_65px_rgba(1,6,20,0.7)] backdrop-blur space-y-3">
       <div className="text-center">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{eyebrow}</p>
+        <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-200/80">{eyebrow}</p>
         <h3 className="text-xl font-semibold text-white">{title}</h3>
       </div>
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
@@ -255,9 +255,9 @@ function MetricGridCard({ metric }: { metric: GridMetric }) {
       : "text-slate-100";
 
   return (
-    <div className="flex min-h-[110px] flex-col items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-900/60 p-3 text-center">
+    <div className="flex min-h-[110px] flex-col items-center justify-between rounded-2xl border border-white/5 bg-gradient-to-br from-[#10213f]/85 via-[#07142d]/90 to-[#020915]/95 p-3 text-center shadow-[0_18px_40px_rgba(1,6,20,0.75)]">
       <div className="space-y-1">
-        <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{metric.label}</p>
+        <p className="text-[10px] uppercase tracking-[0.25em] text-slate-300">{metric.label}</p>
         {metric.caption && <p className="text-[10px] text-slate-500">{metric.caption}</p>}
       </div>
       <div className="mt-auto space-y-1">
@@ -645,11 +645,11 @@ export default function Home() {
     ? `Shop #${hierarchy.shop_number}`
     : null;
   const brandTileClasses =
-    "inline-flex items-center justify-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-3 text-xs font-semibold text-slate-100 shadow-lg shadow-black/20 transition hover:border-emerald-400/60 w-full sm:w-auto sm:min-w-[160px]";
+    "inline-flex items-center justify-center gap-2 rounded-[22px] border border-white/5 bg-gradient-to-br from-[#0c1a36]/90 via-[#07142d]/90 to-[#030a18]/95 px-4 py-3 text-xs font-semibold text-slate-100 shadow-[0_18px_45px_rgba(1,6,20,0.85)] backdrop-blur transition hover:border-emerald-400/60 w-full sm:w-auto sm:min-w-[180px]";
   const panelBaseClasses =
-    "relative overflow-hidden rounded-3xl border border-slate-900/80 bg-slate-950/80 p-6 shadow-2xl shadow-black/30";
+    "relative overflow-hidden rounded-[30px] border border-white/5 bg-[#040c1c]/95 p-6 shadow-[0_30px_80px_rgba(1,6,20,0.8)] backdrop-blur";
   const panelOverlayClasses =
-    "pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-900/40 via-slate-950/40 to-black/60";
+    "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),_transparent_42%)]";
 
   if (!authChecked) {
     return (
