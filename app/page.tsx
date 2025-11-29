@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { HierarchyStamp } from "@/app/components/HierarchyStamp";
 import { RetailPills } from "@/app/components/RetailPills";
 import { BrandWordmark } from "@/app/components/BrandWordmark";
+import { ExecutiveDashboard } from "@/app/components/ExecutiveDashboard";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { fetchRetailContext } from "@/lib/retailCalendar";
 import { fetchShopTotals, type PulseTotalsResult, type PulseTotals } from "@/lib/pulseTotals";
@@ -80,6 +81,8 @@ type GridMetric = {
   value: string;
   caption?: string;
   tone?: "default" | "success" | "warning";
+  secondaryLabel?: string;
+  secondaryValue?: string;
 };
 
 const formatCurrencyCompact = (value: number | null | undefined) => {
@@ -103,34 +106,54 @@ type LiveKpiConfig = {
 };
 
 const LIVE_KPI_CONFIG: LiveKpiConfig[] = [
-  { label: "Cars today", caption: "Pulse check", getter: (summary) => formatIntegerCompact(summary.daily.cars) },
-  { label: "Sales today", caption: "Pulse check", getter: (summary) => formatCurrencyCompact(summary.daily.sales) },
-  { label: "ARO today", caption: "Avg. ticket", getter: (summary) => formatCurrencyCompact(summary.daily.aro) },
-  {
-    label: "Donations today",
-    caption: "Round-up",
-    getter: (summary) => formatCurrencyCompact(summary.daily.donations),
-  },
-  { label: "Cars WTD", caption: "Week to date", getter: (summary) => formatIntegerCompact(summary.weekly.cars) },
-  { label: "Sales WTD", caption: "Week to date", getter: (summary) => formatCurrencyCompact(summary.weekly.sales) },
-  { label: "ARO WTD", caption: "Week to date", getter: (summary) => formatCurrencyCompact(summary.weekly.aro) },
-  {
-    label: "Donations WTD",
-    caption: "Week to date",
-    getter: (summary) => formatCurrencyCompact(summary.weekly.donations),
-  },
+  { label: "Donations today", caption: "Round-up", getter: (summary) => formatCurrencyCompact(summary.daily.donations) },
+  { label: "Donations WTD", caption: "Week to date", getter: (summary) => formatCurrencyCompact(summary.weekly.donations) },
   { label: "Big 4 mix", caption: "Week mix", getter: (summary) => formatPercent(summary.weekly.big4Pct) },
   { label: "Coolants mix", caption: "Week mix", getter: (summary) => formatPercent(summary.weekly.coolantsPct) },
   { label: "Diffs mix", caption: "Week mix", getter: (summary) => formatPercent(summary.weekly.diffsPct) },
   { label: "Mobil 1 mix", caption: "Week mix", getter: (summary) => formatPercent(summary.weekly.mobil1Pct) },
 ];
 
-const buildLiveKpiMetrics = (summary: RollupSummary | null): GridMetric[] =>
-  LIVE_KPI_CONFIG.map(({ label, caption, getter }) => ({
+const buildLiveKpiMetrics = (summary: RollupSummary | null): GridMetric[] => {
+  const carsDaily = formatIntegerCompact(summary?.daily.cars ?? null);
+  const carsWtd = formatIntegerCompact(summary?.weekly.cars ?? null);
+  const salesDaily = formatCurrencyCompact(summary?.daily.sales ?? null);
+  const salesWtd = formatCurrencyCompact(summary?.weekly.sales ?? null);
+  const aroDaily = formatCurrencyCompact(summary?.daily.aro ?? null);
+  const aroWtd = formatCurrencyCompact(summary?.weekly.aro ?? null);
+
+  const baseline: GridMetric[] = [
+    {
+      label: "Cars",
+      caption: "Daily / WTD",
+      value: carsDaily,
+      secondaryLabel: "WTD",
+      secondaryValue: carsWtd,
+    },
+    {
+      label: "Sales",
+      caption: "Daily / WTD",
+      value: salesDaily,
+      secondaryLabel: "WTD",
+      secondaryValue: salesWtd,
+    },
+    {
+      label: "ARO",
+      caption: "Daily / WTD",
+      value: aroDaily,
+      secondaryLabel: "WTD",
+      secondaryValue: aroWtd,
+    },
+  ];
+
+  const extended = LIVE_KPI_CONFIG.map(({ label, caption, getter }) => ({
     label,
     caption,
     value: summary ? getter(summary) : "--",
   }));
+
+  return [...baseline, ...extended];
+};
 
 const ADMIN_MANAGEMENT_METRICS: GridMetric[] = [
   {
@@ -209,12 +232,12 @@ type MetricsPanelProps = {
 
 function MetricsPanel({ title, eyebrow, metrics }: MetricsPanelProps) {
   return (
-    <div className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-5 shadow-2xl shadow-black/20 space-y-4">
-      <div>
+    <div className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-4 shadow-2xl shadow-black/20 space-y-3">
+      <div className="text-center">
         <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{eyebrow}</p>
-        <h3 className="text-2xl font-semibold text-white">{title}</h3>
+        <h3 className="text-xl font-semibold text-white">{title}</h3>
       </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4">
         {metrics.map((metric) => (
           <MetricGridCard key={metric.label} metric={metric} />
         ))}
@@ -229,13 +252,23 @@ function MetricGridCard({ metric }: { metric: GridMetric }) {
       ? "text-emerald-200"
       : metric.tone === "warning"
       ? "text-amber-200"
-      : "text-slate-50";
+      : "text-slate-100";
 
   return (
-    <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-4">
-      <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">{metric.label}</p>
-      <p className={`mt-2 text-xl font-semibold ${toneClass}`}>{metric.value}</p>
-      {metric.caption && <p className="text-xs text-slate-400">{metric.caption}</p>}
+    <div className="flex min-h-[110px] flex-col items-center justify-between rounded-2xl border border-slate-800/70 bg-slate-900/60 p-3 text-center">
+      <div className="space-y-1">
+        <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{metric.label}</p>
+        {metric.caption && <p className="text-[10px] text-slate-500">{metric.caption}</p>}
+      </div>
+      <div className="mt-auto space-y-1">
+        <p className={`text-lg font-semibold ${toneClass}`}>{metric.value}</p>
+        {metric.secondaryValue && (
+          <p className="text-xs text-slate-400">
+            {metric.secondaryLabel ? `${metric.secondaryLabel}: ` : ""}
+            {metric.secondaryValue}
+          </p>
+        )}
+      </div>
     </div>
   );
 }
@@ -611,6 +644,12 @@ export default function Home() {
     : hierarchy?.shop_number
     ? `Shop #${hierarchy.shop_number}`
     : null;
+  const brandTileClasses =
+    "inline-flex items-center justify-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-3 text-xs font-semibold text-slate-100 shadow-lg shadow-black/20 transition hover:border-emerald-400/60 w-full sm:w-auto sm:min-w-[160px]";
+  const panelBaseClasses =
+    "relative overflow-hidden rounded-3xl border border-slate-900/80 bg-slate-950/80 p-6 shadow-2xl shadow-black/30";
+  const panelOverlayClasses =
+    "pointer-events-none absolute inset-0 bg-gradient-to-br from-slate-900/40 via-slate-950/40 to-black/60";
 
   if (!authChecked) {
     return (
@@ -631,56 +670,73 @@ export default function Home() {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="max-w-6xl mx-auto px-4 py-10 space-y-10">
         {/* Header */}
-        <header className="space-y-5">
-          <p className="text-center text-sm font-semibold text-slate-200">
-            <span className="text-red-500">P</span>ocket Manager
-            <span className="text-red-500">5</span> • <span className="text-red-500">P</span>ulse Check
-            <span className="text-red-500">5</span>
-          </p>
+        <header className={`${panelBaseClasses}`}>
+          <div className={panelOverlayClasses} />
+          <div className="relative space-y-5">
+            <p className="text-center text-sm font-semibold text-slate-200">
+              <span className="text-red-500">P</span>ocket Manager
+              <span className="text-red-500">5</span> • <span className="text-red-500">P</span>ulse Check
+              <span className="text-red-500">5</span>
+            </p>
 
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="flex flex-col items-start gap-2">
-              <RetailPills />
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <Link
                 href="/pocket-manager5"
-                className="inline-flex items-center rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-400/60"
+                className={`${brandTileClasses} md:flex-1 md:max-w-[180px]`}
                 aria-label="Go to Pocket Manager5"
               >
-                <BrandWordmark brand="pocket" mode="dark" className="text-[2.1rem]" />
+                <BrandWordmark
+                  brand="pocket"
+                  mode="dark"
+                  showBadge={false}
+                  className="text-[1.5rem] leading-none"
+                />
               </Link>
-            </div>
 
-            <div className="text-center space-y-2">
-              <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold">
-                <span className="text-red-500">P</span>ocket&nbsp;Manager
-                <span className="text-red-500">5</span>
-              </h1>
-              {heroGreeting && (
-                <p className="text-xs text-slate-400">Hi {heroGreeting}, keep the pulse green.</p>
-              )}
-            </div>
+              <div className="text-center md:flex md:flex-col md:items-center md:justify-center md:flex-1">
+                <h1 className="text-3xl sm:text-4xl md:text-5xl font-bold">
+                  <span className="text-red-500">P</span>ocket&nbsp;Manager
+                  <span className="text-red-500">5</span>
+                </h1>
+                {heroGreeting && (
+                  <p className="text-xs text-slate-400">Hi {heroGreeting}, keep the pulse green.</p>
+                )}
+              </div>
 
-            <div className="flex flex-col items-start md:items-end gap-2">
-              <button
-                onClick={handleAuthClick}
-                className="inline-flex items-center justify-center rounded-full border border-emerald-400/80 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
-              >
-                {isLoggedIn ? "Logout" : "Login"}
-              </button>
-              {hierarchyLoading ? (
-                <p className="text-xs text-slate-500">Loading scope…</p>
-              ) : hierarchyError ? (
-                <p className="text-xs text-amber-300">Scope unavailable</p>
-              ) : (
-                <HierarchyStamp />
-              )}
               <Link
                 href="/pulse-check5"
-                className="inline-flex items-center rounded-2xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 transition hover:border-emerald-400/60"
+                className={`${brandTileClasses} md:flex-1 md:max-w-[180px]`}
                 aria-label="Open Pulse Check5"
               >
-                <BrandWordmark brand="pulse" mode="dark" className="text-[2rem]" />
+                <BrandWordmark
+                  brand="pulse"
+                  mode="dark"
+                  showBadge={false}
+                  className="text-[1.5rem] leading-none"
+                />
               </Link>
+            </div>
+
+            <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+              <div className="flex flex-col items-start gap-2">
+                <RetailPills />
+              </div>
+
+              <div className="flex flex-col items-start md:items-end gap-2">
+                <button
+                  onClick={handleAuthClick}
+                  className="inline-flex items-center justify-center rounded-full border border-emerald-400/80 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                >
+                  {isLoggedIn ? "Logout" : "Login"}
+                </button>
+                {hierarchyLoading ? (
+                  <p className="text-xs text-slate-500">Loading scope…</p>
+                ) : hierarchyError ? (
+                  <p className="text-xs text-amber-300">Scope unavailable</p>
+                ) : (
+                  <HierarchyStamp />
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -692,42 +748,52 @@ export default function Home() {
         )}
 
         {summaryOptions.length > 0 && activeSummary && (
-          <section className="space-y-6 rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 shadow-2xl shadow-black/20">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex flex-wrap gap-2">
-                {summaryOptions.map((option) => (
-                  <button
-                    key={option.scope}
-                    onClick={() => setActiveScope(option.scope)}
-                    className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
-                      option.scope === activeScope
-                        ? "border-emerald-400 bg-emerald-500/10 text-emerald-200"
-                        : "border-slate-700 text-slate-400 hover:border-emerald-500/40 hover:text-emerald-200"
-                    }`}
-                  >
-                    {option.scope === "SHOP" ? "Shop" : option.label}
-                  </button>
-                ))}
+          <section className={panelBaseClasses}>
+            <div className={panelOverlayClasses} />
+            <div className="relative space-y-6">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-2">
+                  {summaryOptions.map((option) => (
+                    <button
+                      key={option.scope}
+                      onClick={() => setActiveScope(option.scope)}
+                      className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                        option.scope === activeScope
+                          ? "border-emerald-400 bg-emerald-500/10 text-emerald-200"
+                          : "border-slate-700 text-slate-400 hover:border-emerald-500/40 hover:text-emerald-200"
+                      }`}
+                    >
+                      {option.scope === "SHOP" ? "Shop" : option.label}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{rollupSubtitle}</p>
               </div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{rollupSubtitle}</p>
-            </div>
-            {rollupsError && summaryOptions.length > 1 && (
-              <p className="text-xs text-amber-300">{rollupsError}</p>
-            )}
-            <div className="grid gap-6 lg:grid-cols-2">
-              <MetricsPanel
-                title="LIVE KPIs"
-                eyebrow={livePanelEyebrow}
-                metrics={liveKpiCards}
-              />
-              <MetricsPanel
-                title="Admin Management"
-                eyebrow="Coaching + compliance snapshot"
-                metrics={adminManagementCards}
-              />
+              {rollupsError && summaryOptions.length > 1 && (
+                <p className="text-xs text-amber-300">{rollupsError}</p>
+              )}
+              <div className="grid gap-6 lg:grid-cols-2">
+                <MetricsPanel
+                  title="LIVE KPIs"
+                  eyebrow={livePanelEyebrow}
+                  metrics={liveKpiCards}
+                />
+                <MetricsPanel
+                  title="Admin Management"
+                  eyebrow="Coaching + compliance snapshot"
+                  metrics={adminManagementCards}
+                />
+              </div>
             </div>
           </section>
         )}
+
+        <section className={panelBaseClasses}>
+          <div className={panelOverlayClasses} />
+          <div className="relative">
+            <ExecutiveDashboard />
+          </div>
+        </section>
 
       </div>
     </main>
