@@ -35,7 +35,7 @@ const getRetailCalendarInfo = (rawDate: Date) => {
   let period = 12;
   let quarter = 4;
   let weekOfPeriod = PERIOD_WEEK_PATTERN[2];
-  let cursor = new Date(yearStart);
+  const cursor = new Date(yearStart);
 
   for (let index = 0; index < 12; index += 1) {
     let weeksInPeriod = PERIOD_WEEK_PATTERN[index % PERIOD_WEEK_PATTERN.length];

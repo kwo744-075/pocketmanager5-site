@@ -7,6 +7,7 @@ import { supabase } from "@/lib/supabaseClient";
 import { writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 
 type HierarchySummary = {
+  login: string;
   scope_level: string | null;
   division_name: string | null;
   region_name: string | null;
@@ -218,10 +219,11 @@ export default function LoginPage() {
               id="email"
               name="email"
               type="text"
-              autoComplete="username"
+              autoComplete="off"
+              inputMode="email"
+              placeholder=""
               required
               className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              placeholder="18@t5.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
             />
@@ -238,10 +240,10 @@ export default function LoginPage() {
               id="password"
               name="password"
               type="password"
-              autoComplete="current-password"
+              autoComplete="off"
+              placeholder=""
               required
               className="w-full rounded-lg border border-slate-800 bg-slate-950/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-400 focus:ring-1 focus:ring-emerald-400"
-              placeholder="take5"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />

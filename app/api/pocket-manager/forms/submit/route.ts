@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { FORM_LOOKUP, type FormSlug } from "@/app/pocket-manager5/forms/formRegistry";
-import { supabaseAdmin } from "@/lib/supabaseAdmin";
+import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import {
   buildSubmissionPlan,
   SubmissionValidationError,
@@ -50,7 +51,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json<ApiError>({ error: "Form is not yet wired to Supabase." }, { status: 400 });
     }
 
-    const profile = await resolveProfile(context.loginEmail);
+    const adminClient = getSupabaseAdmin();
+    const profile = await resolveProfile(adminClient, context.loginEmail);
 
     let plan: SubmissionPlan | null;
     try {
@@ -68,7 +70,7 @@ export async function POST(request: NextRequest) {
 
     logSubmissionEvent("attempt", { slug, table: plan.table, profileResolved: Boolean(profile) });
 
-    const { data: insertedRows, error } = await supabaseAdmin
+    const { data: insertedRows, error } = await adminClient
       .from(plan.table)
       .insert([plan.payload])
       .select("id")
@@ -132,7 +134,7 @@ async function parseBody(request: NextRequest): Promise<ValidationResult> {
   }
 }
 
-async function resolveProfile(email?: string | null): Promise<ProfileRow | null> {
+async function resolveProfile(client: SupabaseClient, email?: string | null): Promise<ProfileRow | null> {
   if (!email) {
     return null;
   }
@@ -142,7 +144,7 @@ async function resolveProfile(email?: string | null): Promise<ProfileRow | null>
     return null;
   }
 
-  const { data, error } = await supabaseAdmin
+  const { data, error } = await client
     .from("profiles")
     .select("user_id,email,full_name")
     .eq("email", normalizedEmail)

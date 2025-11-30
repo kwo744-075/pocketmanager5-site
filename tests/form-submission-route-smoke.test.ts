@@ -6,7 +6,8 @@ test("POST handler saves dm-action-plan when Supabase succeeds", async () => {
   process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role";
   process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://example.supabase.test";
 
-  const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
+  const { getSupabaseAdmin } = await import("@/lib/supabaseAdmin");
+  const supabaseAdmin = getSupabaseAdmin();
   const originalFrom = supabaseAdmin.from;
   const insertPayloads: Record<string, unknown>[] = [];
 
@@ -87,7 +88,8 @@ test("POST handler saves people-employee-profile when Supabase succeeds", async 
   process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-role";
   process.env.NEXT_PUBLIC_SUPABASE_URL ??= "https://example.supabase.test";
 
-  const { supabaseAdmin } = await import("@/lib/supabaseAdmin");
+  const { getSupabaseAdmin } = await import("@/lib/supabaseAdmin");
+  const supabaseAdmin = getSupabaseAdmin();
   const originalFrom = supabaseAdmin.from;
   const insertPayloads: Record<string, unknown>[] = [];
 

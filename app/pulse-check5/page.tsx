@@ -7,7 +7,6 @@ import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { getCachedSummaryForLogin, normalizeLogin, writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 import { RetailPills } from "@/app/components/RetailPills";
 import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
-import { fetchRetailContext } from "@/lib/retailCalendar";
 import { buildRetailTimestampLabel } from "@/lib/retailTimestamp";
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
@@ -62,6 +61,7 @@ type TotalsRow = {
   total_fuel_filters: number | null;
   total_donations: number | null;
   total_mobil1: number | null;
+  district_name?: string | null;
 };
 
 type Temperature = "green" | "yellow" | "red";
@@ -87,6 +87,7 @@ type ShopGridSlice = {
   big4Pct: number | null;
   coolantsPct: number | null;
   diffsPct: number | null;
+  fuelFiltersPct: number | null;
   mobil1Pct: number | null;
   donations: number;
 };
@@ -193,7 +194,16 @@ const isWithinWindow = (minutes: number, start: number, end: number) => {
   return minutes >= start || minutes < end;
 };
 
-type TrendKpiKey = "cars" | "sales" | "aro" | "donations" | "big4" | "coolants" | "diffs" | "mobil1";
+type TrendKpiKey =
+  | "cars"
+  | "sales"
+  | "aro"
+  | "donations"
+  | "big4"
+  | "coolants"
+  | "diffs"
+  | "fuelFilters"
+  | "mobil1";
 
 type TrendValueFormat = "number" | "currency" | "aro" | "percent";
 
@@ -204,9 +214,14 @@ const TREND_KPI_HEADERS: Array<{ key: TrendKpiKey; label: string; format: TrendV
   { key: "big4", label: "Big 4", format: "percent" },
   { key: "coolants", label: "Coolants", format: "percent" },
   { key: "diffs", label: "Diffs", format: "percent" },
+  { key: "fuelFilters", label: "FF", format: "percent" },
   { key: "mobil1", label: "Mobil 1", format: "percent" },
   { key: "donations", label: "Donations", format: "currency" },
 ];
+
+const METRIC_COLUMN_COUNT = TREND_KPI_HEADERS.length;
+const DISTRICT_GRID_TEMPLATE = `1.8fr repeat(${METRIC_COLUMN_COUNT}, minmax(0, 1fr))`;
+const TREND_GRID_TEMPLATE = `1.5fr repeat(${METRIC_COLUMN_COUNT}, minmax(0, 1fr))`;
 
 const TREND_SCOPE_WEIGHTS: Record<ScopeLevel, number> = {
   SHOP: 1,
@@ -223,6 +238,7 @@ const TREND_KPI_TEMPLATE: Record<TrendKpiKey, { base: number; decay: number; min
   big4: { base: 48, decay: 0.6, min: 30 },
   coolants: { base: 24, decay: 0.3, min: 12 },
   diffs: { base: 9, decay: 0.2, min: 4 },
+  fuelFilters: { base: 14, decay: 0.2, min: 5 },
   mobil1: { base: 18, decay: 0.25, min: 8 },
 };
 
@@ -345,6 +361,7 @@ const buildShopSliceFromTotals = (row: ShopTotalsRow | null | undefined): ShopGr
   const big4 = row?.total_big4 ?? 0;
   const coolants = row?.total_coolants ?? 0;
   const diffs = row?.total_diffs ?? 0;
+  const fuelFilters = row?.total_fuel_filters ?? 0;
   const mobil1 = row?.total_mobil1 ?? 0;
   const donations = row?.total_donations ?? 0;
   const percent = (value: number) => (cars > 0 ? (value / cars) * 100 : null);
@@ -356,6 +373,7 @@ const buildShopSliceFromTotals = (row: ShopTotalsRow | null | undefined): ShopGr
     big4Pct: percent(big4),
     coolantsPct: percent(coolants),
     diffsPct: percent(diffs),
+    fuelFiltersPct: percent(fuelFilters),
     mobil1Pct: percent(mobil1),
     donations,
   } satisfies ShopGridSlice;
@@ -391,9 +409,38 @@ const buildGridMetrics = (daily: ShopGridSlice, weekly: ShopGridSlice): Record<T
   big4: formatMetricPair(formatPercent(daily.big4Pct), formatPercent(weekly.big4Pct)),
   coolants: formatMetricPair(formatPercent(daily.coolantsPct), formatPercent(weekly.coolantsPct)),
   diffs: formatMetricPair(formatPercent(daily.diffsPct), formatPercent(weekly.diffsPct)),
+  fuelFilters: formatMetricPair(formatPercent(daily.fuelFiltersPct), formatPercent(weekly.fuelFiltersPct)),
   mobil1: formatMetricPair(formatPercent(daily.mobil1Pct), formatPercent(weekly.mobil1Pct)),
   donations: formatMetricPair(formatCurrencyValue(daily.donations), formatCurrencyValue(weekly.donations)),
 });
+
+const buildPlaceholderGridMetrics = (): Record<TrendKpiKey, string> =>
+  TREND_KPI_HEADERS.reduce<Record<TrendKpiKey, string>>((acc, header) => {
+    acc[header.key] = formatMetricPair("--", "--");
+    return acc;
+  }, {} as Record<TrendKpiKey, string>);
+
+const buildPlaceholderShopRows = (count: number, options?: { descriptor?: string; highlightCurrent?: boolean }) => {
+  if (!count || count <= 0) {
+    return [] as DistrictGridRow[];
+  }
+  const descriptor = options?.descriptor ?? "Awaiting mapping";
+  return Array.from({ length: count }).map((_, index) => ({
+    id: `placeholder-shop-${index + 1}`,
+    label: `Shop slot ${index + 1}`,
+    descriptor,
+    kind: "shop" as DistrictGridRow["kind"],
+    isCurrentShop: options?.highlightCurrent && index === 0,
+    metrics: buildPlaceholderGridMetrics(),
+  }));
+};
+
+const resolvePlaceholderCount = (candidate?: number | null) => {
+  if (typeof candidate === "number" && candidate > 0) {
+    return candidate;
+  }
+  return 4;
+};
 
 
 const todayISO = () => new Date().toISOString().split("T")[0];
@@ -444,7 +491,6 @@ export default function PulseCheckPage() {
   const [eveningOnly, setEveningOnly] = useState(false);
   const [kpiScope, setKpiScope] = useState<"daily" | "weekly">("daily");
   const [clock, setClock] = useState(() => Date.now());
-  const [retailLabel, setRetailLabel] = useState<string>(() => buildRetailTimestampLabel());
   const [proxyPanelOpen, setProxyPanelOpen] = useState(false);
   const [proxyInput, setProxyInput] = useState("");
   const [proxyBusy, setProxyBusy] = useState(false);
@@ -660,38 +706,6 @@ export default function PulseCheckPage() {
     };
   }, [hierarchy, lookupShopMeta]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const run = async () => {
-      try {
-        const context = await fetchRetailContext();
-        if (cancelled) {
-          return;
-        }
-
-        if (context) {
-          setRetailLabel(
-            `${context.quarterLabel}-${context.periodLabel}-${context.weekLabel} ${context.dateLabel}`
-          );
-        } else {
-          setRetailLabel(buildRetailTimestampLabel());
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.error("Pulse Check retail context error", err);
-          setRetailLabel(buildRetailTimestampLabel());
-        }
-      }
-    };
-
-    run();
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
   const hydrateSlotsFromRows = useCallback((rows: CheckInRow[]): SlotStateMap => {
     const next = buildInitialSlots();
 
@@ -896,8 +910,19 @@ export default function PulseCheckPage() {
 
   useEffect(() => {
     if (!shopMeta?.district_id) {
-      setDistrictGridRows([]);
-      setDistrictGridError(null);
+      const placeholderRows = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchy?.shops_in_district), {
+        descriptor: "Link this shop to a district",
+        highlightCurrent: Boolean(shopMeta?.id),
+      });
+      const placeholderDistrictRow: DistrictGridRow = {
+        id: "district-unlinked",
+        label: hierarchy?.district_name ?? "District overview",
+        descriptor: "Link a district to this shop to load KPIs.",
+        kind: "district",
+        metrics: buildPlaceholderGridMetrics(),
+      };
+      setDistrictGridRows([...placeholderRows, placeholderDistrictRow]);
+      setDistrictGridError("Link a district to this shop to view scope KPIs.");
       setDistrictGridLoading(false);
       return;
     }
@@ -917,11 +942,39 @@ export default function PulseCheckPage() {
           throw shopError;
         }
 
-        const shopsInDistrict = (shopList ?? []) as Array<{
+        let shopsInDistrict = (shopList ?? []) as Array<{
           id: string;
           shop_name: string | null;
           shop_number: number | null;
         }>;
+        const hierarchyShopCount = hierarchy?.shops_in_district ?? null;
+
+        if (!shopsInDistrict.length && hierarchy?.district_name) {
+          try {
+            const { data: alignmentRows, error: alignmentError } = await supabase
+              .from("shop_alignment")
+              .select("store,shop_name")
+              .eq("district", hierarchy.district_name)
+              .order("store", { ascending: true });
+
+            if (!alignmentError && alignmentRows?.length) {
+              shopsInDistrict = alignmentRows.map(
+                (row: { store?: number | string | null; shop_name?: string | null }, index: number) => {
+                  const storeNumberRaw = typeof row.store === "number" ? row.store : Number(row.store);
+                  const storeNumber = Number.isFinite(storeNumberRaw) ? (storeNumberRaw as number) : null;
+                  return {
+                    id: `alignment-${storeNumber ?? index + 1}`,
+                    shop_name: row.shop_name ?? null,
+                    shop_number: storeNumber,
+                  };
+                }
+              );
+            }
+          } catch (alignmentErr) {
+            console.error("Fallback shop_alignment lookup failed", alignmentErr);
+          }
+        }
+
         const shopIds = shopsInDistrict.map((shop) => shop.id);
 
         let dailyRows: ShopTotalsRow[] = [];
@@ -988,52 +1041,92 @@ export default function PulseCheckPage() {
         const weeklyMap = new Map(weeklyRows.map((row) => [row.shop_id, row]));
 
         const nextRows: DistrictGridRow[] = [];
-        const districtDaily = convertTotalsRowToShopRow(districtDailyResponse.data ?? null, `district-${shopMeta.district_id}`);
+        const districtDaily = convertTotalsRowToShopRow(
+          districtDailyResponse.data ?? null,
+          `district-${shopMeta.district_id}`
+        );
         const districtWeekly = convertTotalsRowToShopRow(
           districtWeeklyResponse.data ?? null,
           `district-${shopMeta.district_id}`
         );
+        const hasDistrictTotals = Boolean(districtDaily || districtWeekly);
+        const fallbackDescriptor = shopsInDistrict.length
+          ? "Awaiting KPI submissions"
+          : "No shops resolved for this district yet.";
 
-        if (districtDaily || districtWeekly) {
-          nextRows.push({
-            id: `district-${shopMeta.district_id}`,
-            label:
-              hierarchy?.district_name ??
-              districtDailyResponse.data?.district_name ??
-              districtWeeklyResponse.data?.district_name ??
-              "District rollup",
-            descriptor: "District total",
-            kind: "district",
-            metrics: buildGridMetrics(
-              buildShopSliceFromTotals(districtDaily ?? null),
-              buildShopSliceFromTotals(districtWeekly ?? null)
-            ),
-          });
-        }
+        const districtRow: DistrictGridRow = {
+          id: `district-${shopMeta.district_id}`,
+          label:
+            hierarchy?.district_name ??
+            districtDailyResponse.data?.district_name ??
+            districtWeeklyResponse.data?.district_name ??
+            "District rollup",
+          descriptor: hasDistrictTotals ? "District total" : fallbackDescriptor,
+          kind: "district",
+          metrics: hasDistrictTotals
+            ? buildGridMetrics(
+                buildShopSliceFromTotals(districtDaily ?? null),
+                buildShopSliceFromTotals(districtWeekly ?? null)
+              )
+            : buildPlaceholderGridMetrics(),
+        };
 
         shopsInDistrict.forEach((shop) => {
           const label = shop.shop_name ?? `Shop #${shop.shop_number ?? "?"}`;
           const descriptor = shop.shop_number ? `Shop #${shop.shop_number}` : shop.shop_name ?? "Live shop";
+          const dailyTotals = dailyMap.get(shop.id) ?? null;
+          const weeklyTotals = weeklyMap.get(shop.id) ?? null;
+          const hasShopTotals = Boolean(dailyTotals || weeklyTotals);
+          const isCurrentShop =
+            shop.id === shopMeta.id ||
+            (typeof shop.shop_number === "number" && typeof shopMeta?.shop_number === "number"
+              ? shop.shop_number === shopMeta.shop_number
+              : false);
           nextRows.push({
             id: shop.id,
             label,
             descriptor,
             kind: "shop",
-            isCurrentShop: shop.id === shopMeta.id,
-            metrics: buildGridMetrics(
-              buildShopSliceFromTotals(dailyMap.get(shop.id)),
-              buildShopSliceFromTotals(weeklyMap.get(shop.id))
-            ),
+            isCurrentShop,
+            metrics: hasShopTotals
+              ? buildGridMetrics(
+                  buildShopSliceFromTotals(dailyTotals),
+                  buildShopSliceFromTotals(weeklyTotals)
+                )
+              : buildPlaceholderGridMetrics(),
           });
         });
 
+        if (!shopsInDistrict.length) {
+          const placeholders = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchyShopCount), {
+            descriptor: "Hierarchy listing",
+            highlightCurrent: Boolean(shopMeta?.id),
+          });
+          nextRows.push(...placeholders);
+        }
+
+          nextRows.push(districtRow);
+
         if (!cancelled) {
           setDistrictGridRows(nextRows);
+          setDistrictGridError(null);
         }
       } catch (err) {
         console.error("loadDistrictScope error", err);
         if (!cancelled) {
-          setDistrictGridRows([]);
+          const placeholderDistrictRow: DistrictGridRow = {
+            id: `district-placeholder-${shopMeta.district_id}`,
+            label: hierarchy?.district_name ?? "District overview",
+            descriptor: "Unable to load district shops right now.",
+            kind: "district",
+            metrics: buildPlaceholderGridMetrics(),
+          };
+          const placeholderShopRows = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchy?.shops_in_district), {
+            descriptor: "Hierarchy slot",
+            highlightCurrent: Boolean(shopMeta?.id),
+          });
+          const placeholderRows = [...placeholderShopRows, placeholderDistrictRow];
+          setDistrictGridRows(placeholderRows);
           setDistrictGridError("Unable to load district shops right now.");
         }
       } finally {
@@ -1048,7 +1141,7 @@ export default function PulseCheckPage() {
     return () => {
       cancelled = true;
     };
-  }, [shopMeta?.district_id, shopMeta?.id, hierarchy?.district_name]);
+  }, [shopMeta?.district_id, shopMeta?.id, shopMeta?.shop_number, hierarchy?.district_name, hierarchy?.shops_in_district]);
 
   const resolvedShopNumber = useMemo(() => {
     if (typeof shopMeta?.shop_number === "number" && Number.isFinite(shopMeta.shop_number)) {
@@ -1338,7 +1431,7 @@ export default function PulseCheckPage() {
     () => districtGridRows.filter((row) => row.kind === "shop").length,
     [districtGridRows]
   );
-  const districtGridHasContent = districtGridRows.length > 0 || districtGridLoading || Boolean(districtGridError);
+  const districtGridVisible = Boolean(shopMeta?.district_id || hierarchy?.district_name);
 
   useEffect(() => {
     if (activeSlot && slotUnlockedMap[activeSlot]) {
@@ -1554,7 +1647,7 @@ export default function PulseCheckPage() {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-3 py-6">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px] lg:items-start">
-          <div className="space-y-4">
+          <div className="space-y-4 order-1 lg:order-1">
             <header className={panelBaseClasses("aurora")}>
               <div className={panelOverlayClasses("aurora")} />
               <div className="relative space-y-4">
@@ -1635,11 +1728,11 @@ export default function PulseCheckPage() {
                 onChange: (value) => setKpiScope(value),
               }}
             />
+          </div>
 
-            {districtGridHasContent && (
-              <section className={panelBaseClasses("aurora", "p-4")}
-                aria-label="District shop KPI grid"
-              >
+          <div className="space-y-4 order-2 lg:order-3 lg:col-span-2">
+            {districtGridVisible && (
+              <section className={panelBaseClasses("aurora", "p-4")} aria-label="District shop KPI grid">
                 <div className={panelOverlayClasses("aurora")} />
                 <div className="relative space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1653,16 +1746,17 @@ export default function PulseCheckPage() {
                         : `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`}
                     </p>
                   </div>
-                  {districtGridError && (
-                    <p className="text-sm text-amber-200">{districtGridError}</p>
-                  )}
+                  {districtGridError && <p className="text-sm text-amber-200">{districtGridError}</p>}
                   <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_20px_50px_rgba(1,6,20,0.6)]">
                     {districtGridLoading && !districtGridRows.length ? (
                       <div className="px-4 py-6 text-center text-sm text-slate-400">Loading district shops…</div>
                     ) : districtGridRows.length ? (
                       <div className="overflow-x-auto">
-                        <div className="min-w-[960px]">
-                          <div className="grid grid-cols-[1.8fr_repeat(8,minmax(0,1fr))] bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300">
+                        <div className="min-w-[1040px]">
+                          <div
+                            className="grid bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300"
+                            style={{ gridTemplateColumns: DISTRICT_GRID_TEMPLATE }}
+                          >
                             <div className="px-3 py-2 text-left">Shop</div>
                             {TREND_KPI_HEADERS.map((header) => (
                               <div key={`district-header-${header.key}`} className="px-3 py-2 text-center">
@@ -1682,7 +1776,8 @@ export default function PulseCheckPage() {
                               return (
                                 <div
                                   key={row.id}
-                                  className={`grid grid-cols-[1.8fr_repeat(8,minmax(0,1fr))] px-3 py-2 text-sm transition ${highlightClass}`}
+                                  className={`grid px-3 py-2 text-sm transition ${highlightClass}`}
+                                  style={{ gridTemplateColumns: DISTRICT_GRID_TEMPLATE }}
                                 >
                                   <div>
                                     <p className="text-sm font-semibold text-white">{row.label}</p>
@@ -1703,9 +1798,7 @@ export default function PulseCheckPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="px-4 py-6 text-center text-sm text-slate-400">
-                        No shops resolved for this district yet.
-                      </div>
+                      <div className="px-4 py-6 text-center text-sm text-slate-400">No shops resolved for this district yet.</div>
                     )}
                   </div>
                 </div>
@@ -1761,7 +1854,7 @@ export default function PulseCheckPage() {
             </section>
           </div>
 
-          <aside className="w-full max-w-[18rem] justify-self-center lg:justify-self-end lg:self-stretch">
+          <aside className="w-full max-w-[18rem] justify-self-center lg:justify-self-end lg:self-stretch order-3 lg:order-2">
             <div className={`${panelBaseClasses("violet", "p-5")} h-full`}>
               <div className={panelOverlayClasses("violet")} />
               <div className="relative space-y-2.5">
@@ -1893,7 +1986,7 @@ export default function PulseCheckPage() {
             </div>
           </aside>
 
-          <div className="lg:col-span-2">
+          <div className="lg:col-span-2 order-4 lg:order-4">
             <div className={`${panelBaseClasses("cobalt", "p-4 sm:p-5")} mt-4 lg:mt-0`}>
               <div className={panelOverlayClasses("cobalt")} />
               <div className="relative space-y-3">
@@ -1903,8 +1996,11 @@ export default function PulseCheckPage() {
                 </div>
                 <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_25px_65px_rgba(1,6,20,0.7)]">
                   <div className="overflow-x-auto">
-                    <div className="min-w-[960px]">
-                      <div className="grid grid-cols-[1.5fr_repeat(8,minmax(0,1fr))] bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300">
+                    <div className="min-w-[1040px]">
+                      <div
+                        className="grid bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300"
+                        style={{ gridTemplateColumns: TREND_GRID_TEMPLATE }}
+                      >
                         <div className="px-3 py-2 text-center">Week</div>
                         {TREND_KPI_HEADERS.map((header) => (
                           <div key={header.key} className="px-3 py-2 text-center">
@@ -1918,13 +2014,13 @@ export default function PulseCheckPage() {
                           return (
                             <div
                               key={row.id}
-                              className={`grid grid-cols-[1.5fr_repeat(8,minmax(0,1fr))] px-3 py-2 text-sm transition ${
+                              className={`grid px-3 py-2 text-sm transition ${
                                 highlight ? "bg-emerald-500/5" : index % 2 ? "bg-slate-950/30" : "bg-slate-950/60"
                               }`}
+                              style={{ gridTemplateColumns: TREND_GRID_TEMPLATE }}
                             >
                               <div className="flex flex-col items-center text-center">
                                 <p className="text-[13px] font-semibold text-white">{row.label}</p>
-                                <p className="text-[11px] text-slate-400">{row.descriptor}</p>
                               </div>
                               {TREND_KPI_HEADERS.map((header) => (
                                 <div

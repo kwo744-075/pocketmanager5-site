@@ -1,12 +1,14 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-const serviceRoleKey =
+let cachedAdmin: SupabaseClient | null = null;
+
+const resolveServiceRoleKey = () =>
   process.env.PM_SUPABASE_SERVICE_ROLE_KEY ??
   process.env.SUPABASE_SERVICE_ROLE_KEY ??
   process.env.POCKET_MANAGER_SUPABASE_SERVICE_ROLE_KEY ??
   process.env.SUPABASE_SERVICE_KEY;
 
-const supabaseUrl =
+const resolveSupabaseUrl = () =>
   process.env.NEXT_PUBLIC_PM_SUPABASE_URL ??
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
   process.env.POCKET_MANAGER_SUPABASE_URL ??
@@ -14,13 +16,24 @@ const supabaseUrl =
   process.env.EXPO_PUBLIC_PM_SUPABASE_URL ??
   process.env.EXPO_PUBLIC_SUPABASE_URL;
 
-if (!supabaseUrl || !serviceRoleKey) {
-  throw new Error("Missing Supabase service role credentials for admin client");
-}
+export function getSupabaseAdmin(): SupabaseClient {
+  if (cachedAdmin) {
+    return cachedAdmin;
+  }
 
-export const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false,
-  },
-});
+  const serviceRoleKey = resolveServiceRoleKey();
+  const supabaseUrl = resolveSupabaseUrl();
+
+  if (!supabaseUrl || !serviceRoleKey) {
+    throw new Error("Missing Supabase service role credentials for admin client");
+  }
+
+  cachedAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+    },
+  });
+
+  return cachedAdmin;
+}
