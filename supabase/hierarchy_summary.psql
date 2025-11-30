@@ -3,61 +3,61 @@
 create or replace view public.hierarchy_summary_vw as
 with shop_rows as (
   select
-    lower("Shop_Email"::text) as shop_login,
-    "Division"::text          as division_name,
-    "Region"::text            as region_name,
-    "District"::text          as district_name,
-    "store"::text             as shop_number
+    lower(cast("Shop_Email" as text)) as shop_login,
+    cast("Division" as text)          as division_name,
+    cast("Region" as text)            as region_name,
+    cast("District" as text)          as district_name,
+    cast("store" as text)             as shop_number
   from public.company_alignment
   where "Shop_Email" is not null
 ),
 
 district_roles as (
   select
-    lower("District_Email"::text) as login,
-    'DISTRICT'::text              as scope_level,
-    "Division"::text             as division_name,
-    "Region"::text               as region_name,
-    "District"::text             as district_name
+    lower(cast("District_Email" as text)) as login,
+    'DISTRICT'                            as scope_level,
+    cast("Division" as text)             as division_name,
+    cast("Region" as text)               as region_name,
+    cast("District" as text)             as district_name
   from public.company_alignment
   where "District_Email" is not null
   group by
-    lower("District_Email"::text),
-    "Division"::text,
-    "Region"::text,
-    "District"::text
+    lower(cast("District_Email" as text)),
+    cast("Division" as text),
+    cast("Region" as text),
+    cast("District" as text)
 ),
 
 region_roles as (
   select
-    lower("Region_Email"::text) as login,
-    'REGION'::text              as scope_level,
-    "Division"::text           as division_name,
-    "Region"::text             as region_name
+    lower(cast("Region_Email" as text)) as login,
+    'REGION'                             as scope_level,
+    cast("Division" as text)            as division_name,
+    cast("Region" as text)              as region_name
   from public.company_alignment
   where "Region_Email" is not null
   group by
-    lower("Region_Email"::text),
-    "Division"::text,
-    "Region"::text
+    lower(cast("Region_Email" as text)),
+    cast("Division" as text),
+    cast("Region" as text)
 ),
 
 division_roles as (
   select
-    lower("Division_Email"::text) as login,
-    'DIVISION'::text               as scope_level,
-    "Division"::text              as division_name
+    lower(cast("Division_Email" as text)) as login,
+    'DIVISION'                              as scope_level,
+    cast("Division" as text)               as division_name
   from public.company_alignment
   where "Division_Email" is not null
   group by
-    lower("Division_Email"::text),
-    "Division"::text
+    lower(cast("Division_Email" as text)),
+    cast("Division" as text)
 ),
 
 base as (
   select
     shop_login                     as login,
-    'SHOP'::text                   as scope_level,
+    'SHOP'                         as scope_level,
     division_name,
     region_name,
     district_name,
@@ -72,7 +72,7 @@ base as (
     division_name,
     region_name,
     district_name,
-    null::text                     as shop_number
+    cast(null as text)             as shop_number
   from district_roles
 
   union all
@@ -82,8 +82,8 @@ base as (
     scope_level,
     division_name,
     region_name,
-    null::text                     as district_name,
-    null::text                     as shop_number
+    cast(null as text)             as district_name,
+    cast(null as text)             as shop_number
   from region_roles
 
   union all
@@ -92,9 +92,9 @@ base as (
     login,
     scope_level,
     division_name,
-    null::text                     as region_name,
-    null::text                     as district_name,
-    null::text                     as shop_number
+    cast(null as text)             as region_name,
+    cast(null as text)             as district_name,
+    cast(null as text)             as shop_number
   from division_roles
 ),
 

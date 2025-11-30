@@ -74,6 +74,23 @@ const currencyFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 
+const visitDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "short",
+  day: "numeric",
+  weekday: "short",
+});
+
+const formatDate = (value: string | Date | null | undefined) => {
+  if (!value) {
+    return "--";
+  }
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return "--";
+  }
+  return visitDateFormatter.format(date);
+};
+
 const formatPercent = (value: number | null) => {
   if (value === null || Number.isNaN(value)) return "--";
   return `${Math.round(value)}%`;
@@ -1897,6 +1914,7 @@ function SnapshotCardRenderer({ type, shopNumber }: { type: SnapshotKey; shopNum
 export default function PocketManagerPage() {
   const {
     needsLogin,
+    loginEmail,
     storedShopName,
     hierarchy,
     hierarchyLoading,
