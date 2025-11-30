@@ -2,19 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import { getCachedSummaryForLogin, normalizeLogin, writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 
 type HierarchyRow = {
-  login: string;
-  scope_level: string;
-  division_name: string | null;
-  region_name: string | null;
-  district_name: string | null;
-  shop_number: string | null;
-  shops_in_district: number | null;
-  districts_in_region: number | null;
-  shops_in_region: number | null;
-  regions_in_division: number | null;
-  shops_in_division: number | null;
+  login?: string | null;
+  scope_level?: string | null;
+  division_name?: string | null;
+  region_name?: string | null;
+  district_name?: string | null;
+  shop_number?: string | null;
+  shops_in_district?: number | null;
+  districts_in_region?: number | null;
+  shops_in_region?: number | null;
+  regions_in_division?: number | null;
+  shops_in_division?: number | null;
 };
 
 function formatSummary(row: HierarchyRow | null): string {
@@ -60,50 +61,94 @@ function formatSummary(row: HierarchyRow | null): string {
   }
 }
 
-export function HierarchyStamp() {
+type HierarchyStampProps = {
+  align?: "left" | "right";
+  loginEmail?: string | null;
+  hierarchy?: HierarchyRow | null;
+};
+
+export function HierarchyStamp({ align = "right", loginEmail, hierarchy }: HierarchyStampProps) {
   const [summary, setSummary] = useState<string>("Loading…");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
+
+    if (hierarchy) {
+      setSummary(formatSummary(hierarchy));
+      setLoading(false);
+      return;
+    }
+
+    const resolvedLogin = normalizeLogin(
+      loginEmail ?? (typeof window !== "undefined" ? window.localStorage.getItem("loginEmail") : null)
+    );
+
+    const cached = getCachedSummaryForLogin(resolvedLogin);
+    if (cached) {
+      setSummary(formatSummary(cached as HierarchyRow));
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
+
+    if (!resolvedLogin) {
+      if (!cached) {
+        setSummary("Not signed in");
+        setLoading(false);
+      }
+      return;
+    }
+
     const run = async () => {
       try {
-        // We stored this on successful login
-        const loginEmail =
-          typeof window !== "undefined"
-            ? window.localStorage.getItem("loginEmail")
-            : null;
-
-        if (!loginEmail) {
-          setSummary("Not signed in");
-          setLoading(false);
-          return;
-        }
-
         const { data, error } = await supabase
           .from("hierarchy_summary_vw")
           .select("*")
-          .eq("login", loginEmail.toLowerCase())
+          .eq("login", resolvedLogin)
           .maybeSingle();
+
+        if (cancelled) {
+          return;
+        }
 
         if (error) {
           console.error("hierarchy_summary_vw error", error);
-          setSummary("Hierarchy unavailable");
+          if (!cached) {
+            setSummary("Hierarchy unavailable");
+          }
         } else {
-          setSummary(formatSummary(data as HierarchyRow | null));
+          const parsed = (data as HierarchyRow | null) ?? null;
+          setSummary(formatSummary(parsed));
+          if (parsed) {
+            writeHierarchySummaryCache(parsed);
+          }
         }
       } catch (err) {
-        console.error("HierarchyStamp error", err);
-        setSummary("Hierarchy unavailable");
+        if (!cancelled) {
+          console.error("HierarchyStamp error", err);
+          if (!cached) {
+            setSummary("Hierarchy unavailable");
+          }
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
 
     run();
-  }, []);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [hierarchy, loginEmail]);
+
+  const alignmentClass = align === "left" ? "text-left" : "text-right";
 
   return (
-    <div className="text-[11px] text-slate-400 text-right max-w-xs leading-snug">
+    <div className={`text-[11px] text-slate-400 ${alignmentClass} max-w-xs leading-snug`}>
       {loading ? "Loading…" : summary}
     </div>
   );

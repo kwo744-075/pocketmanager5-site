@@ -1,7 +1,39 @@
 import type { ReactNode } from "react";
 
 const cardBaseClasses =
-  "relative overflow-hidden rounded-[28px] border border-white/5 bg-[#050f24]/85 p-4 shadow-[0_25px_60px_rgba(1,6,20,0.75)] backdrop-blur";
+  "relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#04142a]/92 via-[#050b1d]/95 to-[#01040c]/98 p-3 shadow-[0_28px_70px_rgba(3,10,25,0.75)] backdrop-blur";
+const cardOverlayClasses =
+  "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.18),_transparent_55%)]";
+const tileBaseClasses =
+  "flex min-h-[78px] flex-col items-center justify-between rounded-[16px] border border-white/12 px-2.5 py-2 text-center text-slate-200 shadow-[0_12px_28px_rgba(1,6,20,0.55)]";
+
+type TileVariant = "emerald" | "sky" | "violet" | "amber" | "rose" | "cyan" | "indigo" | "slate";
+
+const TILE_VARIANT_CLASSES: Record<TileVariant, string> = {
+  emerald: "bg-gradient-to-br from-[#033326]/90 via-[#06231c]/92 to-[#010c0a]/96",
+  sky: "bg-gradient-to-br from-[#052543]/90 via-[#041628]/92 to-[#010911]/96",
+  violet: "bg-gradient-to-br from-[#2b0b3a]/88 via-[#180822]/92 to-[#090311]/96",
+  amber: "bg-gradient-to-br from-[#3a1f05]/90 via-[#221103]/92 to-[#0c0401]/96",
+  rose: "bg-gradient-to-br from-[#3a051b]/90 via-[#210210]/92 to-[#0c0106]/96",
+  cyan: "bg-gradient-to-br from-[#023440]/90 via-[#032d36]/92 to-[#010d11]/96",
+  indigo: "bg-gradient-to-br from-[#0c1240]/90 via-[#070b28]/92 to-[#020513]/96",
+  slate: "bg-gradient-to-br from-[#0b1a32]/85 via-[#060f21]/90 to-[#030812]/95",
+};
+
+const TILE_VARIANTS = Object.keys(TILE_VARIANT_CLASSES) as TileVariant[];
+
+const getRandomVariant = (): TileVariant => {
+  const randomIndex = Math.floor(Math.random() * TILE_VARIANTS.length);
+  return TILE_VARIANTS[randomIndex] ?? "slate";
+};
+
+type DashboardTile = {
+  label: string;
+  subtitle?: string;
+  value: string;
+  eyebrow?: string;
+  variant?: TileVariant;
+};
 
 type DashboardSectionCardProps = {
   title: string;
@@ -14,64 +46,71 @@ type DashboardSectionCardProps = {
 export function DashboardSectionCard({ title, eyebrow, children, footer, headerAddon }: DashboardSectionCardProps) {
   return (
     <section className={cardBaseClasses}>
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.15),_transparent_45%)]" />
-      <div className="relative border-b border-white/5 pb-3 flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
+      <div className={cardOverlayClasses} />
+      <div className="relative border-b border-white/5 pb-2 flex flex-col gap-1 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          {eyebrow && <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{eyebrow}</p>}
-          <h3 className="mt-1 text-2xl font-semibold text-white">{title}</h3>
+          {eyebrow && <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p>}
+          <h3 className="mt-0.5 text-lg font-semibold text-white">{title}</h3>
         </div>
         {headerAddon}
       </div>
-      <div className="relative space-y-3 pt-3">{children}</div>
-      {footer && <div className="relative mt-3 border-t border-white/5 pt-3 text-sm text-slate-400">{footer}</div>}
+      <div className="relative space-y-2 pt-2">{children}</div>
+      {footer && <div className="relative mt-2 border-t border-white/5 pt-2 text-xs text-slate-400">{footer}</div>}
     </section>
   );
 }
 
-type KpiTileProps = {
-  label: string;
-  subtitle?: string;
-  value: string;
-  eyebrow?: string;
-};
+type KpiTileProps = DashboardTile;
 
-export function KpiTile({ label, subtitle, value, eyebrow }: KpiTileProps) {
+export function KpiTile({ label, subtitle, value, eyebrow, variant }: KpiTileProps) {
+  const resolvedVariant = variant ?? getRandomVariant();
   return (
-    <div className="flex min-h-[110px] flex-col items-center justify-between rounded-3xl border border-white/5 bg-gradient-to-br from-[#10213f]/80 via-[#07142d]/85 to-[#020915]/95 p-4 text-center text-slate-200 shadow-[0_18px_40px_rgba(1,6,20,0.75)]">
-      {eyebrow && <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p>}
-      <div className="space-y-1">
-        <p className="text-sm font-semibold text-white leading-tight">{label}</p>
-        {subtitle && <p className="text-[11px] text-slate-400">{subtitle}</p>}
+    <div className={`${tileBaseClasses} ${TILE_VARIANT_CLASSES[resolvedVariant]} space-y-0.5`}>
+      {eyebrow && <p className="text-[8px] uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p>}
+      <div className="space-y-0.5">
+        <p className="text-[11px] font-semibold text-white leading-tight">{label}</p>
+        {subtitle && <p className="text-[9px] text-slate-400">{subtitle}</p>}
       </div>
-      <p className="mt-auto text-xl font-semibold text-white tracking-tight">{value}</p>
+      <p className="mt-auto text-base font-semibold text-white tracking-tight">{value}</p>
     </div>
   );
 }
 
-const adminRowOne = [
+const adminRowOne: DashboardTile[] = [
   { label: "Staffed %", subtitle: "today / WTD", value: "0 / 0%" },
   { label: "Employee +/-", subtitle: "today / WTD", value: "0 / 0" },
   { label: "Average Tenure", subtitle: "(months)", value: "0" },
 ];
 
-const adminRowTwo = [
+const adminRowTwo: DashboardTile[] = [
   { label: "Training Compliance", subtitle: "today / WTD", value: "0 / 0%" },
   { label: "Cadence Completion", subtitle: "Daily / WTD", value: "0% / 0%" },
   { label: "Challenges Completed", subtitle: "today / WTD", value: "0 / 0" },
 ];
 
-const adminRowThree = [{ label: "Meetings Held", subtitle: "today / WTD", value: "0 / 0 / 0" }];
+const adminRowThree: DashboardTile[] = [
+  { label: "Meetings Held", subtitle: "today / WTD", value: "0 / 0 / 0" },
+];
 
-const cashSpotlightTile = { label: "Cash +/-", subtitle: "Daily / WTD", value: "$0 / $0" };
+const cashSpotlightTile: DashboardTile = { label: "Cash +/-", subtitle: "Daily / WTD", value: "$0 / $0" };
 
-const adminOpsTiles = [
+const adminOpsTiles: DashboardTile[] = [
   { label: "Claims submitted", subtitle: "today / WTD", value: "0 / 0" },
   { label: "Inventory Saved / Exported", subtitle: "today / WTD", value: "0 / 0" },
   { label: "IT repairs submitted", subtitle: "today / WTD", value: "0 / 0" },
   { label: "R&M requests submitted", subtitle: "today / WTD", value: "0 / 0" },
 ];
 
-const liveKpiTiles = [
+const equipmentChecksTiles: DashboardTile[] = [
+  { label: "Mileage Printers", subtitle: "today / WTD", value: "0 / 0" },
+  { label: "WO Printers", subtitle: "today / WTD", value: "0 / 0" },
+  { label: "Working CC Machines", subtitle: "today / WTD", value: "0 / 0" },
+  { label: "Bay PCs", subtitle: "today / WTD", value: "0 / 0" },
+  { label: "Evacs Machines", subtitle: "today / WTD", value: "0 / 0" },
+  { label: "Coolant Machines", subtitle: "today / WTD", value: "0 / 0" },
+];
+
+const liveKpiTiles: DashboardTile[] = [
   { label: "Cars", subtitle: "Daily / WTD", value: "0 / 0" },
   { label: "Sales", subtitle: "Daily / WTD", value: "$0 / $0" },
   { label: "ARO", subtitle: "Daily / WTD", value: "$0 / $0" },
@@ -88,58 +127,57 @@ const liveKpiTiles = [
 
 export function ExecutiveDashboard() {
   return (
-    <section className="grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-      <div className="flex flex-col gap-6">
-        <DashboardSectionCard title="Admin Management" eyebrow="People systems">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+    <section className="grid gap-2.5 lg:grid-cols-[0.85fr_1.15fr]">
+      <div className="flex flex-col gap-2.5">
+        <DashboardSectionCard title="Admin Management">
+          <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
             {adminRowOne.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
             {adminRowTwo.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
-          <div className="grid gap-3">
+          <div className="grid gap-1.5">
             {adminRowThree.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
         </DashboardSectionCard>
         <DashboardSectionCard title="Live Activity" eyebrow="Current Contest">
-          <div className="rounded-2xl border border-white/5 bg-slate-900/50 p-4">
-            <p className="text-sm font-semibold text-white">Live Activity</p>
-            <p className="text-xs text-slate-400">Contest status</p>
-            <p className="mt-3 text-xl font-semibold text-white"># / $</p>
+          <div className={`${tileBaseClasses} w-full gap-1 text-left`}>
+            <p className="text-[11px] font-semibold text-white">Live Activity</p>
+            <p className="text-[9px] text-slate-400">Contest status</p>
+            <p className="text-base font-semibold text-white"># / $</p>
           </div>
         </DashboardSectionCard>
         <DashboardSectionCard title="Live Chat Box">
-          <p className="text-sm text-slate-300">Live chat feed / DM notes will appear here.</p>
+          <p className="text-[11px] text-slate-300">Live chat feed / DM notes will appear here.</p>
         </DashboardSectionCard>
       </div>
 
-      <div className="flex flex-col gap-6">
+      <div className="flex flex-col gap-2.5">
         <DashboardSectionCard
           title="Live KPIs"
-          eyebrow="Ops pulse"
           headerAddon={
-            <div className="rounded-3xl border border-white/5 bg-slate-900/50 p-3 text-slate-200 shadow-inner shadow-black/30 min-w-[160px] text-center">
-              <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{cashSpotlightTile.subtitle}</p>
-              <p className="text-base font-semibold text-white">{cashSpotlightTile.label}</p>
-              <p className="mt-2 text-2xl font-semibold text-white">{cashSpotlightTile.value}</p>
+            <div className="rounded-[12px] border border-white/15 bg-gradient-to-br from-emerald-500/15 via-slate-900/70 to-slate-950/85 px-1.5 py-1 text-slate-100 shadow-[0_6px_16px_rgba(1,6,20,0.55)] min-w-[72px] text-center">
+              <p className="text-[8px] uppercase tracking-[0.32em] text-emerald-200/80">{cashSpotlightTile.subtitle}</p>
+              <p className="text-[11px] font-semibold text-white">{cashSpotlightTile.label}</p>
+              <p className="mt-0.5 text-base font-semibold text-white">{cashSpotlightTile.value}</p>
             </div>
           }
         >
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
             {liveKpiTiles.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
         </DashboardSectionCard>
 
-        <DashboardSectionCard title="Admin / Ops" eyebrow="Claims • Inventory • IT">
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <DashboardSectionCard title="Admin / Ops">
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
             {adminOpsTiles.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
@@ -147,7 +185,11 @@ export function ExecutiveDashboard() {
         </DashboardSectionCard>
 
         <DashboardSectionCard title="Equipment & Ops Checks" eyebrow="Compliance">
-          <KpiTile label="Equipment Checks" subtitle="today / WTD" value="0 / 0" />
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+            {equipmentChecksTiles.map((tile) => (
+              <KpiTile key={tile.label} {...tile} />
+            ))}
+          </div>
         </DashboardSectionCard>
       </div>
     </section>

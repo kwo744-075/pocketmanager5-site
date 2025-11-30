@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
+import { getCachedSummaryForLogin, normalizeLogin, writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 import { RetailPills } from "@/app/components/RetailPills";
 import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
 import { fetchRetailContext } from "@/lib/retailCalendar";
+import { buildRetailTimestampLabel } from "@/lib/retailTimestamp";
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
 
@@ -38,6 +40,7 @@ type MetricKey =
   | "big4"
   | "coolants"
   | "diffs"
+  | "fuelFilters"
   | "donations"
   | "mobil1";
 
@@ -56,6 +59,7 @@ type TotalsRow = {
   total_big4: number | null;
   total_coolants: number | null;
   total_diffs: number | null;
+  total_fuel_filters: number | null;
   total_donations: number | null;
   total_mobil1: number | null;
 };
@@ -76,6 +80,39 @@ type SlotState = {
 
 type SlotStateMap = Record<TimeSlotKey, SlotState>;
 
+type ShopGridSlice = {
+  cars: number;
+  sales: number;
+  aro: number | null;
+  big4Pct: number | null;
+  coolantsPct: number | null;
+  diffsPct: number | null;
+  mobil1Pct: number | null;
+  donations: number;
+};
+
+type ShopTotalsRow = {
+  shop_id: string;
+  total_cars: number | null;
+  total_sales: number | null;
+  total_big4: number | null;
+  total_coolants: number | null;
+  total_diffs: number | null;
+  total_fuel_filters: number | null;
+  total_donations: number | null;
+  total_mobil1: number | null;
+  district_name?: string | null;
+};
+
+type DistrictGridRow = {
+  id: string;
+  label: string;
+  descriptor: string;
+  kind: "district" | "shop";
+  isCurrentShop?: boolean;
+  metrics: Record<TrendKpiKey, string>;
+};
+
 type CheckInRow = {
   shop_id?: string | null;
   check_in_date?: string | null;
@@ -85,6 +122,7 @@ type CheckInRow = {
   big4: number | null;
   coolants: number | null;
   diffs: number | null;
+  fuel_filters: number | null;
   donations: number | null;
   mobil1: number | null;
   temperature: Temperature | null;
@@ -98,7 +136,8 @@ const METRIC_FIELDS: MetricField[] = [
   { key: "big4", label: "Big 4" },
   { key: "coolants", label: "Coolants" },
   { key: "diffs", label: "Diffs" },
-  { key: "donations", label: "Donations" },
+  { key: "fuelFilters", label: "FF" },
+  { key: "donations", label: "Donations", format: "currency" },
   { key: "mobil1", label: "Mobil 1" },
 ];
 
@@ -122,6 +161,7 @@ const EMPTY_TOTALS: Totals = {
   big4: 0,
   coolants: 0,
   diffs: 0,
+  fuelFilters: 0,
   donations: 0,
   mobil1: 0,
 };
@@ -134,11 +174,81 @@ const temperatureChips: { value: Temperature; label: string; accent: string }[] 
 
 const slotOrder = Object.keys(SLOT_DEFINITIONS) as TimeSlotKey[];
 const EVENING_SLOTS: TimeSlotKey[] = ["17:00", "20:00"];
-const SLOT_UNLOCK_RULES: Record<TimeSlotKey, { hour: number; minute: number; label: string }> = {
-  "12:00": { hour: 12, minute: 0, label: "12:00 PM" },
-  "14:30": { hour: 14, minute: 30, label: "2:30 PM" },
-  "17:00": { hour: 17, minute: 0, label: "5:00 PM" },
-  "20:00": { hour: 20, minute: 0, label: "8:00 PM" },
+const SLOT_UNLOCK_RULES: Record<TimeSlotKey, { label: string; startMinutes: number; endMinutes: number }> = {
+  "12:00": { label: "12:00 PM", startMinutes: 9 * 60, endMinutes: 13 * 60 + 30 },
+  "14:30": { label: "2:30 PM", startMinutes: 13 * 60 + 30, endMinutes: 16 * 60 },
+  "17:00": { label: "5:00 PM", startMinutes: 16 * 60, endMinutes: 19 * 60 },
+  "20:00": { label: "8:00 PM", startMinutes: 19 * 60, endMinutes: 9 * 60 },
+};
+
+const minutesSinceMidnight = (timestamp: number) => {
+  const current = new Date(timestamp);
+  return current.getHours() * 60 + current.getMinutes();
+};
+
+const isWithinWindow = (minutes: number, start: number, end: number) => {
+  if (start <= end) {
+    return minutes >= start && minutes < end;
+  }
+  return minutes >= start || minutes < end;
+};
+
+type TrendKpiKey = "cars" | "sales" | "aro" | "donations" | "big4" | "coolants" | "diffs" | "mobil1";
+
+type TrendValueFormat = "number" | "currency" | "aro" | "percent";
+
+const TREND_KPI_HEADERS: Array<{ key: TrendKpiKey; label: string; format: TrendValueFormat }> = [
+  { key: "cars", label: "Cars", format: "number" },
+  { key: "sales", label: "Sales", format: "currency" },
+  { key: "aro", label: "ARO", format: "aro" },
+  { key: "big4", label: "Big 4", format: "percent" },
+  { key: "coolants", label: "Coolants", format: "percent" },
+  { key: "diffs", label: "Diffs", format: "percent" },
+  { key: "mobil1", label: "Mobil 1", format: "percent" },
+  { key: "donations", label: "Donations", format: "currency" },
+];
+
+const TREND_SCOPE_WEIGHTS: Record<ScopeLevel, number> = {
+  SHOP: 1,
+  DISTRICT: 0.96,
+  REGION: 0.92,
+  DIVISION: 0.88,
+};
+
+const TREND_KPI_TEMPLATE: Record<TrendKpiKey, { base: number; decay: number; min?: number }> = {
+  cars: { base: 220, decay: 5, min: 120 },
+  sales: { base: 48000, decay: 1200, min: 20000 },
+  aro: { base: 215, decay: 2, min: 160 },
+  donations: { base: 900, decay: 25, min: 250 },
+  big4: { base: 48, decay: 0.6, min: 30 },
+  coolants: { base: 24, decay: 0.3, min: 12 },
+  diffs: { base: 9, decay: 0.2, min: 4 },
+  mobil1: { base: 18, decay: 0.25, min: 8 },
+};
+
+type PulsePanelTone = "aurora" | "violet" | "amber" | "cobalt";
+
+const PULSE_PANEL_TONES: Record<PulsePanelTone, { container: string; overlay: string }> = {
+  aurora: {
+    container:
+      "border-emerald-400/40 bg-gradient-to-br from-[#021321]/95 via-[#030c1b]/96 to-[#01040b]/98 shadow-[0_30px_85px_rgba(8,42,74,0.85)]",
+    overlay: "bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.25),_transparent_55%)]",
+  },
+  violet: {
+    container:
+      "border-fuchsia-400/40 bg-gradient-to-br from-[#1a0528]/95 via-[#0f041a]/96 to-[#05020b]/98 shadow-[0_30px_85px_rgba(74,15,94,0.75)]",
+    overlay: "bg-[radial-gradient(circle_at_top,_rgba(217,70,239,0.25),_transparent_55%)]",
+  },
+  amber: {
+    container:
+      "border-amber-400/40 bg-gradient-to-br from-[#2d1804]/95 via-[#1b0c03]/96 to-[#0a0401]/98 shadow-[0_30px_85px_rgba(84,51,10,0.78)]",
+    overlay: "bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.22),_transparent_50%)]",
+  },
+  cobalt: {
+    container:
+      "border-sky-400/40 bg-gradient-to-br from-[#04132d]/95 via-[#050d20]/96 to-[#01040c]/98 shadow-[0_30px_85px_rgba(15,36,84,0.78)]",
+    overlay: "bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.24),_transparent_55%)]",
+  },
 };
 
 const currencyFormatter = new Intl.NumberFormat("en-US", {
@@ -229,44 +339,62 @@ const toNumberValue = (value: string): number => {
   return Number.isFinite(parsed) ? parsed : 0;
 };
 
+const buildShopSliceFromTotals = (row: ShopTotalsRow | null | undefined): ShopGridSlice => {
+  const cars = row?.total_cars ?? 0;
+  const sales = row?.total_sales ?? 0;
+  const big4 = row?.total_big4 ?? 0;
+  const coolants = row?.total_coolants ?? 0;
+  const diffs = row?.total_diffs ?? 0;
+  const mobil1 = row?.total_mobil1 ?? 0;
+  const donations = row?.total_donations ?? 0;
+  const percent = (value: number) => (cars > 0 ? (value / cars) * 100 : null);
 
-const buildRetailTimestampLabel = (targetDate: Date = new Date()): string => {
-  const date = new Date(targetDate);
-  const fiscalStartMonth = 1; // February (0-based index)
-  const fiscalStartDay = 1;
-  let fiscalYear = date.getFullYear();
-  const fiscalStart = new Date(fiscalYear, fiscalStartMonth, fiscalStartDay);
-  if (date < fiscalStart) {
-    fiscalYear -= 1;
-  }
-  const fiscalYearStart = new Date(fiscalYear, fiscalStartMonth, fiscalStartDay);
-  const fiscalStartSunday = new Date(fiscalYearStart);
-  const startDay = fiscalYearStart.getDay();
-  if (startDay !== 0) {
-    fiscalStartSunday.setDate(fiscalYearStart.getDate() - startDay);
-  }
-  const msPerDay = 86_400_000;
-  const weeksSinceStart = Math.floor((date.getTime() - fiscalStartSunday.getTime()) / msPerDay / 7);
-  const periodPattern = [5, 4, 4];
-  let remainingWeeks = weeksSinceStart + 1;
-  let period = 1;
-  let quarter = 1;
-  let weekOfPeriod = 1;
-  for (let p = 1; p <= 12; p += 1) {
-    const weeksInPeriod = periodPattern[(p - 1) % periodPattern.length];
-    if (remainingWeeks <= weeksInPeriod) {
-      period = p;
-      quarter = Math.floor((p - 1) / 3) + 1;
-      weekOfPeriod = Math.max(remainingWeeks, 1);
-      break;
-    }
-    remainingWeeks -= weeksInPeriod;
-  }
-  const month = (date.getMonth() + 1).toString().padStart(2, "0");
-  const day = date.getDate().toString().padStart(2, "0");
-  const formattedDate = `${month}/${day}/${date.getFullYear()}`;
-  return `Q${quarter}-P${period}-W${weekOfPeriod} ${formattedDate}`;
+  return {
+    cars,
+    sales,
+    aro: cars > 0 ? sales / cars : null,
+    big4Pct: percent(big4),
+    coolantsPct: percent(coolants),
+    diffsPct: percent(diffs),
+    mobil1Pct: percent(mobil1),
+    donations,
+  } satisfies ShopGridSlice;
 };
+
+const convertTotalsRowToShopRow = (row: TotalsRow | null, id: string): ShopTotalsRow | null => {
+  if (!row) {
+    return null;
+  }
+  return {
+    shop_id: id,
+    total_cars: row.total_cars ?? 0,
+    total_sales: row.total_sales ?? 0,
+    total_big4: row.total_big4 ?? 0,
+    total_coolants: row.total_coolants ?? 0,
+    total_diffs: row.total_diffs ?? 0,
+    total_fuel_filters: row.total_fuel_filters ?? 0,
+    total_donations: row.total_donations ?? 0,
+    total_mobil1: row.total_mobil1 ?? 0,
+    district_name: row.district_name ?? null,
+  };
+};
+
+const formatMetricPair = (primary: string, secondary: string) => `${primary} / ${secondary}`;
+const formatIntegerValue = (value: number) => numberFormatter.format(Math.round(value ?? 0));
+const formatCurrencyValue = (value: number) => currencyFormatter.format(Math.round(value ?? 0));
+const formatAroValue = (value: number | null) => (value === null ? "--" : `$${formatDecimal(value)}`);
+
+const buildGridMetrics = (daily: ShopGridSlice, weekly: ShopGridSlice): Record<TrendKpiKey, string> => ({
+  cars: formatMetricPair(formatIntegerValue(daily.cars), formatIntegerValue(weekly.cars)),
+  sales: formatMetricPair(formatCurrencyValue(daily.sales), formatCurrencyValue(weekly.sales)),
+  aro: formatMetricPair(formatAroValue(daily.aro), formatAroValue(weekly.aro)),
+  big4: formatMetricPair(formatPercent(daily.big4Pct), formatPercent(weekly.big4Pct)),
+  coolants: formatMetricPair(formatPercent(daily.coolantsPct), formatPercent(weekly.coolantsPct)),
+  diffs: formatMetricPair(formatPercent(daily.diffsPct), formatPercent(weekly.diffsPct)),
+  mobil1: formatMetricPair(formatPercent(daily.mobil1Pct), formatPercent(weekly.mobil1Pct)),
+  donations: formatMetricPair(formatCurrencyValue(daily.donations), formatCurrencyValue(weekly.donations)),
+});
+
 
 const todayISO = () => new Date().toISOString().split("T")[0];
 
@@ -278,18 +406,35 @@ const getWeekStartISO = () => {
   return first.toISOString().split("T")[0];
 };
 
+const formatTrendValue = (value: number, format: TrendValueFormat): string => {
+  switch (format) {
+    case "currency":
+      return currencyFormatter.format(Math.round(value));
+    case "aro":
+      return value <= 0 ? "--" : `$${formatDecimal(value)}`;
+    case "percent":
+      return formatPercent(value);
+    default:
+      return numberFormatter.format(Math.round(value));
+  }
+};
+
 export default function PulseCheckPage() {
   const router = useRouter();
   const [loginEmail, setLoginEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [hierarchy, setHierarchy] = useState<HierarchyRow | null>(null);
   const [shopMeta, setShopMeta] = useState<ShopMeta | null>(null);
+  const [homeShopMeta, setHomeShopMeta] = useState<ShopMeta | null>(null);
   const [hierarchyError, setHierarchyError] = useState<string | null>(null);
   const [slots, setSlots] = useState<SlotStateMap>(() => buildInitialSlots());
   const [slotSnapshot, setSlotSnapshot] = useState<SlotStateMap | null>(null);
   const [dailyTotals, setDailyTotals] = useState<Totals>(EMPTY_TOTALS);
   const [weeklyTotals, setWeeklyTotals] = useState<Totals>(EMPTY_TOTALS);
   const [weeklyEveningTotals, setWeeklyEveningTotals] = useState<Totals>(EMPTY_TOTALS);
+  const [districtGridRows, setDistrictGridRows] = useState<DistrictGridRow[]>([]);
+  const [districtGridLoading, setDistrictGridLoading] = useState(false);
+  const [districtGridError, setDistrictGridError] = useState<string | null>(null);
   const [loadingHierarchy, setLoadingHierarchy] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [loadingTotals, setLoadingTotals] = useState(false);
@@ -297,15 +442,55 @@ export default function PulseCheckPage() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [activeSlot, setActiveSlot] = useState<TimeSlotKey | null>(slotOrder[0]);
   const [eveningOnly, setEveningOnly] = useState(false);
+  const [kpiScope, setKpiScope] = useState<"daily" | "weekly">("daily");
   const [clock, setClock] = useState(() => Date.now());
   const [retailLabel, setRetailLabel] = useState<string>(() => buildRetailTimestampLabel());
+  const [proxyPanelOpen, setProxyPanelOpen] = useState(false);
+  const [proxyInput, setProxyInput] = useState("");
+  const [proxyBusy, setProxyBusy] = useState(false);
+  const [proxyMessage, setProxyMessage] = useState<string | null>(null);
+  const [proxyMessageTone, setProxyMessageTone] = useState<"info" | "error" | "success">("info");
+  const [selectedBreakdownDate, setSelectedBreakdownDate] = useState(() => todayISO());
   const needsLogin = authChecked && !loginEmail;
-  const panelBaseClasses =
-    "relative overflow-hidden rounded-[30px] border border-white/5 bg-[#040c1c]/95 p-5 shadow-[0_30px_80px_rgba(1,6,20,0.8)] backdrop-blur";
-  const emeraldPanelClasses =
-    "relative overflow-hidden rounded-[30px] border border-emerald-500/30 bg-[#040c1c]/95 p-4 shadow-[0_30px_80px_rgba(1,6,20,0.8)] backdrop-blur";
-  const panelOverlayClasses =
-    "pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.2),_transparent_45%)]";
+  const panelBaseClasses = (tone: PulsePanelTone = "aurora", padding: string = "p-5") =>
+    `relative overflow-hidden rounded-[30px] border ${padding} backdrop-blur ${PULSE_PANEL_TONES[tone].container}`;
+  const panelOverlayClasses = (tone: PulsePanelTone = "aurora") =>
+    `pointer-events-none absolute inset-0 ${PULSE_PANEL_TONES[tone].overlay}`;
+  const scope = hierarchy?.scope_level?.toUpperCase() as ScopeLevel | undefined;
+  const canProxy = scope ? scope !== "SHOP" : false;
+
+  const lookupShopMeta = useCallback(async (shopNumber: number) => {
+    const clients = [pulseSupabase, supabase];
+    let lastError: unknown = null;
+
+    for (const client of clients) {
+      try {
+        const { data, error } = await client
+          .from("shops")
+          .select("id, shop_number, shop_name, district_id, region_id")
+          .eq("shop_number", shopNumber)
+          .limit(1)
+          .maybeSingle();
+
+        if (error && error.code !== "PGRST116") {
+          lastError = error;
+          continue;
+        }
+
+        if (data) {
+          return data as ShopMeta;
+        }
+      } catch (clientErr) {
+        lastError = clientErr;
+      }
+    }
+
+    if (lastError) {
+      throw lastError;
+    }
+
+    return null;
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -314,6 +499,12 @@ export default function PulseCheckPage() {
     const interval = window.setInterval(() => setClock(Date.now()), 60_000);
     return () => window.clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    if (!canProxy) {
+      setProxyPanelOpen(false);
+    }
+  }, [canProxy]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -345,12 +536,26 @@ export default function PulseCheckPage() {
     setLoadingHierarchy(true);
     setHierarchyError(null);
 
+    const normalized = normalizeLogin(loginEmail);
+    if (!normalized) {
+      setHierarchy(null);
+      setHierarchyError("Unable to load hierarchy. Please try again.");
+      setLoadingHierarchy(false);
+      return;
+    }
+
+    const cachedSummary = getCachedSummaryForLogin(normalized);
+    if (cachedSummary) {
+      setHierarchy((cachedSummary as HierarchyRow) ?? null);
+      setHierarchyError(null);
+    }
+
     const fetchHierarchy = async () => {
       try {
         const { data, error } = await supabase
           .from("hierarchy_summary_vw")
           .select("*")
-          .eq("login", loginEmail.toLowerCase())
+          .eq("login", normalized)
           .maybeSingle();
 
         if (cancelled) {
@@ -359,18 +564,31 @@ export default function PulseCheckPage() {
 
         if (error) {
           console.error("hierarchy_summary_vw error", error);
-          setHierarchyError("Unable to load hierarchy. Please try again.");
-          setHierarchy(null);
+          if (!getCachedSummaryForLogin(normalized)) {
+            setHierarchyError("Unable to load hierarchy. Please try again.");
+            setHierarchy(null);
+          }
         } else if (!data) {
-          setHierarchyError("No hierarchy record was found for this login email.");
-          setHierarchy(null);
+          const fallback = getCachedSummaryForLogin(normalized);
+          if (fallback) {
+            setHierarchy((fallback as HierarchyRow) ?? null);
+            setHierarchyError(null);
+          } else {
+            setHierarchyError("No hierarchy record was found for this login email.");
+            setHierarchy(null);
+          }
         } else {
           setHierarchy(data as HierarchyRow);
+          setHierarchyError(null);
+          writeHierarchySummaryCache(data as HierarchyRow);
         }
       } catch (err) {
         if (!cancelled) {
           console.error("Pulse Check hierarchy error", err);
-          setHierarchyError("Unexpected error loading hierarchy.");
+          if (!getCachedSummaryForLogin(normalized)) {
+            setHierarchyError("Unexpected error loading hierarchy.");
+            setHierarchy(null);
+          }
         }
       } finally {
         if (!cancelled) {
@@ -388,6 +606,7 @@ export default function PulseCheckPage() {
 
   useEffect(() => {
     if (!hierarchy?.shop_number) {
+      setHomeShopMeta(null);
       setShopMeta(null);
       return;
     }
@@ -395,6 +614,7 @@ export default function PulseCheckPage() {
     const numericShop = Number(hierarchy.shop_number);
     if (Number.isNaN(numericShop)) {
       setHierarchyError("Shop number is not a valid number in hierarchy mapping.");
+      setHomeShopMeta(null);
       setShopMeta(null);
       return;
     }
@@ -403,32 +623,7 @@ export default function PulseCheckPage() {
 
     const fetchShopMetadata = async () => {
       try {
-        const clients = [pulseSupabase, supabase];
-        let resolved: ShopMeta | null = null;
-        let lastError: unknown = null;
-
-        for (const client of clients) {
-          try {
-            const { data, error } = await client
-              .from("shops")
-              .select("id, shop_number, shop_name, district_id, region_id")
-              .eq("shop_number", numericShop)
-              .limit(1)
-              .maybeSingle();
-
-            if (error && error.code !== "PGRST116") {
-              lastError = error;
-              continue;
-            }
-
-            if (data) {
-              resolved = data as ShopMeta;
-              break;
-            }
-          } catch (clientErr) {
-            lastError = clientErr;
-          }
-        }
+        const resolved = await lookupShopMeta(numericShop);
 
         if (cancelled) {
           return;
@@ -436,21 +631,23 @@ export default function PulseCheckPage() {
 
         if (resolved) {
           setHierarchyError(null);
+          setHomeShopMeta(resolved);
           setShopMeta(resolved);
+          setProxyPanelOpen(false);
+          setProxyInput("");
+          setProxyMessage(null);
+          setProxyMessageTone("info");
           return;
         }
 
-        if (lastError) {
-          console.error("shops lookup error", lastError);
-          setHierarchyError("Unable to map your shop right now. Please refresh in a bit.");
-        } else {
-          setHierarchyError("This login isn't linked to a Pulse Check shop yet. Ask your admin to enable it.");
-        }
+        setHierarchyError("This login isn't linked to a Pulse Check shop yet. Ask your admin to enable it.");
+        setHomeShopMeta(null);
         setShopMeta(null);
       } catch (err) {
         if (!cancelled) {
           console.error("Shop metadata error", err);
           setHierarchyError("Unexpected error resolving shop metadata.");
+          setHomeShopMeta(null);
           setShopMeta(null);
         }
       }
@@ -461,7 +658,7 @@ export default function PulseCheckPage() {
     return () => {
       cancelled = true;
     };
-  }, [hierarchy]);
+  }, [hierarchy, lookupShopMeta]);
 
   useEffect(() => {
     let cancelled = false;
@@ -515,6 +712,7 @@ export default function PulseCheckPage() {
           big4: toInputValue(row.big4),
           coolants: toInputValue(row.coolants),
           diffs: toInputValue(row.diffs),
+          fuelFilters: toInputValue(row.fuel_filters),
           donations: toInputValue(row.donations),
           mobil1: toInputValue(row.mobil1),
         },
@@ -535,7 +733,7 @@ export default function PulseCheckPage() {
         const { data, error } = await pulseSupabase
           .from("check_ins")
           .select(
-            "time_slot,cars,sales,big4,coolants,diffs,donations,mobil1,temperature,is_submitted,submitted_at"
+            "time_slot,cars,sales,big4,coolants,diffs,fuel_filters,donations,mobil1,temperature,is_submitted,submitted_at"
           )
           .eq("shop_id", shopId)
           .eq("check_in_date", todayISO());
@@ -568,7 +766,7 @@ export default function PulseCheckPage() {
         pulseSupabase
           .from("shop_daily_totals")
           .select(
-            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
+            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
           )
           .eq("shop_id", shopId)
           .eq("check_in_date", dailyDate)
@@ -576,7 +774,7 @@ export default function PulseCheckPage() {
         pulseSupabase
           .from("shop_wtd_totals")
           .select(
-            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
+            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
           )
           .eq("shop_id", shopId)
           .eq("week_start", weekStart)
@@ -586,7 +784,7 @@ export default function PulseCheckPage() {
         pulseSupabase
           .from("shop_wtd_evening_totals")
           .select(
-            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1"
+            "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
           )
           .eq("shop_id", shopId)
           .eq("week_start", weekStart)
@@ -601,6 +799,7 @@ export default function PulseCheckPage() {
         big4: row?.total_big4 ?? 0,
         coolants: row?.total_coolants ?? 0,
         diffs: row?.total_diffs ?? 0,
+        fuelFilters: row?.total_fuel_filters ?? 0,
         donations: row?.total_donations ?? 0,
         mobil1: row?.total_mobil1 ?? 0,
       });
@@ -695,7 +894,162 @@ export default function PulseCheckPage() {
     };
   }, [shopMeta?.id, refreshAll]);
 
-  const scope = hierarchy?.scope_level?.toUpperCase() as ScopeLevel | undefined;
+  useEffect(() => {
+    if (!shopMeta?.district_id) {
+      setDistrictGridRows([]);
+      setDistrictGridError(null);
+      setDistrictGridLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadDistrictScope = async () => {
+      setDistrictGridLoading(true);
+      setDistrictGridError(null);
+      try {
+        const { data: shopList, error: shopError } = await pulseSupabase
+          .from("shops")
+          .select("id,shop_name,shop_number")
+          .eq("district_id", shopMeta.district_id)
+          .order("shop_number", { ascending: true });
+
+        if (shopError) {
+          throw shopError;
+        }
+
+        const shopsInDistrict = (shopList ?? []) as Array<{
+          id: string;
+          shop_name: string | null;
+          shop_number: number | null;
+        }>;
+        const shopIds = shopsInDistrict.map((shop) => shop.id);
+
+        let dailyRows: ShopTotalsRow[] = [];
+        let weeklyRows: ShopTotalsRow[] = [];
+
+        if (shopIds.length) {
+          const [dailyResponse, weeklyResponse] = await Promise.all([
+            pulseSupabase
+              .from("shop_daily_totals")
+              .select(
+                "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
+              )
+              .eq("check_in_date", todayISO())
+              .in("shop_id", shopIds),
+            pulseSupabase
+              .from("shop_wtd_totals")
+              .select(
+                "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
+              )
+              .eq("week_start", getWeekStartISO())
+              .in("shop_id", shopIds),
+          ]);
+
+          if (dailyResponse.error && dailyResponse.error.code !== "PGRST116") {
+            throw dailyResponse.error;
+          }
+          if (weeklyResponse.error && weeklyResponse.error.code !== "PGRST116") {
+            throw weeklyResponse.error;
+          }
+
+          dailyRows = (dailyResponse.data ?? []) as ShopTotalsRow[];
+          weeklyRows = (weeklyResponse.data ?? []) as ShopTotalsRow[];
+        }
+
+        const [districtDailyResponse, districtWeeklyResponse] = await Promise.all([
+          pulseSupabase
+            .from("district_daily_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+            )
+            .eq("district_id", shopMeta.district_id)
+            .eq("check_in_date", todayISO())
+            .maybeSingle(),
+          pulseSupabase
+            .from("district_wtd_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+            )
+            .eq("district_id", shopMeta.district_id)
+            .eq("week_start", getWeekStartISO())
+            .order("current_date", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (districtDailyResponse.error && districtDailyResponse.error.code !== "PGRST116") {
+          throw districtDailyResponse.error;
+        }
+        if (districtWeeklyResponse.error && districtWeeklyResponse.error.code !== "PGRST116") {
+          throw districtWeeklyResponse.error;
+        }
+
+        const dailyMap = new Map(dailyRows.map((row) => [row.shop_id, row]));
+        const weeklyMap = new Map(weeklyRows.map((row) => [row.shop_id, row]));
+
+        const nextRows: DistrictGridRow[] = [];
+        const districtDaily = convertTotalsRowToShopRow(districtDailyResponse.data ?? null, `district-${shopMeta.district_id}`);
+        const districtWeekly = convertTotalsRowToShopRow(
+          districtWeeklyResponse.data ?? null,
+          `district-${shopMeta.district_id}`
+        );
+
+        if (districtDaily || districtWeekly) {
+          nextRows.push({
+            id: `district-${shopMeta.district_id}`,
+            label:
+              hierarchy?.district_name ??
+              districtDailyResponse.data?.district_name ??
+              districtWeeklyResponse.data?.district_name ??
+              "District rollup",
+            descriptor: "District total",
+            kind: "district",
+            metrics: buildGridMetrics(
+              buildShopSliceFromTotals(districtDaily ?? null),
+              buildShopSliceFromTotals(districtWeekly ?? null)
+            ),
+          });
+        }
+
+        shopsInDistrict.forEach((shop) => {
+          const label = shop.shop_name ?? `Shop #${shop.shop_number ?? "?"}`;
+          const descriptor = shop.shop_number ? `Shop #${shop.shop_number}` : shop.shop_name ?? "Live shop";
+          nextRows.push({
+            id: shop.id,
+            label,
+            descriptor,
+            kind: "shop",
+            isCurrentShop: shop.id === shopMeta.id,
+            metrics: buildGridMetrics(
+              buildShopSliceFromTotals(dailyMap.get(shop.id)),
+              buildShopSliceFromTotals(weeklyMap.get(shop.id))
+            ),
+          });
+        });
+
+        if (!cancelled) {
+          setDistrictGridRows(nextRows);
+        }
+      } catch (err) {
+        console.error("loadDistrictScope error", err);
+        if (!cancelled) {
+          setDistrictGridRows([]);
+          setDistrictGridError("Unable to load district shops right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setDistrictGridLoading(false);
+        }
+      }
+    };
+
+    loadDistrictScope();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shopMeta?.district_id, shopMeta?.id, hierarchy?.district_name]);
+
   const resolvedShopNumber = useMemo(() => {
     if (typeof shopMeta?.shop_number === "number" && Number.isFinite(shopMeta.shop_number)) {
       return shopMeta.shop_number;
@@ -709,6 +1063,21 @@ export default function PulseCheckPage() {
   const submissionCount = useMemo(() => {
     return slotOrder.filter((slot) => slots[slot].status === "submitted").length;
   }, [slots]);
+  const totalSlots = slotOrder.length;
+  const cadencePercent = totalSlots === 0 ? 0 : Math.round((submissionCount / totalSlots) * 100);
+  const shopLocationLabel =
+    [hierarchy?.district_name, hierarchy?.region_name].filter(Boolean).join(" • ") || "Update hierarchy mapping";
+  const activeShopLabel = shopMeta?.shop_name
+    ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})`
+    : hierarchy?.shop_number
+    ? `Shop #${hierarchy.shop_number}`
+    : "Resolve shop";
+  const homeShopLabel = homeShopMeta?.shop_name
+    ? `${homeShopMeta.shop_name} (#${homeShopMeta.shop_number ?? "?"})`
+    : homeShopMeta?.shop_number
+    ? `Shop #${homeShopMeta.shop_number}`
+    : null;
+  const proxyActive = Boolean(homeShopMeta?.id && shopMeta?.id && homeShopMeta.id !== shopMeta.id);
 
   const computeDirtyFlag = useCallback(
     (slotKey: TimeSlotKey, candidate: SlotState) => {
@@ -736,9 +1105,8 @@ export default function PulseCheckPage() {
       if (!rule) {
         return true;
       }
-      const unlock = new Date();
-      unlock.setHours(rule.hour, rule.minute, 0, 0);
-      return clock >= unlock.getTime();
+      const minutes = minutesSinceMidnight(clock);
+      return isWithinWindow(minutes, rule.startMinutes, rule.endMinutes);
     },
     [clock]
   );
@@ -770,36 +1138,207 @@ export default function PulseCheckPage() {
       : shopMeta.shop_name
     : resolvedShopNumber
     ? `Shop #${resolvedShopNumber}`
-    : "Pulse Check rollup";
-  const dailySummary = `${numberFormatter.format(resolvedDailyTotals.cars)} cars today • ${currencyFormatter.format(
-    resolvedDailyTotals.sales
-  )} sales`;
-  const bannerSubtitle = [retailLabel, viewLabel, dailySummary].filter(Boolean).join(" • ");
+    : "";
+  const bannerSubtitle = "";
   const bannerError = hierarchyError || (!shopMeta?.id ? "Resolve your shop to load live totals." : undefined);
+  const shopIdentifierLocation = shopLocationLabel;
+  const formatScopeCount = useCallback((value: number | null | undefined, noun: string) => {
+    if (!value || value <= 0) {
+      return null;
+    }
+    const suffix = value === 1 ? noun : `${noun}s`;
+    return `${value} ${suffix}`;
+  }, []);
+  const scopeInventoryLabel = useMemo(() => {
+    if (!hierarchy || !scope) {
+      return null;
+    }
+    if (scope === "DISTRICT") {
+      return formatScopeCount(hierarchy.shops_in_district, "Shop");
+    }
+    if (scope === "REGION") {
+      return [
+        formatScopeCount(hierarchy.districts_in_region, "District"),
+        formatScopeCount(hierarchy.shops_in_region, "Shop"),
+      ]
+        .filter(Boolean)
+        .join(" • ");
+    }
+    if (scope === "DIVISION") {
+      return [
+        formatScopeCount(hierarchy.regions_in_division, "Region"),
+        formatScopeCount(hierarchy.shops_in_division, "Shop"),
+      ]
+        .filter(Boolean)
+        .join(" • ");
+    }
+    return null;
+  }, [formatScopeCount, hierarchy, scope]);
+  const trendGridRows = useMemo(() => {
+    const now = new Date();
+    const scopeWeight = scope ? TREND_SCOPE_WEIGHTS[scope] ?? 1 : 1;
+
+    return Array.from({ length: 13 }).map((_, index) => {
+      const weekDate = new Date(now);
+      weekDate.setDate(now.getDate() - index * 7);
+      const retailLabelRef = buildRetailTimestampLabel(weekDate);
+      const descriptor = `Week ending ${weekDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+
+      const metrics = TREND_KPI_HEADERS.reduce<Record<TrendKpiKey, string>>((acc, header) => {
+        const template = TREND_KPI_TEMPLATE[header.key];
+        const baseline = template.base * scopeWeight;
+        let rawValue = baseline - template.decay * index;
+        if (header.format === "percent") {
+          rawValue = Math.min(100, rawValue);
+        }
+        if (template.min !== undefined) {
+          rawValue = Math.max(template.min, rawValue);
+        }
+        acc[header.key] = formatTrendValue(rawValue, header.format);
+        return acc;
+      }, {} as Record<TrendKpiKey, string>);
+
+      return {
+        id: `${retailLabelRef}-${index}`,
+        label: retailLabelRef,
+        descriptor,
+        metrics,
+      };
+    });
+  }, [scope]);
   const bannerMetrics = useMemo<BannerMetric[]>(() => {
-    const daily = resolvedDailyTotals;
-    const weekly = resolvedWeeklyTotals;
-    const dailyAro = daily.cars > 0 ? daily.sales / daily.cars : null;
-    const weeklyAro = weekly.cars > 0 ? weekly.sales / weekly.cars : null;
-    const mix = (part: number, total: number) => (total > 0 ? (part / total) * 100 : null);
+    const subtitleRange = "Daily / WTD";
+    const formatCount = (value: number) => numberFormatter.format(Math.max(0, Math.round(value ?? 0)));
+    const formatMoney = (value: number) => currencyFormatter.format(Math.max(0, Math.round(value ?? 0)));
+    const formatAroValue = (totals: Totals) => {
+      if (!totals || totals.cars <= 0) {
+        return "--";
+      }
+      return `$${formatDecimal(totals.sales / totals.cars)}`;
+    };
+    const formatMixValue = (totals: Totals, key: keyof Totals) =>
+      formatPercent(totals.cars > 0 ? (totals[key] / totals.cars) * 100 : null);
 
     return [
-      { label: "Cars today", value: numberFormatter.format(daily.cars) },
-      { label: "Sales today", value: currencyFormatter.format(daily.sales) },
-      { label: "ARO today", value: dailyAro === null ? "--" : `$${formatDecimal(dailyAro)}` },
-      { label: "Donations today", value: currencyFormatter.format(daily.donations) },
-      { label: "Cars WTD", value: numberFormatter.format(weekly.cars) },
-      { label: "Sales WTD", value: currencyFormatter.format(weekly.sales) },
-      { label: "ARO WTD", value: weeklyAro === null ? "--" : `$${formatDecimal(weeklyAro)}` },
-      { label: "Donations WTD", value: currencyFormatter.format(weekly.donations) },
-      { label: "Big 4 mix", value: formatPercent(mix(weekly.big4, weekly.cars)) },
-      { label: "Coolants mix", value: formatPercent(mix(weekly.coolants, weekly.cars)) },
-      { label: "Diffs mix", value: formatPercent(mix(weekly.diffs, weekly.cars)) },
-      { label: "Mobil 1 mix", value: formatPercent(mix(weekly.mobil1, weekly.cars)) },
+      {
+        label: "Cars",
+        subtitle: subtitleRange,
+        value: formatCount(resolvedDailyTotals.cars),
+        secondaryValue: formatCount(resolvedWeeklyTotals.cars),
+      },
+      {
+        label: "Sales",
+        subtitle: subtitleRange,
+        value: formatMoney(resolvedDailyTotals.sales),
+        secondaryValue: formatMoney(resolvedWeeklyTotals.sales),
+      },
+      {
+        label: "ARO",
+        subtitle: subtitleRange,
+        value: formatAroValue(resolvedDailyTotals),
+        secondaryValue: formatAroValue(resolvedWeeklyTotals),
+      },
+      {
+        label: "Big 4 mix",
+        subtitle: subtitleRange,
+        value: formatMixValue(resolvedDailyTotals, "big4"),
+        secondaryValue: formatMixValue(resolvedWeeklyTotals, "big4"),
+      },
+      {
+        label: "Coolants mix",
+        subtitle: subtitleRange,
+        value: formatMixValue(resolvedDailyTotals, "coolants"),
+        secondaryValue: formatMixValue(resolvedWeeklyTotals, "coolants"),
+      },
+      {
+        label: "Diffs mix",
+        subtitle: subtitleRange,
+        value: formatMixValue(resolvedDailyTotals, "diffs"),
+        secondaryValue: formatMixValue(resolvedWeeklyTotals, "diffs"),
+      },
+      {
+        label: "Fuel Filters",
+        subtitle: subtitleRange,
+        value: formatCount(resolvedDailyTotals.fuelFilters),
+        secondaryValue: formatCount(resolvedWeeklyTotals.fuelFilters),
+      },
+      {
+        label: "Mobil1 (Promo)",
+        subtitle: subtitleRange,
+        value: formatCount(resolvedDailyTotals.mobil1),
+        secondaryValue: formatCount(resolvedWeeklyTotals.mobil1),
+      },
+      {
+        label: "Donations",
+        subtitle: subtitleRange,
+        value: formatMoney(resolvedDailyTotals.donations),
+        secondaryValue: formatMoney(resolvedWeeklyTotals.donations),
+      },
+      {
+        label: "Turned Cars",
+        subtitle: "# / $",
+        value: "--",
+        secondaryValue: "--",
+      },
+      {
+        label: "Zero Shops",
+        subtitle: "# / %",
+        value: "--",
+        secondaryValue: "--",
+      },
+      {
+        label: "Manual Work Orders",
+        subtitle: "created today / WTD",
+        value: "--",
+        secondaryValue: "--",
+      },
     ];
   }, [resolvedDailyTotals, resolvedWeeklyTotals]);
 
   const slotChoices = slotOrder;
+  const todayDateISO = useMemo(() => new Date(clock).toISOString().split("T")[0], [clock]);
+  const weekDays = useMemo(() => {
+    const start = new Date(clock);
+    start.setHours(0, 0, 0, 0);
+    const dayOfWeek = start.getDay();
+    start.setDate(start.getDate() - dayOfWeek);
+
+    return Array.from({ length: 7 }).map((_, index) => {
+      const date = new Date(start);
+      date.setDate(start.getDate() + index);
+      const iso = date.toISOString().split("T")[0];
+      return {
+        iso,
+        label: date.toLocaleDateString("en-US", { weekday: "short" }),
+        fullLabel: date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" }),
+      };
+    });
+  }, [clock]);
+
+  useEffect(() => {
+    if (!weekDays.some((day) => day.iso === selectedBreakdownDate)) {
+      setSelectedBreakdownDate(weekDays[0]?.iso ?? todayDateISO);
+    }
+  }, [weekDays, selectedBreakdownDate, todayDateISO]);
+
+  const weeklySubmissionMap = useMemo(() => {
+    return weekDays.reduce<Record<string, { submitted: number; total: number }>>((acc, day) => {
+      acc[day.iso] = {
+        submitted: day.iso === todayDateISO ? submissionCount : 0,
+        total: totalSlots,
+      };
+      return acc;
+    }, {} as Record<string, { submitted: number; total: number }>);
+  }, [weekDays, todayDateISO, submissionCount, totalSlots]);
+
+  const activeBreakdown = weeklySubmissionMap[selectedBreakdownDate] ?? { submitted: 0, total: totalSlots };
+  const selectedBreakdownLabel =
+    weekDays.find((day) => day.iso === selectedBreakdownDate)?.fullLabel ?? selectedBreakdownDate;
+  const districtShopCount = useMemo(
+    () => districtGridRows.filter((row) => row.kind === "shop").length,
+    [districtGridRows]
+  );
+  const districtGridHasContent = districtGridRows.length > 0 || districtGridLoading || Boolean(districtGridError);
 
   useEffect(() => {
     if (activeSlot && slotUnlockedMap[activeSlot]) {
@@ -885,6 +1424,7 @@ export default function PulseCheckPage() {
       big4: toNumberValue(slotState.metrics.big4),
       coolants: toNumberValue(slotState.metrics.coolants),
       diffs: toNumberValue(slotState.metrics.diffs),
+      fuel_filters: toNumberValue(slotState.metrics.fuelFilters),
       donations: toNumberValue(slotState.metrics.donations),
       mobil1: toNumberValue(slotState.metrics.mobil1),
       temperature: slotState.temperature,
@@ -936,6 +1476,60 @@ export default function PulseCheckPage() {
     }
   }, [shopMeta?.id, currentSlotKey, currentSlotState, currentDefinition, loadTotals]);
 
+  const handleProxySubmit = useCallback(async () => {
+    const trimmed = proxyInput.trim();
+    if (!trimmed) {
+      setProxyMessageTone("error");
+      setProxyMessage("Enter a shop number to proxy.");
+      return;
+    }
+
+    const numeric = Number(trimmed);
+    if (!Number.isFinite(numeric)) {
+      setProxyMessageTone("error");
+      setProxyMessage("Shop numbers are numeric.");
+      return;
+    }
+
+    if (homeShopMeta?.shop_number && numeric === homeShopMeta.shop_number) {
+      setProxyMessageTone("info");
+      setProxyMessage("That's already your home shop.");
+      return;
+    }
+
+    setProxyBusy(true);
+    setProxyMessage(null);
+
+    try {
+      const resolved = await lookupShopMeta(numeric);
+      if (resolved) {
+        setShopMeta(resolved);
+        setProxyMessageTone("success");
+        setProxyMessage(
+          `Proxying ${resolved.shop_name ? `${resolved.shop_name} (#${resolved.shop_number ?? numeric})` : `shop #${resolved.shop_number ?? numeric}`}`
+        );
+      } else {
+        setProxyMessageTone("error");
+        setProxyMessage("No shop matched that number.");
+      }
+    } catch (err) {
+      console.error("Proxy lookup error", err);
+      setProxyMessageTone("error");
+      setProxyMessage("Unable to resolve that shop right now.");
+    } finally {
+      setProxyBusy(false);
+    }
+  }, [homeShopMeta, lookupShopMeta, proxyInput]);
+
+  const handleProxyExit = useCallback(() => {
+    if (homeShopMeta) {
+      setShopMeta(homeShopMeta);
+    }
+    setProxyMessageTone("info");
+    setProxyMessage("Returned to home shop.");
+    setProxyInput("");
+  }, [homeShopMeta]);
+
   const renderStatusBanner = () => {
     if (!statusMessage) {
       return null;
@@ -959,27 +1553,53 @@ export default function PulseCheckPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-5xl px-3 py-6">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_290px] lg:items-start">
           <div className="space-y-4">
-            <header className={panelBaseClasses}>
-              <div className={panelOverlayClasses} />
+            <header className={panelBaseClasses("aurora")}>
+              <div className={panelOverlayClasses("aurora")} />
               <div className="relative space-y-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <div>
-                    <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                    <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
+                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                        <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
+                      </div>
+                      <Link
+                        href="/"
+                        className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400"
+                      >
+                        Home portal
+                      </Link>
+                    </div>
                   </div>
-                  <Link
-                    href="/contests"
-                    className="ml-auto inline-flex items-center rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
-                  >
-                    Contest portal →
-                  </Link>
+                  <div className="w-full md:ml-auto md:w-auto md:max-w-sm">
+                    <div className="rounded-2xl border border-white/10 bg-[#050f24]/70 px-3 py-2 text-right text-sm text-slate-200 shadow-[0_16px_38px_rgba(1,6,20,0.6)]">
+                      {shopIdentifierLocation && (
+                        <p className="text-sm font-semibold text-white">{shopIdentifierLocation}</p>
+                      )}
+                      {scopeInventoryLabel && (
+                        <p className="text-[11px] text-slate-300">{scopeInventoryLabel}</p>
+                      )}
+                      {activeShopLabel && (
+                        <p className="text-[11px] text-slate-500">{activeShopLabel}</p>
+                      )}
+                      {!shopIdentifierLocation && !scopeInventoryLabel && !activeShopLabel && bannerTitle && (
+                        <p className="text-sm font-semibold text-white">{bannerTitle}</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950/50 px-3 py-2 text-[10px] text-slate-300">
                   <RetailPills />
                   <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <Link
+                      href="/contests"
+                      className="inline-flex items-center rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
+                    >
+                      Contest portal →
+                    </Link>
                     <button
                       onClick={refreshAll}
                       disabled={!shopMeta?.id || busy}
@@ -990,18 +1610,6 @@ export default function PulseCheckPage() {
                   </div>
                 </div>
 
-                <ShopMicroCard
-                  scopeLabel={scope ?? "Resolve scope"}
-                  hierarchy={hierarchy}
-                  shopMeta={shopMeta}
-                  submissionCount={submissionCount}
-                  totalSlots={slotOrder.length}
-                  loading={loadingSlots}
-                  compact
-                  viewLabel={viewLabel}
-                  eveningOnly={eveningOnly}
-                  onViewModeChange={setEveningOnly}
-                />
               </div>
             </header>
 
@@ -1011,54 +1619,184 @@ export default function PulseCheckPage() {
               metrics={bannerMetrics}
               loading={rollupLoading}
               error={bannerError}
+              cadence={{
+                submitted: submissionCount,
+                total: totalSlots,
+                percent: cadencePercent,
+                loading: loadingSlots,
+              }}
+              viewToggle={{
+                label: viewLabel,
+                checked: eveningOnly,
+                onChange: setEveningOnly,
+              }}
+              scopeToggle={{
+                value: kpiScope,
+                onChange: (value) => setKpiScope(value),
+              }}
             />
+
+            {districtGridHasContent && (
+              <section className={panelBaseClasses("aurora", "p-4")}
+                aria-label="District shop KPI grid"
+              >
+                <div className={panelOverlayClasses("aurora")} />
+                <div className="relative space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">District scope KPIs</p>
+                      <h3 className="text-lg font-semibold text-white">{hierarchy?.district_name ?? "District overview"}</h3>
+                    </div>
+                    <p className="text-[10px] text-slate-400">
+                      {districtGridLoading && !districtGridRows.length
+                        ? "Syncing shops"
+                        : `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`}
+                    </p>
+                  </div>
+                  {districtGridError && (
+                    <p className="text-sm text-amber-200">{districtGridError}</p>
+                  )}
+                  <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_20px_50px_rgba(1,6,20,0.6)]">
+                    {districtGridLoading && !districtGridRows.length ? (
+                      <div className="px-4 py-6 text-center text-sm text-slate-400">Loading district shops…</div>
+                    ) : districtGridRows.length ? (
+                      <div className="overflow-x-auto">
+                        <div className="min-w-[960px]">
+                          <div className="grid grid-cols-[1.8fr_repeat(8,minmax(0,1fr))] bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300">
+                            <div className="px-3 py-2 text-left">Shop</div>
+                            {TREND_KPI_HEADERS.map((header) => (
+                              <div key={`district-header-${header.key}`} className="px-3 py-2 text-center">
+                                {header.label}
+                              </div>
+                            ))}
+                          </div>
+                          <div className="divide-y divide-white/5">
+                            {districtGridRows.map((row, index) => {
+                              const zebra = index % 2 ? "bg-slate-950/30" : "bg-slate-950/60";
+                              const highlightClass =
+                                row.kind === "district"
+                                  ? "bg-emerald-500/10"
+                                  : row.isCurrentShop
+                                  ? "bg-sky-500/10"
+                                  : zebra;
+                              return (
+                                <div
+                                  key={row.id}
+                                  className={`grid grid-cols-[1.8fr_repeat(8,minmax(0,1fr))] px-3 py-2 text-sm transition ${highlightClass}`}
+                                >
+                                  <div>
+                                    <p className="text-sm font-semibold text-white">{row.label}</p>
+                                    <p className="text-[11px] text-slate-400">{row.descriptor}</p>
+                                  </div>
+                                  {TREND_KPI_HEADERS.map((header) => (
+                                    <div
+                                      key={`${row.id}-${header.key}`}
+                                      className="px-3 py-2 text-center text-[11px] font-semibold text-slate-100"
+                                    >
+                                      {row.metrics[header.key]}
+                                    </div>
+                                  ))}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="px-4 py-6 text-center text-sm text-slate-400">
+                        No shops resolved for this district yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </section>
+            )}
+
+            <section className={panelBaseClasses("cobalt", "p-4")}>
+              <div className={panelOverlayClasses("cobalt")} />
+              <div className="relative space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Weekly breakdown</p>
+                    <h3 className="text-lg font-semibold text-white">Daily submissions overview</h3>
+                  </div>
+                  <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Resets Sunday • 9:00 AM</p>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4 lg:grid-cols-7">
+                  {weekDays.map((day) => {
+                    const entry = weeklySubmissionMap[day.iso];
+                    const active = day.iso === selectedBreakdownDate;
+                    return (
+                      <button
+                        key={day.iso}
+                        type="button"
+                        onClick={() => setSelectedBreakdownDate(day.iso)}
+                        className={`rounded-2xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${
+                          active
+                            ? "border-emerald-400/70 bg-emerald-500/10 shadow-[0_12px_25px_rgba(16,185,129,0.25)]"
+                            : "border-white/10 bg-[#030a16]/70 hover:border-emerald-400/50"
+                        }`}
+                      >
+                        <p className="text-[9px] uppercase tracking-[0.35em] text-slate-400">{day.label}</p>
+                        <p className="text-base font-semibold text-white">
+                          {entry.submitted} / {entry.total}
+                        </p>
+                        <p className="text-[10px] text-slate-500">{day.fullLabel}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="rounded-[22px] border border-white/10 bg-[#030b18]/70 p-4 text-sm text-slate-200">
+                  <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Selected day</p>
+                  <p className="text-lg font-semibold text-white">{selectedBreakdownLabel}</p>
+                  <p className="mt-1 text-slate-200">
+                    Submissions:
+                    <span className="ml-1 font-semibold text-white">
+                      {activeBreakdown.submitted} / {activeBreakdown.total}
+                    </span>
+                  </p>
+                  <p className="text-[10px] text-slate-400">Tap a weekday panel to focus its check-ins.</p>
+                </div>
+              </div>
+            </section>
           </div>
 
-          <aside className="w-full max-w-[15rem] justify-self-center">
-            <div className={emeraldPanelClasses}>
-              <div className={panelOverlayClasses} />
-              <div className="relative space-y-3">
-                <div>
-                  <p className="text-[9px] uppercase tracking-[0.3em] text-emerald-300">Field check-ins</p>
-                </div>
-
+          <aside className="w-full max-w-[18rem] justify-self-center lg:justify-self-end lg:self-stretch">
+            <div className={`${panelBaseClasses("violet", "p-5")} h-full`}>
+              <div className={panelOverlayClasses("violet")} />
+              <div className="relative space-y-2.5">
                 {needsLogin ? (
                   <LoginPrompt />
                 ) : (
-                  <div className="space-y-4">
-                    {hierarchyError && (
-                      <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-3 py-2 text-xs text-rose-100">
-                        {hierarchyError}
-                      </div>
-                    )}
-                    {renderStatusBanner()}
-
-                    <div className="space-y-2">
-                      <p className="text-[10px] uppercase tracking-wide text-slate-400">Select slot</p>
+                  <div className="space-y-2.5">
+                    <div className="space-y-1.5">
+                      <p className="text-center text-[9px] uppercase tracking-[0.3em] text-slate-400">Check-ins</p>
                       <div className="grid grid-cols-2 gap-1">
                         {slotChoices.map((slotKey) => {
                           const unlocked = slotUnlockedMap[slotKey];
                           return (
-                          <button
-                            key={slotKey}
-                            type="button"
-                            onClick={() => {
+                            <button
+                              key={slotKey}
+                              type="button"
+                              onClick={() => {
                                 if (unlocked) {
-                                setActiveSlot(slotKey);
-                              }
-                            }}
-                            className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                              currentSlotKey === slotKey
-                                ? "bg-emerald-500 text-emerald-900"
+                                  setActiveSlot(slotKey);
+                                }
+                              }}
+                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
+                                currentSlotKey === slotKey
+                                  ? "bg-emerald-500 text-emerald-900"
                                   : unlocked
                                   ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
                                   : "bg-slate-900/60 text-slate-500"
-                            }`}
-                            disabled={loadingSlots || !unlocked}
-                            title={unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`}
-                          >
-                            {SLOT_DEFINITIONS[slotKey].label}
-                          </button>
+                              }`}
+                              disabled={loadingSlots || !unlocked}
+                              title={
+                                unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`
+                              }
+                            >
+                              {SLOT_DEFINITIONS[slotKey].label}
+                            </button>
                           );
                         })}
                       </div>
@@ -1075,7 +1813,63 @@ export default function PulseCheckPage() {
                       compact
                     />
 
-                    <div className="flex flex-col gap-1.5">
+                    {hierarchyError && (
+                      <div className="rounded-xl border border-rose-500/50 bg-rose-900/40 px-3 py-2 text-xs text-rose-100">
+                        {hierarchyError}
+                      </div>
+                    )}
+                    {renderStatusBanner()}
+
+                    {canProxy && (
+                      <div className="rounded-2xl border border-white/5 bg-[#040c1c]/70 p-3 text-[10px] text-slate-300">
+                        <div className="flex flex-wrap items-center gap-2 text-slate-400">
+                          <span className="rounded-full border border-emerald-400/50 px-2 py-0.5 text-[9px] uppercase tracking-[0.35em] text-emerald-300">
+                            {scope ?? "Scope"}
+                          </span>
+                          {proxyActive && (
+                            <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[9px] uppercase tracking-wide text-amber-200">
+                              Proxying
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setProxyPanelOpen((open) => !open)}
+                            className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-semibold text-slate-200 transition hover:border-emerald-400"
+                          >
+                            {proxyPanelOpen
+                              ? "Hide proxy tools"
+                              : proxyActive
+                              ? "Change proxy shop"
+                              : "Enter proxy mode"}
+                          </button>
+                          {proxyActive && (
+                            <button
+                              type="button"
+                              onClick={handleProxyExit}
+                              className="rounded-full border border-emerald-400/60 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/10"
+                            >
+                              Return to {homeShopLabel ?? "home shop"}
+                            </button>
+                          )}
+                        </div>
+                        {proxyPanelOpen && (
+                          <div className="mt-2">
+                            <ProxyModePanel
+                              value={proxyInput}
+                              onChange={setProxyInput}
+                              onSubmit={handleProxySubmit}
+                              busy={proxyBusy}
+                              message={proxyMessage}
+                              tone={proxyMessageTone}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1">
                       <button
                         type="button"
                         onClick={handleReset}
@@ -1093,170 +1887,112 @@ export default function PulseCheckPage() {
                         {submitting ? "Saving…" : "Submit check-in"}
                       </button>
                     </div>
-
-                    <RankingsPanel compact href="/rankings/detail" />
                   </div>
                 )}
               </div>
             </div>
           </aside>
+
+          <div className="lg:col-span-2">
+            <div className={`${panelBaseClasses("cobalt", "p-4 sm:p-5")} mt-4 lg:mt-0`}>
+              <div className={panelOverlayClasses("cobalt")} />
+              <div className="relative space-y-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Retail time calendar</p>
+                  <h3 className="text-xl font-semibold text-white">13-week scope trends</h3>
+                </div>
+                <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_25px_65px_rgba(1,6,20,0.7)]">
+                  <div className="overflow-x-auto">
+                    <div className="min-w-[960px]">
+                      <div className="grid grid-cols-[1.5fr_repeat(8,minmax(0,1fr))] bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300">
+                        <div className="px-3 py-2 text-center">Week</div>
+                        {TREND_KPI_HEADERS.map((header) => (
+                          <div key={header.key} className="px-3 py-2 text-center">
+                            {header.label}
+                          </div>
+                        ))}
+                      </div>
+                      <div className="divide-y divide-white/5">
+                        {trendGridRows.map((row, index) => {
+                          const highlight = index === 0;
+                          return (
+                            <div
+                              key={row.id}
+                              className={`grid grid-cols-[1.5fr_repeat(8,minmax(0,1fr))] px-3 py-2 text-sm transition ${
+                                highlight ? "bg-emerald-500/5" : index % 2 ? "bg-slate-950/30" : "bg-slate-950/60"
+                              }`}
+                            >
+                              <div className="flex flex-col items-center text-center">
+                                <p className="text-[13px] font-semibold text-white">{row.label}</p>
+                                <p className="text-[11px] text-slate-400">{row.descriptor}</p>
+                              </div>
+                              {TREND_KPI_HEADERS.map((header) => (
+                                <div
+                                  key={`${row.id}-${header.key}`}
+                                  className="px-3 py-2 text-center text-[11px] font-semibold text-slate-100"
+                                >
+                                  {row.metrics[header.key]}
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </main>
   );
 }
 
-function ShopMicroCard({
-  scopeLabel,
-  hierarchy,
-  shopMeta,
-  submissionCount,
-  totalSlots,
-  loading,
-  compact = false,
-  viewLabel,
-  eveningOnly,
-  onViewModeChange,
+function ProxyModePanel({
+  value,
+  onChange,
+  onSubmit,
+  busy,
+  message,
+  tone,
 }: {
-  scopeLabel: string;
-  hierarchy: HierarchyRow | null;
-  shopMeta: ShopMeta | null;
-  submissionCount: number;
-  totalSlots: number;
-  loading: boolean;
-  compact?: boolean;
-  viewLabel: string;
-  eveningOnly: boolean;
-  onViewModeChange: (value: boolean) => void;
+  value: string;
+  onChange: (next: string) => void;
+  onSubmit: () => void;
+  busy: boolean;
+  message: string | null;
+  tone: "info" | "error" | "success";
 }) {
-  const shopLabel = shopMeta?.shop_name
-    ? `${shopMeta.shop_name} (#${shopMeta.shop_number ?? "?"})`
-    : hierarchy?.shop_number
-    ? `Shop #${hierarchy.shop_number}`
-    : "Resolving shop…";
-
-  const locationLabel = [hierarchy?.district_name, hierarchy?.region_name]
-    .filter(Boolean)
-    .join(" • ") || "Update hierarchy mapping";
-
-  const percent = totalSlots === 0 ? 0 : Math.round((submissionCount / totalSlots) * 100);
-
-  const basePadding = compact ? "p-2" : "p-3";
-  const containerClass = `flex flex-wrap items-center gap-3 rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f1f3c]/80 via-[#07142d]/85 to-[#020914]/95 shadow-[0_15px_35px_rgba(1,6,20,0.7)] ${basePadding}`;
-  const leftBlockClass = compact ? "flex-1 min-w-[160px] text-[9px] text-slate-400" : "flex-1 min-w-[220px] text-[10px] text-slate-400";
-  const cadenceBlockClass = compact ? "min-w-[140px] flex-1 text-[9px]" : "min-w-[180px] flex-1 text-[10px]";
-  const scopeTextClass = compact
-    ? "text-[8px] uppercase tracking-[0.35em] text-emerald-400"
-    : "text-[9px] uppercase tracking-[0.35em] text-emerald-400";
-  const shopNameClass = compact ? "text-base font-semibold text-white" : "text-lg font-semibold text-white";
-  const viewBlockClass = compact
-    ? "min-w-[150px] flex items-center gap-2 rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-1 text-[9px] text-slate-200"
-    : "min-w-[200px] flex items-center gap-2 rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-1.5 text-[10px] text-slate-200";
+  const messageClass =
+    tone === "success" ? "text-emerald-300" : tone === "error" ? "text-rose-300" : "text-slate-400";
 
   return (
-    <div className={containerClass}>
-      <div className={leftBlockClass}>
-        <p className={scopeTextClass}>{scopeLabel}</p>
-        <p className={shopNameClass}>{shopLabel}</p>
-        <p>{locationLabel}</p>
-      </div>
-
-      <div className={viewBlockClass}>
-        <div className="flex flex-col">
-          <span className="text-[8px] uppercase tracking-[0.35em] text-slate-500">View mode</span>
-          <span className="text-xs font-semibold text-slate-100">{viewLabel}</span>
-        </div>
-        <ToggleSwitch checked={eveningOnly} onChange={onViewModeChange} />
-      </div>
-
-      <div className={`${cadenceBlockClass} text-slate-400`}>
-        <div className="flex items-center justify-between text-[9px] uppercase tracking-wide">
-          <span>Daily cadence</span>
-          <span className="text-xs font-semibold text-white">
-            {submissionCount}/{totalSlots}
-          </span>
-        </div>
-        <div className={`mt-1 ${compact ? "h-1" : "h-1.5"} w-full rounded-full bg-slate-800`}>
-          <div
-            className="h-full rounded-full bg-emerald-500 transition-all"
-            style={{ width: `${loading ? 0 : percent}%` }}
+    <div className="rounded-2xl border border-white/5 bg-[#040c1c]/80 p-3 text-[10px] text-slate-300">
+      <p className="text-[10px] text-slate-400">Proxy lets DM, RD, or VP submit on behalf of another shop.</p>
+      <div className="mt-2 flex flex-col gap-2">
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            inputMode="numeric"
+            value={value}
+            onChange={(event) => onChange(event.target.value)}
+            className="min-w-[7rem] flex-1 rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-white outline-none focus:border-emerald-400"
+            placeholder="Enter shop #"
           />
+          <button
+            type="button"
+            onClick={onSubmit}
+            disabled={busy}
+            className="rounded-2xl border border-emerald-400/60 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
+          >
+            {busy ? "Resolving…" : "Proxy to shop"}
+          </button>
         </div>
-        <p className={`${compact ? "mt-0.5 text-[9px]" : "mt-1 text-[10px]"} text-slate-500`}>
-          {percent}% of slots submitted
-        </p>
+        {message && <p className={messageClass}>{message}</p>}
       </div>
     </div>
-  );
-}
-
-function RankingsPanel({ compact = false, href }: { compact?: boolean; href?: string }) {
-  const sample = [
-    { label: "Cars leader", value: "Baton Rouge South", detail: "128 cars" },
-    { label: "Sales leader", value: "Gulf Coast", detail: "$42K" },
-    { label: "Mobil 1 leader", value: "#18 Uptown", detail: "46 units" },
-  ];
-
-  const body = (
-    <section
-      className={`rounded-3xl border border-white/5 bg-gradient-to-br from-[#0f213f]/85 via-[#07142d]/85 to-[#020915]/95 shadow-[0_18px_40px_rgba(1,6,20,0.7)] transition ${
-        compact ? "p-3 text-[10px]" : "p-5"
-      } ${href ? "hover:border-emerald-500/40" : ""}`}
-    >
-      <h3 className={`${compact ? "text-base" : "text-lg"} font-semibold text-white`}>
-        Rankings snapshot
-      </h3>
-      <p className={`${compact ? "text-[9px]" : "text-xs"} text-slate-400`}>
-        Live data coming soon – placeholder Pulse KPI leaders.
-      </p>
-      <ul className={`mt-3 space-y-1.5 ${compact ? "text-[11px]" : "text-sm"}`}>
-        {sample.map((row) => (
-          <li
-            key={row.label}
-            className="flex items-center justify-between rounded-2xl border border-white/5 bg-[#040c1c]/70 px-3 py-2"
-          >
-            <div>
-              <p className="text-[11px] uppercase tracking-wide text-slate-500">{row.label}</p>
-              <p className="font-semibold text-white">{row.value}</p>
-            </div>
-            <span className="text-xs text-emerald-300">{row.detail}</span>
-          </li>
-        ))}
-      </ul>
-    </section>
-  );
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="block focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-950"
-        aria-label="Open detailed rankings"
-      >
-        {body}
-      </Link>
-    );
-  }
-
-  return body;
-}
-
-
-function ToggleSwitch({ checked, onChange }: { checked: boolean; onChange: (value: boolean) => void }) {
-  return (
-    <button
-      type="button"
-      onClick={() => onChange(!checked)}
-      className={`relative inline-flex h-5 w-9 items-center rounded-full border border-slate-600 transition ${
-        checked ? "bg-emerald-500 border-emerald-400" : "bg-slate-800"
-      }`}
-    >
-      <span
-        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
-          checked ? "translate-x-4" : "translate-x-1"
-        }`}
-      />
-    </button>
   );
 }
 
@@ -1279,90 +2015,72 @@ function SlotForm({
   compact?: boolean;
   locked?: boolean;
 }) {
-  const submittedLabel = slotState.submittedAt
-    ? new Date(slotState.submittedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
-    : null;
   const unlockLabel = SLOT_UNLOCK_RULES[slotKey]?.label ?? definition.label;
-  const subLabelClass = compact ? "text-[9px]" : "text-[10px]";
-  const headingSize = compact ? "text-sm" : "text-base";
-  const temperatureText = compact ? "text-[9px]" : "text-[10px]";
-  const inputText = compact ? "text-xs" : "text-sm";
-  const spacing = compact ? "space-y-2 p-2" : "space-y-4 p-3";
-  const gridGap = compact ? "gap-1.5" : "gap-2";
+  const temperatureText = compact ? "text-[10px]" : "text-[11px]";
+  const inputText = compact ? "text-[13px]" : "text-base";
+  const spacing = compact ? "space-y-1.5 p-2" : "space-y-4 p-4";
+  const gridGap = compact ? "gap-2" : "gap-3";
+  const inputGridCols = compact ? "grid-cols-2" : "grid-cols-4";
+  const labelTextClass = compact ? "text-[10px]" : "text-xs";
+  const labelPadding = compact ? "p-1.5" : "p-2.5";
+  const labelTracking = compact ? "tracking-[0.3em]" : "tracking-[0.28em]";
 
   return (
-    <div className={`${spacing} rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f203f]/80 via-[#07142d]/80 to-[#020915]/95 shadow-[0_15px_35px_rgba(1,6,20,0.65)]`}>
-      <div className="flex items-start justify-between gap-2">
-        <div>
-          <p className={`${subLabelClass} uppercase tracking-wide text-slate-400`}>{definition.description}</p>
-          <h3 className={`${headingSize} font-semibold text-white`}>{definition.label}</h3>
-        </div>
-        <StatusChip status={slotState.status} submittedLabel={submittedLabel} />
-      </div>
+    <div className={`${spacing} w-full rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f203f]/80 via-[#07142d]/80 to-[#020915]/95 shadow-[0_15px_35px_rgba(1,6,20,0.65)]`}>
       {locked && (
         <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200">
           Slot locked until {unlockLabel}. Check back later.
         </div>
       )}
-      <div className={`flex flex-wrap gap-1 ${temperatureText}`}>
-        {temperatureChips.map((chip) => (
-          <button
-            key={chip.value}
-            type="button"
-            onClick={() => onTemperatureChange(slotKey, chip.value)}
-            className={`rounded-full px-2.5 py-0.5 font-semibold transition ${chip.accent} ${
-              slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
-            }`}
-            disabled={loading || locked}
-          >
-            {chip.label}
-          </button>
-        ))}
-      </div>
-      <div className={`grid ${gridGap} sm:grid-cols-2`}>
-        {METRIC_FIELDS.map((field) => (
-          <label
-            key={field.key}
-            className="flex flex-col rounded-xl border border-slate-800 bg-slate-900/60 p-1.5 text-[9px] font-semibold uppercase tracking-wide text-slate-400"
-          >
-            {field.label}
-            <input
-              type="number"
-              inputMode="decimal"
-              value={slotState.metrics[field.key]}
-              onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-              className={`mt-1 rounded-lg border border-slate-700 bg-slate-950/60 px-2 py-1 ${inputText} font-semibold text-white outline-none focus:border-emerald-400`}
-              placeholder="0"
+      <div className={`flex flex-wrap items-center justify-between gap-2 ${temperatureText}`}>
+        <span className="text-[10px] font-semibold uppercase tracking-[0.35em] text-slate-400">
+          Current floor temp.
+        </span>
+        <div className="flex flex-wrap items-center justify-end gap-1">
+          {temperatureChips.map((chip) => (
+            <button
+              key={chip.value}
+              type="button"
+              onClick={() => onTemperatureChange(slotKey, chip.value)}
+              className={`rounded-full px-3 py-0.5 font-semibold transition ${chip.accent} ${
+                slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
+              }`}
               disabled={loading || locked}
-            />
-          </label>
-        ))}
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className={`grid w-full ${gridGap} ${inputGridCols}`}>
+        {METRIC_FIELDS.map((field) => {
+          const isCurrency = field.format === "currency";
+          return (
+            <label
+              key={field.key}
+              className={`flex w-full min-w-0 flex-col rounded-xl border border-slate-800 bg-slate-900/60 ${labelPadding} ${labelTextClass} font-semibold uppercase ${labelTracking} text-slate-300`}
+            >
+              {field.label}
+              <div className={`mt-0.5 w-full ${isCurrency ? "flex items-center gap-0.5" : ""}`}>
+                {isCurrency && <span className="text-[12px] font-semibold text-slate-500">$</span>}
+                <input
+                  type="number"
+                  inputMode={isCurrency ? "decimal" : "numeric"}
+                  step={isCurrency ? "0.01" : undefined}
+                  value={slotState.metrics[field.key]}
+                  onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
+                  className={`w-full rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-1 ${inputText} font-semibold text-white outline-none focus:border-emerald-400 ${
+                    isCurrency ? "text-right" : ""
+                  }`}
+                  placeholder={isCurrency ? "0.00" : "0"}
+                  disabled={loading || locked}
+                />
+              </div>
+            </label>
+          );
+        })}
       </div>
     </div>
-  );
-}
-
-function StatusChip({ status, submittedLabel }: { status: SlotStatus; submittedLabel: string | null }) {
-  if (status === "submitted") {
-    return (
-      <span className="rounded-full bg-emerald-500/20 px-3 py-1 text-[10px] font-semibold text-emerald-200">
-        Submitted {submittedLabel ? `@ ${submittedLabel}` : ""}
-      </span>
-    );
-  }
-
-  if (status === "draft") {
-    return (
-      <span className="rounded-full bg-amber-400/20 px-3 py-1 text-[10px] font-semibold text-amber-200">
-        Draft saved
-      </span>
-    );
-  }
-
-  return (
-    <span className="rounded-full bg-slate-800 px-3 py-1 text-[10px] font-semibold text-slate-200">
-      Pending entry
-    </span>
   );
 }
 

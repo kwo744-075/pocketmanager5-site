@@ -21,7 +21,12 @@ const percentFormatter = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 1,
 });
 
-const formatPercent = (value: number) => `${percentFormatter.format(value)}%`;
+const formatPercent = (value: number | null | undefined) => {
+  if (value === null || value === undefined || Number.isNaN(value)) {
+    return "--";
+  }
+  return `${percentFormatter.format(value)}%`;
+};
 
 type ShopMeta = {
   id: string;
@@ -160,16 +165,21 @@ export default function ShopPulseSummaryPage() {
 
   const metricTiles = useMemo(() => {
     const cars = activeTotals.cars;
-    const aro = cars > 0 ? activeTotals.sales / Math.max(cars, 1) : 0;
+    const scopeLabelShort = view === "daily" ? "today" : "WTD";
+    const aro = cars > 0 ? activeTotals.sales / cars : null;
+    const mixPercent = (part: number) => (cars > 0 ? (part / cars) * 100 : null);
+
     return [
-      { label: "Cars", value: integerFormatter.format(cars) },
-      { label: "Sales $", value: currencyFormatter.format(activeTotals.sales) },
-      { label: "ARO $", value: aroFormatter.format(aro || 0) },
-      { label: "Big 4 %", value: formatPercent(activeTotals.big4) },
-      { label: "Coolants %", value: formatPercent(activeTotals.coolants) },
-      { label: "Diffs %", value: formatPercent(activeTotals.diffs) },
+      { label: `Cars ${scopeLabelShort}`, value: integerFormatter.format(cars) },
+      { label: `Sales ${scopeLabelShort}`, value: currencyFormatter.format(activeTotals.sales) },
+      { label: `ARO ${scopeLabelShort}`, value: aro === null ? "--" : aroFormatter.format(aro) },
+      { label: `Donations ${scopeLabelShort}`, value: currencyFormatter.format(activeTotals.donations) },
+      { label: "Big 4 mix", value: formatPercent(mixPercent(activeTotals.big4)) },
+      { label: "Coolants mix", value: formatPercent(mixPercent(activeTotals.coolants)) },
+      { label: "Diffs mix", value: formatPercent(mixPercent(activeTotals.diffs)) },
+      { label: "Mobil 1 mix", value: formatPercent(mixPercent(activeTotals.mobil1)) },
     ];
-  }, [activeTotals]);
+  }, [activeTotals, view]);
 
   if (!authChecked) {
     return (
@@ -223,7 +233,7 @@ export default function ShopPulseSummaryPage() {
           <p className="rounded-xl border border-rose-500/40 bg-rose-900/40 px-4 py-2 text-xs text-rose-100">{statusMessage}</p>
         )}
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
           {metricTiles.map((tile) => (
             <div key={tile.label} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
               <p className="text-[10px] uppercase tracking-wide text-slate-500">{tile.label}</p>

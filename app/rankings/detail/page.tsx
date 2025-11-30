@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabaseClient";
+import { getCachedSummaryForLogin, normalizeLogin } from "@/lib/hierarchyCache";
 
 type HierarchySummary = {
   scope_level: string | null;
@@ -87,6 +88,17 @@ export default function RankingsDetailPage() {
       return;
     }
 
+    const normalized = normalizeLogin(loginEmail);
+    if (!normalized) {
+      setLoadingScope(false);
+      return;
+    }
+
+    const cachedSummary = getCachedSummaryForLogin(normalized);
+    if (cachedSummary?.scope_level) {
+      setScopeLevel((cachedSummary.scope_level as string | null) ?? null);
+    }
+
     let cancelled = false;
 
     const run = async () => {
@@ -94,14 +106,14 @@ export default function RankingsDetailPage() {
         const { data, error } = await supabase
           .from("hierarchy_summary_vw")
           .select("scope_level")
-          .eq("login", loginEmail.trim().toLowerCase())
+          .eq("login", normalized)
           .maybeSingle();
 
         if (!cancelled) {
           if (error) {
             console.error("Rankings detail hierarchy error", error);
           } else {
-            setScopeLevel((data as HierarchySummary | null)?.scope_level ?? null);
+            setScopeLevel((data as HierarchySummary | null)?.scope_level ?? cachedSummary?.scope_level ?? null);
           }
         }
       } catch (err) {

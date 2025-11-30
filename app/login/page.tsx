@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
+import { writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 
 type HierarchySummary = {
   scope_level: string | null;
@@ -17,6 +18,67 @@ type HierarchySummary = {
   regions_in_division?: number | null;
   shops_in_division?: number | null;
 };
+
+type AlignmentRow = {
+  Division: string | null;
+  Region: string | null;
+  District: string | null;
+  store: string | number | null;
+  Shop_UserName: string | null;
+  District_UserName: string | null;
+  Region_UserName: string | null;
+  Division_UserName: string | null;
+};
+
+type LoginScope = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
+
+const ALIGNMENT_SELECT = [
+  '"Division"',
+  '"Region"',
+  '"District"',
+  '"store"',
+  '"Shop_UserName"',
+  '"District_UserName"',
+  '"Region_UserName"',
+  '"Division_UserName"',
+].join(", ");
+
+const LOGIN_SCOPES: {
+  scope: LoginScope;
+  emailColumn: string;
+  passwordColumn: string;
+  userNameColumn: keyof AlignmentRow;
+  friendlyLabel: string;
+}[] = [
+  {
+    scope: "SHOP",
+    emailColumn: "Shop_Email",
+    passwordColumn: "Shop_Password",
+    userNameColumn: "Shop_UserName",
+    friendlyLabel: "Shop",
+  },
+  {
+    scope: "DISTRICT",
+    emailColumn: "District_Email",
+    passwordColumn: "District_Password",
+    userNameColumn: "District_UserName",
+    friendlyLabel: "District",
+  },
+  {
+    scope: "REGION",
+    emailColumn: "Region_Email",
+    passwordColumn: "Region_Password",
+    userNameColumn: "Region_UserName",
+    friendlyLabel: "Region",
+  },
+  {
+    scope: "DIVISION",
+    emailColumn: "Division_Email",
+    passwordColumn: "Division_Password",
+    userNameColumn: "Division_UserName",
+    friendlyLabel: "Division",
+  },
+];
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,40 +99,86 @@ export default function LoginPage() {
     try {
       console.log("Trying login with:", loginEmail); // debug
 
-      const { data, error: supaError } = await supabase
-        .from("company_alignment")
-        .select('store, "Shop_Email", "Shop_UserName"')
-        .eq("Shop_Email", loginEmail)
-        .eq("Shop_Password", loginPassword)
-        .maybeSingle();
+      let matchedLogin: { row: AlignmentRow; scope: (typeof LOGIN_SCOPES)[number] } | null = null;
 
-      if (supaError) {
-        console.error("Supabase login error:", supaError);
-        setError("Login error – please try again or contact admin.");
-      } else if (!data) {
-        setError("Invalid email or password.");
-      } else {
-        // ✅ Logged in – simple local flag for now
-        localStorage.setItem("loggedIn", "true");
-        localStorage.setItem("loginEmail", loginEmail);
-        localStorage.setItem("shopStore", String(data.store ?? ""));
-        localStorage.setItem("shopUserName", data.Shop_UserName ?? "");
+      for (const scopeConfig of LOGIN_SCOPES) {
+        const { data, error: supaError } = await supabase
+          .from("company_alignment")
+          .select(ALIGNMENT_SELECT)
+          .eq(scopeConfig.emailColumn, loginEmail)
+          .eq(scopeConfig.passwordColumn, loginPassword)
+          .limit(1)
+          .maybeSingle<AlignmentRow>();
 
-        try {
-          // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
-          const summary = await fetchHierarchySummary(loginEmail);
-          if (summary) {
-            localStorage.setItem("hierarchySummary", JSON.stringify(summary));
-          } else {
-            localStorage.removeItem("hierarchySummary");
+        if (supaError) {
+          // Multiple district/region rows can still report an error;
+          // log and move on to the next scope without surfacing to the user.
+          if (supaError.code !== "PGRST116") {
+            console.warn(
+              `Supabase login lookup failed for scope ${scopeConfig.scope}:`,
+              supaError
+            );
           }
-        } catch (hierarchyErr) {
-          console.error("Hierarchy summary fetch error:", hierarchyErr);
-          localStorage.removeItem("hierarchySummary");
+          continue;
         }
 
-        router.push("/"); // send them to the main dashboard
+        if (data) {
+          matchedLogin = { row: data, scope: scopeConfig };
+          break;
+        }
       }
+
+      if (!matchedLogin) {
+        setError("Invalid email or password.");
+        return;
+      }
+
+      const {
+        row,
+        scope: { scope: scopeLevel, userNameColumn, friendlyLabel },
+      } = matchedLogin;
+      const displayName = (row[userNameColumn] as string | null) ?? friendlyLabel;
+
+      // Store a minimal hierarchy summary immediately so downstream pages have context even
+      // if Supabase view rows are missing for this login scope.
+      const fallbackSummary = buildHierarchySummaryFromAlignment({
+        login: loginEmail,
+        scopeLevel,
+        row,
+      });
+      writeHierarchySummaryCache(fallbackSummary);
+
+      // ✅ Logged in – persist shared context
+      localStorage.setItem("loggedIn", "true");
+      localStorage.setItem("loginEmail", loginEmail);
+      localStorage.setItem("userScopeLevel", scopeLevel);
+      localStorage.setItem("userDisplayName", displayName ?? friendlyLabel);
+      localStorage.setItem("userDivision", row.Division ?? "");
+      localStorage.setItem("userRegion", row.Region ?? "");
+      localStorage.setItem("userDistrict", row.District ?? "");
+
+      if (scopeLevel === "SHOP") {
+        localStorage.setItem("shopStore", String(row.store ?? ""));
+        localStorage.setItem(
+          "shopUserName",
+          (row.Shop_UserName as string | null) ?? displayName ?? ""
+        );
+      } else {
+        localStorage.removeItem("shopStore");
+        localStorage.removeItem("shopUserName");
+      }
+
+      try {
+        // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
+        const summary = await fetchHierarchySummary(loginEmail);
+        if (summary) {
+          writeHierarchySummaryCache(summary);
+        }
+      } catch (hierarchyErr) {
+        console.error("Hierarchy summary fetch error:", hierarchyErr);
+      }
+
+      router.push("/"); // send them to the main dashboard
     } catch (err) {
       console.error("Unexpected login error:", err);
       setError("Unexpected error – please try again.");
@@ -93,7 +201,7 @@ export default function LoginPage() {
             <span className="text-red-500">5</span>
           </h1>
           <p className="text-xs text-slate-400">
-            Use your shop login from company_alignment (ex: 18@t5.com).
+            Use any company_alignment login (Shop, DM, RD, VP).
           </p>
         </div>
 
@@ -104,7 +212,7 @@ export default function LoginPage() {
               htmlFor="email"
               className="block text-xs font-medium text-slate-300"
             >
-              Login (Shop_Email)
+              Login Email
             </label>
             <input
               id="email"
@@ -124,7 +232,7 @@ export default function LoginPage() {
               htmlFor="password"
               className="block text-xs font-medium text-slate-300"
             >
-              Password (Shop_Password)
+              Password
             </label>
             <input
               id="password"
@@ -179,6 +287,30 @@ async function fetchHierarchySummary(loginEmail: string) {
   }
 
   return data as HierarchySummary | null;
+}
+
+function buildHierarchySummaryFromAlignment({
+  login,
+  scopeLevel,
+  row,
+}: {
+  login: string;
+  scopeLevel: LoginScope;
+  row: AlignmentRow;
+}): HierarchySummary {
+  return {
+    login,
+    scope_level: scopeLevel,
+    division_name: row.Division ?? null,
+    region_name: row.Region ?? null,
+    district_name: row.District ?? null,
+    shop_number: scopeLevel === "SHOP" ? (row.store ? String(row.store) : null) : null,
+    shops_in_district: null,
+    districts_in_region: null,
+    shops_in_region: null,
+    regions_in_division: null,
+    shops_in_division: null,
+  };
 }
 
 

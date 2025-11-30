@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-page-custom-font */
 
 import "./globals.css";
 import type { ReactNode } from "react";
@@ -36,6 +37,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
 
   return (
     <html lang="en">
+      <head>
+        <link
+          rel="stylesheet"
+          href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600&display=swap"
+        />
+      </head>
       <body>{checkedAuth ? children : null}</body>
     </html>
   );

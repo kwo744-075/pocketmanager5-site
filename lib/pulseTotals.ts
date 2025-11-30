@@ -6,6 +6,7 @@ export type PulseTotals = {
   big4: number;
   coolants: number;
   diffs: number;
+  fuelFilters: number;
   donations: number;
   mobil1: number;
 };
@@ -21,6 +22,7 @@ type TotalsRow = {
   total_big4: number | null;
   total_coolants: number | null;
   total_diffs: number | null;
+  total_fuel_filters: number | null;
   total_donations: number | null;
   total_mobil1: number | null;
 };
@@ -31,6 +33,7 @@ const EMPTY_TOTALS: PulseTotals = {
   big4: 0,
   coolants: 0,
   diffs: 0,
+  fuelFilters: 0,
   donations: 0,
   mobil1: 0,
 };
@@ -51,6 +54,7 @@ const buildTotals = (row: TotalsRow | null): PulseTotals => ({
   big4: row?.total_big4 ?? 0,
   coolants: row?.total_coolants ?? 0,
   diffs: row?.total_diffs ?? 0,
+  fuelFilters: row?.total_fuel_filters ?? 0,
   donations: row?.total_donations ?? 0,
   mobil1: row?.total_mobil1 ?? 0,
 });
@@ -62,13 +66,13 @@ export async function fetchShopTotals(shopId: string): Promise<PulseTotalsResult
   const [dailyResponse, weeklyResponse] = await Promise.all([
     pulseSupabase
       .from("shop_daily_totals")
-      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1")
+      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1")
       .eq("shop_id", shopId)
       .eq("check_in_date", dailyDate)
       .maybeSingle(),
     pulseSupabase
       .from("shop_wtd_totals")
-      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_donations,total_mobil1")
+      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1")
       .eq("shop_id", shopId)
       .eq("week_start", weekStart)
       .order("current_date", { ascending: false })
