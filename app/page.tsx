@@ -21,6 +21,11 @@ type HierarchySummary = {
   region_name: string | null;
   district_name: string | null;
   shop_number: string | null;
+  shops_in_district: number | null;
+  districts_in_region: number | null;
+  shops_in_region: number | null;
+  regions_in_division: number | null;
+  shops_in_division: number | null;
 };
 
 type ShopMeta = {
@@ -604,25 +609,23 @@ export default function Home() {
                 <RetailPills />
               </div>
 
-              <div className="flex w-full flex-col gap-2 md:w-auto">
-                <div className="flex w-full flex-wrap items-center gap-2">
-                  <div className="flex min-w-[200px] flex-1 text-left">
-                    {hierarchyLoading ? (
-                      <p className="text-xs text-slate-500">Loading scope…</p>
-                    ) : hierarchyError ? (
-                      <p className="text-xs text-amber-300">Scope unavailable</p>
-                    ) : (
-                      <HierarchyStamp align="left" hierarchy={hierarchy} loginEmail={loginEmail} />
-                    )}
-                  </div>
-                  <button
-                    onClick={handleAuthClick}
-                    className="rounded-full border border-emerald-400/80 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
-                  >
-                    {isLoggedIn ? "Logout" : "Login"}
-                  </button>
-                </div>
+              <div className="flex w-full justify-start md:w-auto md:justify-end">
+                <button
+                  onClick={handleAuthClick}
+                  className="rounded-full border border-emerald-400/80 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+                >
+                  {isLoggedIn ? "Logout" : "Login"}
+                </button>
               </div>
+            </div>
+            <div className="text-left text-xs text-slate-400">
+              {hierarchyLoading ? (
+                <p className="text-slate-500">Loading scope…</p>
+              ) : hierarchyError ? (
+                <p className="text-amber-300">Scope unavailable</p>
+              ) : (
+                <HierarchyStamp align="left" hierarchy={hierarchy} loginEmail={loginEmail} />
+              )}
             </div>
             <div className="flex w-full flex-wrap items-stretch gap-3 pt-2 md:flex-nowrap md:items-center md:justify-between">
               {heroQuickActions.map((action) => {

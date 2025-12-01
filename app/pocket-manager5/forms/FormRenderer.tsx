@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
+import { pulseSupabase, supabase } from "@/lib/supabaseClient";
 import type { FormConfig, FormField } from "./formRegistry";
 
 type FormStatus = "idle" | "saving" | "saved" | "error";
@@ -16,6 +17,9 @@ function getDefaultValue(field: FormField): FieldValue {
   if (field.type === "checklist") {
     return [];
   }
+  if (field.type === "hidden") {
+    return field.defaultValue ?? "";
+  }
   return "";
 }
 
@@ -28,6 +32,7 @@ type FormRendererProps = {
   onAfterSubmit?: (payload: { values: Record<string, FieldValue>; savedAt: string | null }) => void;
   hideStatusPanel?: boolean;
   submitLabelOverride?: string;
+  sectionHeaderAccessory?: (section: FormConfig["sections"][number]) => ReactNode;
 };
 
 export function FormRenderer({
@@ -39,9 +44,20 @@ export function FormRenderer({
   onAfterSubmit,
   hideStatusPanel = false,
   submitLabelOverride,
+  sectionHeaderAccessory,
 }: FormRendererProps) {
   const resolvedStorageKey = storageKey ?? `pm-form-${form.slug}`;
   const { loginEmail, hierarchy, shopMeta, storedShopName } = usePocketHierarchy(contextPath ?? `/pocket-manager5/forms/${form.slug}`);
+  const needsAlignedShopOptions = useMemo(
+    () =>
+      form.sections.some((section) =>
+        section.fields.some((field) => field.type === "select" && field.optionsSource === "alignedShops"),
+      ),
+    [form.sections],
+  );
+  const [alignedShopOptions, setAlignedShopOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [alignedShopsLoading, setAlignedShopsLoading] = useState(false);
+  const [alignedShopError, setAlignedShopError] = useState<string | null>(null);
   const readStoredPayload = () => {
     if (!persistLocally || typeof window === "undefined") {
       return null;
@@ -60,7 +76,6 @@ export function FormRenderer({
   const [values, setValues] = useState<Record<string, FieldValue>>(stored?.data ?? initialValues ?? {});
   const [status, setStatus] = useState<FormStatus>("idle");
   const [lastSaved, setLastSaved] = useState<string | null>(stored?.savedAt ?? null);
-  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const [serverMessage, setServerMessage] = useState<string | null>(null);
   const [serverError, setServerError] = useState<string | null>(null);
 
@@ -74,6 +89,109 @@ export function FormRenderer({
     }
     return filled;
   }, [form.sections, values]);
+
+  useEffect(() => {
+    if (!needsAlignedShopOptions) {
+      return;
+    }
+
+    let isMounted = true;
+
+    const mapShopOption = (shopNumber: number | string | null | undefined, shopName?: string | null) => {
+      const numericValue =
+        typeof shopNumber === "number"
+          ? shopNumber
+          : typeof shopNumber === "string" && shopNumber.trim()
+          ? Number(shopNumber)
+          : null;
+
+      if (numericValue === null || !Number.isFinite(numericValue)) {
+        return null;
+      }
+
+      const formattedNumber = String(Math.trunc(numericValue)).padStart(4, "0");
+      const labelParts = [`Shop #${formattedNumber}`];
+      if (shopName) {
+        labelParts.push(shopName);
+      }
+      return { label: labelParts.join(" · "), value: formattedNumber };
+    };
+
+    const loadAlignedShops = async () => {
+      if (!shopMeta?.district_id && !hierarchy?.district_name) {
+        setAlignedShopOptions([]);
+        return;
+      }
+
+      setAlignedShopsLoading(true);
+      setAlignedShopError(null);
+
+      try {
+        const options: Array<{ label: string; value: string }> = [];
+
+        if (shopMeta?.district_id) {
+          const { data, error } = await pulseSupabase
+            .from("shops")
+            .select("id,shop_number,shop_name")
+            .eq("district_id", shopMeta.district_id)
+            .order("shop_number", { ascending: true });
+
+          if (error) {
+            throw error;
+          }
+
+          for (const row of data ?? []) {
+            const option = mapShopOption(row.shop_number, row.shop_name);
+            if (option) {
+              options.push(option);
+            }
+          }
+        }
+
+        if (!options.length && hierarchy?.district_name) {
+          const { data, error } = await supabase
+            .from("shop_alignment")
+            .select("store,shop_name")
+            .eq("district", hierarchy.district_name)
+            .order("store", { ascending: true });
+
+          if (error) {
+            throw error;
+          }
+
+          for (const row of data ?? []) {
+            const option = mapShopOption(row.store, row.shop_name);
+            if (option) {
+              options.push(option);
+            }
+          }
+        }
+
+        if (isMounted) {
+          setAlignedShopOptions(options);
+          if (!options.length) {
+            setAlignedShopError("No shops linked to your alignment yet.");
+          }
+        }
+      } catch (error) {
+        console.error("Unable to load aligned shops", error);
+        if (isMounted) {
+          setAlignedShopOptions([]);
+          setAlignedShopError("Unable to load shops for your district alignment.");
+        }
+      } finally {
+        if (isMounted) {
+          setAlignedShopsLoading(false);
+        }
+      }
+    };
+
+    void loadAlignedShops();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [hierarchy?.district_name, needsAlignedShopOptions, shopMeta?.district_id]);
 
   const handleChange = (name: string, newValue: FieldValue) => {
     setValues((prev) => ({ ...prev, [name]: newValue }));
@@ -170,17 +288,6 @@ export function FormRenderer({
     }
   };
 
-  const handleCopy = async () => {
-    if (typeof navigator === "undefined" || !navigator.clipboard) return;
-    try {
-      await navigator.clipboard.writeText(JSON.stringify(mergedValues, null, 2));
-      setCopyState("copied");
-      setTimeout(() => setCopyState("idle"), 2500);
-    } catch (error) {
-      console.warn("Unable to copy", error);
-    }
-  };
-
   const statusLabel =
     status === "saving"
       ? "Saving…"
@@ -194,13 +301,20 @@ export function FormRenderer({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
-      {form.sections.map((section) => (
-        <section key={section.title} className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 shadow-2xl shadow-black/30">
-          <header className="mb-5">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{form.title}</p>
-            <h2 className="text-2xl font-semibold text-white">{section.title}</h2>
-            {section.description && <p className="mt-2 text-sm text-slate-400">{section.description}</p>}
-          </header>
+      {form.sections.map((section) => {
+        const accessory = sectionHeaderAccessory?.(section);
+        return (
+          <section key={section.title} className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 shadow-2xl shadow-black/30">
+            <header className="mb-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{form.title}</p>
+                  <h2 className="text-2xl font-semibold text-white">{section.title}</h2>
+                </div>
+                {accessory && <div className="text-sm text-emerald-200">{accessory}</div>}
+              </div>
+              {section.description && <p className="mt-2 text-sm text-slate-400">{section.description}</p>}
+            </header>
           <div className="space-y-5">
             {section.fields.map((field) => (
               <FieldRenderer
@@ -209,11 +323,15 @@ export function FormRenderer({
                 value={mergedValues[field.name]}
                 onChange={(value) => handleChange(field.name, value)}
                 onChecklistToggle={(itemId) => handleChecklistToggle(field.name, itemId)}
+                alignedShopOptions={alignedShopOptions}
+                alignedShopsLoading={alignedShopsLoading}
+                alignedShopError={alignedShopError}
               />
             ))}
           </div>
-        </section>
-      ))}
+          </section>
+        );
+      })}
 
       {hideStatusPanel ? (
         <div className="flex justify-end">
@@ -234,13 +352,6 @@ export function FormRenderer({
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
-              type="button"
-              onClick={handleCopy}
-              className="rounded-full border border-slate-700 px-4 py-1.5 text-xs font-semibold text-slate-200 transition hover:border-emerald-400/60 hover:text-emerald-100"
-            >
-              {copyState === "copied" ? "Copied ✓" : "Copy JSON"}
-            </button>
-            <button
               type="submit"
               className="rounded-full border border-emerald-400/60 bg-emerald-500/10 px-5 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
             >
@@ -258,12 +369,22 @@ function FieldRenderer({
   value,
   onChange,
   onChecklistToggle,
+  alignedShopOptions,
+  alignedShopsLoading,
+  alignedShopError,
 }: {
   field: FormField;
   value: FieldValue;
   onChange: (value: FieldValue) => void;
   onChecklistToggle: (itemId: string) => void;
+  alignedShopOptions: Array<{ label: string; value: string }>;
+  alignedShopsLoading: boolean;
+  alignedShopError: string | null;
 }) {
+  if (field.type === "hidden") {
+    return <input type="hidden" name={field.name} value={(value as string) ?? ""} required={field.required} />;
+  }
+
   if (field.type === "checklist") {
     const selected = (value as string[]) ?? [];
     return (
@@ -295,6 +416,9 @@ function FieldRenderer({
   }
 
   if (field.type === "select") {
+    const usesAlignedShops = field.optionsSource === "alignedShops";
+    const selectOptions = usesAlignedShops ? alignedShopOptions : field.options ?? [];
+    const isDisabled = usesAlignedShops && (alignedShopsLoading || !selectOptions.length);
     return (
       <div>
         <label className="text-sm font-semibold text-white">{field.label}</label>
@@ -303,15 +427,20 @@ function FieldRenderer({
           className={cn(baseInputClasses, "bg-slate-950/80")}
           value={(value as string) ?? ""}
           required={field.required}
+          disabled={isDisabled}
           onChange={(event) => onChange(event.target.value)}
         >
-          <option value="">{field.placeholder ?? "Select"}</option>
-          {field.options.map((option) => (
+          <option value="">{usesAlignedShops ? "Select a shop" : field.placeholder ?? "Select"}</option>
+          {selectOptions.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
             </option>
           ))}
         </select>
+        {usesAlignedShops && alignedShopsLoading && <p className="mt-1 text-xs text-slate-500">Loading your district shops…</p>}
+        {usesAlignedShops && alignedShopError && !alignedShopsLoading && (
+          <p className="mt-1 text-xs text-amber-300">{alignedShopError}</p>
+        )}
       </div>
     );
   }

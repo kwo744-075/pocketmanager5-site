@@ -1,12 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Component, Suspense, useMemo, type ReactNode } from "react";
+import { Component, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { BrandWordmark } from "@/app/components/BrandWordmark";
+import { HierarchyStamp } from "@/app/components/HierarchyStamp";
+import { RetailPills } from "@/app/components/RetailPills";
 import {
   AlarmClock,
   ArrowUpRight,
   BarChart3,
-  Brain,
   Boxes,
   Building2,
   CalendarClock,
@@ -21,11 +23,9 @@ import {
   GraduationCap,
   ListChecks,
   Mail,
-  MessageCircle,
   NotebookPen,
   Package,
   Phone,
-  RefreshCcw,
   Search,
   ShieldCheck,
   Sparkles,
@@ -34,241 +34,19 @@ import {
   UserCog,
   UserMinus,
   Wallet,
-  type LucideIcon,
 } from "lucide-react";
-import { BrandWordmark } from "@/app/components/BrandWordmark";
-import { RetailPills } from "@/app/components/RetailPills";
-import { HierarchyStamp } from "@/app/components/HierarchyStamp";
-import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
+import type { LucideIcon } from "lucide-react";
 import {
-  useHierarchyRollupsSuspense,
-  useMiniPosOverviewSuspense,
-  usePulseTotalsSuspense,
-  useSnapshotSuspense,
-  type HierarchyRollupScope,
-} from "@/hooks/usePocketManagerData";
-import { EMPTY_SNAPSHOT, type PocketManagerSnapshot } from "@/lib/pocketManagerData";
-import { type PulseTotals, EMPTY_TOTALS } from "@/lib/pulseTotals";
-import type { RollupSummary } from "@/lib/pulseRollups";
-import { FEATURE_LOOKUP, type FeatureSlug } from "./featureRegistry";
-import { DM_FORM_SLUGS, FORM_LOOKUP, PEOPLE_FORM_SLUGS, type FormSlug } from "./forms/formRegistry";
-import {
-  DM_DAY_NAMES,
-  DM_STATUS_DOTS,
-  DM_VISIT_BADGES,
-  buildCoverageSummary,
-  buildDueChecklist,
-  buildPeriodGrid,
-  buildSampleSchedule,
-  buildVisitMix,
-  getRetailPeriodInfo,
-  groupEntriesByDate,
-  shortDateFormatter,
-  type SampleScheduleEntry,
-} from "./components/dmScheduleUtils";
-
-const integerFormatter = new Intl.NumberFormat("en-US");
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0,
-});
-
-const visitDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
-  day: "numeric",
-  weekday: "short",
-});
-
-const formatDate = (value: string | Date | null | undefined) => {
-  if (!value) {
-    return "--";
-  }
-  const date = typeof value === "string" ? new Date(value) : value;
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return "--";
-  }
-  return visitDateFormatter.format(date);
-};
-
-const formatPercent = (value: number | null) => {
-  if (value === null || Number.isNaN(value)) return "--";
-  return `${Math.round(value)}%`;
-};
-
-const mixPercent = (value: number, cars: number) => {
-  if (!cars || cars <= 0) return "--";
-  return `${((value / cars) * 100).toFixed(1)}%`;
-};
-
-type AccentTone = "emerald" | "azure" | "violet" | "amber" | "pink" | "cyan" | "slate";
-
-const ACCENT_STYLES: Record<AccentTone, { border: string; eyebrow: string; glow: string; radial: string; actionBorder: string }> = {
-  emerald: {
-    border: "border-emerald-400/40",
-    eyebrow: "text-emerald-200",
-    glow: "shadow-emerald-500/20",
-    radial: "from-emerald-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-emerald-400/60",
-  },
-  azure: {
-    border: "border-cyan-400/40",
-    eyebrow: "text-cyan-200",
-    glow: "shadow-cyan-500/20",
-    radial: "from-cyan-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-cyan-400/60",
-  },
-  violet: {
-    border: "border-violet-400/40",
-    eyebrow: "text-violet-200",
-    glow: "shadow-violet-500/20",
-    radial: "from-violet-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-violet-400/60",
-  },
-  amber: {
-    border: "border-amber-400/40",
-    eyebrow: "text-amber-200",
-    glow: "shadow-amber-500/20",
-    radial: "from-amber-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-amber-400/60",
-  },
-  pink: {
-    border: "border-pink-400/40",
-    eyebrow: "text-pink-200",
-    glow: "shadow-pink-500/20",
-    radial: "from-pink-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-pink-400/60",
-  },
-  cyan: {
-    border: "border-sky-400/40",
-    eyebrow: "text-sky-200",
-    glow: "shadow-sky-500/20",
-    radial: "from-sky-500/10 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-sky-400/60",
-  },
-  slate: {
-    border: "border-slate-800/80",
-    eyebrow: "text-slate-400",
-    glow: "shadow-black/20",
-    radial: "from-slate-500/5 via-slate-950/40 to-slate-950/70",
-    actionBorder: "border-slate-700",
-  },
-};
-
-type SectionCardProps = {
-  title: string;
-  eyebrow: string;
-  action?: ReactNode;
-  actionHref?: string;
-  actionLabel?: string;
-  children: ReactNode;
-  accent?: AccentTone;
-  quickLinks?: FeatureSlug[];
-  formSlugs?: FormSlug[];
-};
-
-function SectionCard({
-  title,
-  eyebrow,
-  action,
-  actionHref,
-  actionLabel = "Open workspace",
-  children,
-  accent = "slate",
-  quickLinks,
-  formSlugs,
-}: SectionCardProps) {
-  const accentStyles = ACCENT_STYLES[accent];
-  const resolvedAction = actionHref && !action ? (
-    <Link
-      href={actionHref}
-      className={`inline-flex items-center rounded-full ${accentStyles.actionBorder} px-4 py-1.5 text-xs font-semibold text-white transition hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300`}
-    >
-      {actionLabel}
-    </Link>
-  ) : (
-    action ?? null
-  );
-
-  return (
-    <article
-      className={`relative overflow-hidden rounded-3xl border ${accentStyles.border} bg-slate-950/80 p-6 shadow-2xl ${accentStyles.glow}`}
-    >
-      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accentStyles.radial}`} />
-      <div className="relative flex flex-wrap items-center justify-between gap-4 border-b border-white/5 pb-4">
-        <div>
-          <p className={`text-[10px] uppercase tracking-[0.3em] ${accentStyles.eyebrow}`}>{eyebrow}</p>
-          <h2 className="text-2xl font-semibold text-white">{title}</h2>
-        </div>
-        {resolvedAction}
-      </div>
-      <div className="relative pt-4 space-y-5">{children}</div>
-      {formSlugs && formSlugs.length > 0 && <FormQuickLinks slugs={formSlugs} />}
-      {quickLinks && quickLinks.length > 0 && <FeatureQuickLinks slugs={quickLinks} />}
-    </article>
-  );
-}
-
-function FeatureQuickLinks({ slugs }: { slugs: FeatureSlug[] }) {
-  const items = slugs
-    .map((slug) => FEATURE_LOOKUP[slug])
-    .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-  if (!items.length) {
-    return null;
-  }
-
-  return (
-    <div className="relative mt-5 flex flex-wrap gap-2">
-      {items.map((item) => (
-        <Link
-          key={item.slug}
-          href={`/pocket-manager5/features/${item.slug}`}
-          className="group/quick inline-flex items-center gap-1 rounded-full border border-slate-800/60 bg-slate-900/60 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400/50 hover:text-emerald-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
-        >
-          <span>{item.title}</span>
-          <span className="text-slate-500 transition group-hover/quick:translate-x-0.5 group-hover/quick:text-emerald-200">›</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function FormQuickLinks({ slugs }: { slugs: FormSlug[] }) {
-  const items = slugs
-    .map((slug) => FORM_LOOKUP[slug])
-    .filter((item): item is NonNullable<typeof item> => Boolean(item));
-
-  if (!items.length) {
-    return null;
-  }
-
-  return (
-    <div className="relative mt-5 flex flex-wrap gap-2">
-      {items.map((item) => (
-        <Link
-          key={item.slug}
-          href={`/pocket-manager5/forms/${item.slug}`}
-          className="group/form inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/5 px-3 py-1 text-xs font-semibold text-emerald-100 transition hover:bg-emerald-500/15 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300"
-        >
-          <span>{item.title}</span>
-          <span className="text-emerald-200 transition group-hover/form:translate-x-0.5">↗</span>
-        </Link>
-      ))}
-    </div>
-  );
-}
-
-function SectionStatus({ message, tone = "muted" }: { message: string; tone?: "muted" | "error" }) {
-  const toneClasses =
-    tone === "error"
-      ? "text-amber-300"
-      : tone === "muted"
-      ? "text-slate-400"
-      : "text-slate-400";
-
-  return <p className={`text-sm ${toneClasses}`}>{message}</p>;
-}
+  DM_FORM_SLUGS,
+  FORM_REGISTRY,
+  PEOPLE_FORM_SLUGS,
+  type FormSlug,
+} from "@/app/pocket-manager5/forms/formRegistry";
+import { usePocketHierarchy, type HierarchySummary, type ShopMeta } from "@/hooks/usePocketHierarchy";
+import { useMiniPosOverviewSuspense, useSnapshotSuspense } from "@/hooks/usePocketManagerData";
+import { EMPTY_SNAPSHOT } from "@/lib/pocketManagerData";
+import { formatPercent } from "@/lib/pulseFormatting";
+import { pulseSupabase, supabase } from "@/lib/supabaseClient";
 
 type QuickAction = {
   label: string;
@@ -280,33 +58,251 @@ type QuickAction = {
 
 const QUICK_ACTIONS: QuickAction[] = [
   {
-    label: "Messages",
-    description: "AI + DM threads",
-    href: "/pocket-manager5/features/chatbot",
-    icon: MessageCircle,
-    accent: "from-cyan-500/40 via-transparent to-slate-950/80",
+    label: "Daily Log",
+    description: "Closeout workspace",
+    href: "/pocket-manager5/features/daily-log",
+    icon: FileText,
+    accent: "from-emerald-500/30 via-emerald-500/5 to-transparent",
   },
   {
-    label: "Turned",
-    description: "Capture approvals",
-    href: "/pocket-manager5/features/turned-log",
-    icon: RefreshCcw,
-    accent: "from-amber-500/40 via-transparent to-slate-950/80",
+    label: "DM Schedule",
+    description: "Visit planning + cadence",
+    href: "/pocket-manager5/features/dm-schedule",
+    icon: CalendarDays,
+    accent: "from-cyan-500/30 via-cyan-500/5 to-transparent",
   },
   {
-    label: "Contacts",
-    description: "Phone sheet",
-    href: "/pocket-manager5/features/employee-management",
-    icon: Phone,
-    accent: "from-emerald-500/40 via-transparent to-slate-950/80",
+    label: "Mini POS",
+    description: "Checkout shortcuts",
+    href: "/pocket-manager5/features/mini-pos",
+    icon: Calculator,
+    accent: "from-pink-500/30 via-pink-500/5 to-transparent",
+  },
+  {
+    label: "Labor Tracker",
+    description: "Allowed vs used hours",
+    href: "/pocket-manager5/features/labor-tracker",
+    icon: BarChart3,
+    accent: "from-violet-500/30 via-violet-500/5 to-transparent",
+  },
+  {
+    label: "Training Tracker",
+    description: "CTT + cadence",
+    href: "/pocket-manager5/features/training-tracker",
+    icon: GraduationCap,
+    accent: "from-amber-500/30 via-amber-500/5 to-transparent",
+  },
+  {
+    label: "Pulse Check 5",
+    description: "District rollups",
+    href: "/pulse-check5",
+    icon: TrendingUp,
+    accent: "from-sky-500/30 via-sky-500/5 to-transparent",
   },
 ];
 
+const FORM_TITLE_LOOKUP = FORM_REGISTRY.reduce<Record<FormSlug, string>>((acc, form) => {
+  acc[form.slug] = form.title;
+  return acc;
+}, {} as Record<FormSlug, string>);
+
+const SECTION_ACCENTS: Record<
+  string,
+  { border: string; eyebrow: string; actionBorder: string; quickLinkBorder: string }
+> = {
+  emerald: {
+    border: "border-emerald-500/30",
+    eyebrow: "text-emerald-200",
+    actionBorder: "border-emerald-400/60 text-emerald-100",
+    quickLinkBorder: "border-emerald-400/40",
+  },
+  azure: {
+    border: "border-cyan-400/30",
+    eyebrow: "text-cyan-200",
+    actionBorder: "border-cyan-300/60 text-cyan-100",
+    quickLinkBorder: "border-cyan-300/40",
+  },
+  violet: {
+    border: "border-violet-400/30",
+    eyebrow: "text-violet-200",
+    actionBorder: "border-violet-300/60 text-violet-100",
+    quickLinkBorder: "border-violet-300/40",
+  },
+  amber: {
+    border: "border-amber-400/30",
+    eyebrow: "text-amber-200",
+    actionBorder: "border-amber-300/60 text-amber-100",
+    quickLinkBorder: "border-amber-300/40",
+  },
+  pink: {
+    border: "border-pink-400/30",
+    eyebrow: "text-pink-200",
+    actionBorder: "border-pink-300/60 text-pink-100",
+    quickLinkBorder: "border-pink-300/40",
+  },
+  cyan: {
+    border: "border-cyan-400/30",
+    eyebrow: "text-cyan-200",
+    actionBorder: "border-cyan-300/60 text-cyan-100",
+    quickLinkBorder: "border-cyan-300/40",
+  },
+  default: {
+    border: "border-slate-800/70",
+    eyebrow: "text-slate-400",
+    actionBorder: "border-slate-600/80 text-slate-200",
+    quickLinkBorder: "border-slate-700/60",
+  },
+};
+
+const integerFormatter = new Intl.NumberFormat("en-US");
+
+const formatFeatureLabel = (slug: string) =>
+  slug
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+
+const buildFeatureHref = (slug: string) => `/pocket-manager5/features/${slug}`;
+
+type SectionCardProps = {
+  title: string;
+  eyebrow?: string;
+  accent?: string;
+  actionHref?: string;
+  actionLabel?: string;
+  quickLinks?: string[];
+  formSlugs?: FormSlug[] | undefined;
+  children: ReactNode;
+};
+
+function SectionCard({
+  title,
+  eyebrow,
+  accent = "default",
+  actionHref,
+  actionLabel = "Open workspace",
+  quickLinks,
+  formSlugs,
+  children,
+}: SectionCardProps) {
+  const accentTheme = SECTION_ACCENTS[accent] ?? SECTION_ACCENTS.default;
+
+  return (
+    <section className={`rounded-3xl border ${accentTheme.border} bg-slate-950/80 p-6 shadow-xl shadow-black/20`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          {eyebrow && (
+            <p className={`text-[10px] uppercase tracking-[0.3em] ${accentTheme.eyebrow}`}>{eyebrow}</p>
+          )}
+          <h2 className="text-xl font-semibold text-white">{title}</h2>
+        </div>
+        {actionHref && (
+          <Link
+            href={actionHref}
+            className={`inline-flex items-center gap-1 rounded-full border ${accentTheme.actionBorder} px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] transition hover:bg-white/5`}
+          >
+            {actionLabel}
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        )}
+      </div>
+
+      {quickLinks?.length ? (
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Feature shortcuts">
+          {quickLinks.map((slug) => (
+            <Link
+              key={slug}
+              href={buildFeatureHref(slug)}
+              className={`inline-flex items-center gap-1 rounded-full border ${accentTheme.quickLinkBorder} bg-slate-900/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-400/60`}
+            >
+              {formatFeatureLabel(slug)}
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      {formSlugs?.length ? (
+        <div className="mt-3 flex flex-wrap gap-2" aria-label="Form shortcuts">
+          {formSlugs.map((slug) => (
+            <Link
+              key={slug}
+              href={`/pocket-manager5/forms/${slug}`}
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-100 transition hover:bg-emerald-500/20"
+            >
+              {FORM_TITLE_LOOKUP[slug] ?? formatFeatureLabel(slug)}
+              <ArrowUpRight className="h-3 w-3" />
+            </Link>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="mt-5">{children}</div>
+    </section>
+  );
+}
+
+type SectionStatusProps = {
+  message: string;
+  tone?: "default" | "error";
+};
+
+function SectionStatus({ message, tone = "default" }: SectionStatusProps) {
+  const toneStyles =
+    tone === "error"
+      ? "border-amber-400/40 bg-amber-500/10 text-amber-100"
+      : "border-slate-700/60 bg-slate-900/40 text-slate-200";
+  return <div className={`rounded-2xl border px-4 py-3 text-sm ${toneStyles}`}>{message}</div>;
+}
+
+type ShopHrefAppender = (href: string) => string | null;
+
+function useShopHrefAppender(): ShopHrefAppender {
+  const [shopStore, setShopStore] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const syncStore = () => {
+      const nextValue = window.localStorage.getItem("shopStore");
+      setShopStore(nextValue && nextValue.trim().length ? nextValue.trim() : null);
+    };
+
+    syncStore();
+
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "shopStore") {
+        syncStore();
+      }
+    };
+
+    window.addEventListener("storage", handleStorage);
+    return () => window.removeEventListener("storage", handleStorage);
+  }, []);
+
+  return useCallback<ShopHrefAppender>(
+    (href) => {
+      if (!shopStore || !href) {
+        return null;
+      }
+      if (href.includes("shop=")) {
+        return href;
+      }
+      const hasQuery = href.includes("?");
+      const separator = hasQuery ? "&" : "?";
+      return `${href}${separator}shop=${encodeURIComponent(shopStore)}`;
+    },
+    [shopStore],
+  );
+}
+
 function QuickActionsRail() {
+  const appendShopHref = useShopHrefAppender();
   return (
     <div className="grid gap-4 md:grid-cols-3">
       {QUICK_ACTIONS.map((action) => (
-        <QuickActionLink key={action.label} {...action} />
+        <QuickActionLink key={action.label} {...action} href={appendShopHref(action.href) ?? action.href} />
       ))}
     </div>
   );
@@ -370,6 +366,13 @@ type DmToolCard = {
 
 const DM_TOOL_CARDS: DmToolCard[] = [
   {
+    title: "Monthly Review Presenter",
+    subtitle: "Deck + KPI workspace",
+    href: "/dm-tools/monthly-biz-review",
+    icon: NotebookPen,
+    accent: "from-emerald-500/60 via-emerald-500/10 to-slate-950/70",
+  },
+  {
     title: "DM Schedule",
     subtitle: "District & period planning",
     href: "/pocket-manager5/features/dm-schedule",
@@ -431,294 +434,551 @@ function DmToolBanner({ title, subtitle, href, icon: Icon, accent }: DmToolCard)
   );
 }
 
-type MonthCalendarCell = {
-  iso: string;
-  dayNumber: number;
-  isCurrentMonth: boolean;
-  isToday: boolean;
-  hasEntries: boolean;
-  isPast: boolean;
-};
+type DistrictTrendKpiKey =
+  | "cars"
+  | "sales"
+  | "aro"
+  | "donations"
+  | "big4"
+  | "coolants"
+  | "diffs"
+  | "fuelFilters"
+  | "mobil1";
 
-type MonthCalendar = {
+type DistrictGridRow = {
+  id: string;
   label: string;
-  weeks: MonthCalendarCell[][];
+  descriptor: string;
+  kind: "district" | "shop";
+  isCurrentShop?: boolean;
+  metrics: Record<DistrictTrendKpiKey, string>;
 };
 
-const buildMonthCalendar = (
-  monthAnchor: Date,
-  today: Date,
-  entriesByDate: Record<string, SampleScheduleEntry[]>,
-): MonthCalendar => {
-  const firstOfMonth = new Date(monthAnchor.getFullYear(), monthAnchor.getMonth(), 1);
-  const firstGridDate = new Date(firstOfMonth);
-  firstGridDate.setDate(firstOfMonth.getDate() - firstOfMonth.getDay());
-  const todayMidnight = new Date(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
-  const matrix: MonthCalendarCell[][] = [];
+type DistrictTotalsRow = {
+  total_cars: number | null;
+  total_sales: number | null;
+  total_big4: number | null;
+  total_coolants: number | null;
+  total_diffs: number | null;
+  total_fuel_filters: number | null;
+  total_donations: number | null;
+  total_mobil1: number | null;
+  district_name?: string | null;
+};
 
-  for (let week = 0; week < 6; week += 1) {
-    const row: MonthCalendarCell[] = [];
-    for (let weekday = 0; weekday < 7; weekday += 1) {
-      const cellDate = new Date(firstGridDate);
-      cellDate.setDate(firstGridDate.getDate() + week * 7 + weekday);
-      const iso = cellDate.toISOString().split("T")[0];
-      const cellMidnight = new Date(cellDate.getFullYear(), cellDate.getMonth(), cellDate.getDate()).getTime();
-      row.push({
-        iso,
-        dayNumber: cellDate.getDate(),
-        isCurrentMonth: cellDate.getMonth() === firstOfMonth.getMonth(),
-        isToday: cellMidnight === todayMidnight,
-        hasEntries: Boolean(entriesByDate[iso]?.length),
-        isPast: cellMidnight < todayMidnight,
-      });
-    }
-    matrix.push(row);
+type DistrictShopTotalsRow = {
+  shop_id: string;
+  total_cars: number | null;
+  total_sales: number | null;
+  total_big4: number | null;
+  total_coolants: number | null;
+  total_diffs: number | null;
+  total_fuel_filters: number | null;
+  total_donations: number | null;
+  total_mobil1: number | null;
+  district_name?: string | null;
+};
+
+type DistrictShopGridSlice = {
+  cars: number;
+  sales: number;
+  aro: number | null;
+  big4Pct: number | null;
+  coolantsPct: number | null;
+  diffsPct: number | null;
+  fuelFiltersPct: number | null;
+  mobil1Pct: number | null;
+  donations: number;
+};
+
+const DISTRICT_KPI_HEADERS: Array<{ key: DistrictTrendKpiKey; label: string }> = [
+  { key: "cars", label: "Cars" },
+  { key: "sales", label: "Sales" },
+  { key: "aro", label: "ARO" },
+  { key: "big4", label: "Big 4" },
+  { key: "coolants", label: "Coolants" },
+  { key: "diffs", label: "Diffs" },
+  { key: "fuelFilters", label: "FF" },
+  { key: "mobil1", label: "Mobil 1" },
+  { key: "donations", label: "Donations" },
+];
+
+const DISTRICT_GRID_TEMPLATE = `1.8fr repeat(${DISTRICT_KPI_HEADERS.length}, minmax(0, 1fr))`;
+
+const districtCurrencyFormatter = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+});
+
+const districtNumberFormatter = new Intl.NumberFormat("en-US");
+
+const formatDistrictDecimal = (value: number | null) => {
+  if (value === null) return "--";
+  return value.toFixed(1);
+};
+
+const formatDistrictPercent = (value: number | null) => {
+  if (value === null || Number.isNaN(value)) {
+    return "--";
   }
-
-  const monthLabel = firstOfMonth.toLocaleString("en-US", { month: "long", year: "numeric" });
-  return { label: monthLabel, weeks: matrix };
+  return `${value.toFixed(1)}%`;
 };
 
-const buildMonthlyLookahead = (
-  today: Date,
-  entriesByDate: Record<string, SampleScheduleEntry[]>,
-): MonthCalendar[] => {
-  const currentMonthAnchor = new Date(today.getFullYear(), today.getMonth(), 1);
-  const nextMonthAnchor = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-  return [buildMonthCalendar(currentMonthAnchor, today, entriesByDate), buildMonthCalendar(nextMonthAnchor, today, entriesByDate)];
+const formatDistrictMetricPair = (primary: string, secondary: string) => `${primary} / ${secondary}`;
+const formatDistrictIntegerValue = (value: number) => districtNumberFormatter.format(Math.round(value ?? 0));
+const formatDistrictCurrencyValue = (value: number) => districtCurrencyFormatter.format(Math.round(value ?? 0));
+const formatDistrictAroValue = (value: number | null) => (value === null ? "--" : `$${formatDistrictDecimal(value)}`);
+
+const buildDistrictGridMetrics = (
+  daily: DistrictShopGridSlice,
+  weekly: DistrictShopGridSlice,
+): Record<DistrictTrendKpiKey, string> => ({
+  cars: formatDistrictMetricPair(formatDistrictIntegerValue(daily.cars), formatDistrictIntegerValue(weekly.cars)),
+  sales: formatDistrictMetricPair(formatDistrictCurrencyValue(daily.sales), formatDistrictCurrencyValue(weekly.sales)),
+  aro: formatDistrictMetricPair(formatDistrictAroValue(daily.aro), formatDistrictAroValue(weekly.aro)),
+  big4: formatDistrictMetricPair(formatDistrictPercent(daily.big4Pct), formatDistrictPercent(weekly.big4Pct)),
+  coolants: formatDistrictMetricPair(formatDistrictPercent(daily.coolantsPct), formatDistrictPercent(weekly.coolantsPct)),
+  diffs: formatDistrictMetricPair(formatDistrictPercent(daily.diffsPct), formatDistrictPercent(weekly.diffsPct)),
+  fuelFilters: formatDistrictMetricPair(
+    formatDistrictPercent(daily.fuelFiltersPct),
+    formatDistrictPercent(weekly.fuelFiltersPct),
+  ),
+  mobil1: formatDistrictMetricPair(formatDistrictPercent(daily.mobil1Pct), formatDistrictPercent(weekly.mobil1Pct)),
+  donations: formatDistrictMetricPair(
+    formatDistrictCurrencyValue(daily.donations),
+    formatDistrictCurrencyValue(weekly.donations),
+  ),
+});
+
+const buildDistrictPlaceholderGridMetrics = (): Record<DistrictTrendKpiKey, string> =>
+  DISTRICT_KPI_HEADERS.reduce<Record<DistrictTrendKpiKey, string>>((acc, header) => {
+    acc[header.key] = formatDistrictMetricPair("--", "--");
+    return acc;
+  }, {} as Record<DistrictTrendKpiKey, string>);
+
+const buildDistrictPlaceholderShopRows = (
+  count: number,
+  options?: { descriptor?: string; highlightCurrent?: boolean },
+) => {
+  if (!count || count <= 0) {
+    return [] as DistrictGridRow[];
+  }
+  const descriptor = options?.descriptor ?? "Awaiting mapping";
+  return Array.from({ length: count }).map((_, index) => ({
+    id: `placeholder-shop-${index + 1}`,
+    label: `Shop slot ${index + 1}`,
+    descriptor,
+    kind: "shop" as DistrictGridRow["kind"],
+    isCurrentShop: options?.highlightCurrent && index === 0,
+    metrics: buildDistrictPlaceholderGridMetrics(),
+  }));
 };
 
-function DmScheduleShowcase() {
-  const today = useMemo(() => new Date(), []);
-  const periodInfo = useMemo(() => getRetailPeriodInfo(today), [today]);
-  const scheduleEntries = useMemo(
-    () => buildSampleSchedule(periodInfo.startDate, periodInfo.weeksInPeriod),
-    [periodInfo.startDate, periodInfo.weeksInPeriod],
-  );
-  const calendarGrid = useMemo(
-    () => buildPeriodGrid(periodInfo.startDate, periodInfo.weeksInPeriod, today),
-    [periodInfo.startDate, periodInfo.weeksInPeriod, today],
-  );
-  const entriesByDate = useMemo(() => groupEntriesByDate(scheduleEntries), [scheduleEntries]);
-  const monthlyCalendars = useMemo(() => buildMonthlyLookahead(today, entriesByDate), [today, entriesByDate]);
-  const coverageSummary = useMemo(() => buildCoverageSummary(scheduleEntries), [scheduleEntries]);
-  const visitMix = useMemo(() => buildVisitMix(scheduleEntries), [scheduleEntries]);
-  const dueChecklist = useMemo(() => buildDueChecklist(scheduleEntries, periodInfo.period), [scheduleEntries, periodInfo.period]);
+const resolveDistrictPlaceholderCount = (candidate?: number | null) => {
+  if (typeof candidate === "number" && candidate > 0) {
+    return candidate;
+  }
+  return 4;
+};
 
-  const totalVisits = scheduleEntries.filter((entry) => entry.visitType !== "Off").length;
-  const adminBlocks = scheduleEntries.filter((entry) => entry.visitType === "Admin" || entry.visitType === "Project Day").length;
-  const visitCompletionPct = Math.min(100, Math.round((totalVisits / 12) * 100));
-  const weekProgress = (periodInfo.weekOfPeriod / periodInfo.weeksInPeriod) * 100;
-  const periodRange = `${shortDateFormatter.format(periodInfo.startDate)} – ${shortDateFormatter.format(periodInfo.endDate)}`;
+const buildDistrictShopSliceFromTotals = (row: DistrictShopTotalsRow | null | undefined): DistrictShopGridSlice => {
+  const cars = row?.total_cars ?? 0;
+  const sales = row?.total_sales ?? 0;
+  const big4 = row?.total_big4 ?? 0;
+  const coolants = row?.total_coolants ?? 0;
+  const diffs = row?.total_diffs ?? 0;
+  const fuelFilters = row?.total_fuel_filters ?? 0;
+  const mobil1 = row?.total_mobil1 ?? 0;
+  const donations = row?.total_donations ?? 0;
+  const percent = (value: number) => (cars > 0 ? (value / cars) * 100 : null);
+
+  return {
+    cars,
+    sales,
+    aro: cars > 0 ? sales / cars : null,
+    big4Pct: percent(big4),
+    coolantsPct: percent(coolants),
+    diffsPct: percent(diffs),
+    fuelFiltersPct: percent(fuelFilters),
+    mobil1Pct: percent(mobil1),
+    donations,
+  } satisfies DistrictShopGridSlice;
+};
+
+const convertDistrictTotalsRowToShopRow = (
+  row: DistrictTotalsRow | null,
+  id: string,
+): DistrictShopTotalsRow | null => {
+  if (!row) {
+    return null;
+  }
+  return {
+    shop_id: id,
+    total_cars: row.total_cars ?? 0,
+    total_sales: row.total_sales ?? 0,
+    total_big4: row.total_big4 ?? 0,
+    total_coolants: row.total_coolants ?? 0,
+    total_diffs: row.total_diffs ?? 0,
+    total_fuel_filters: row.total_fuel_filters ?? 0,
+    total_donations: row.total_donations ?? 0,
+    total_mobil1: row.total_mobil1 ?? 0,
+    district_name: row.district_name ?? null,
+  } satisfies DistrictShopTotalsRow;
+};
+
+const districtTodayISO = () => new Date().toISOString().split("T")[0];
+
+const districtWeekStartISO = () => {
+  const now = new Date();
+  const day = now.getDay();
+  const diff = now.getDate() - day;
+  const first = new Date(now.setDate(diff));
+  return first.toISOString().split("T")[0];
+};
+
+type DistrictScopeKpiSectionProps = {
+  shopMeta: ShopMeta | null;
+  hierarchy: HierarchySummary | null;
+};
+
+function DistrictScopeKpiSection({ shopMeta, hierarchy }: DistrictScopeKpiSectionProps) {
+  const [districtRows, setDistrictRows] = useState<DistrictGridRow[]>([]);
+  const [districtLoading, setDistrictLoading] = useState(false);
+  const [districtError, setDistrictError] = useState<string | null>(null);
+  const districtGridVisible = Boolean(shopMeta?.district_id || hierarchy?.district_name);
+
+  useEffect(() => {
+    if (!districtGridVisible) {
+      setDistrictRows([]);
+      setDistrictError(null);
+      setDistrictLoading(false);
+      return;
+    }
+
+    if (!shopMeta?.district_id) {
+      const placeholderRows = buildDistrictPlaceholderShopRows(resolveDistrictPlaceholderCount(), {
+        descriptor: "Hierarchy slot",
+        highlightCurrent: Boolean(shopMeta?.id),
+      });
+      const placeholderDistrictRow: DistrictGridRow = {
+        id: "district-unlinked",
+        label: hierarchy?.district_name ?? "District overview",
+        descriptor: "Link a district to view KPIs.",
+        kind: "district",
+        metrics: buildDistrictPlaceholderGridMetrics(),
+      };
+      setDistrictRows([...placeholderRows, placeholderDistrictRow]);
+      setDistrictError("Link a district to view scope KPIs.");
+      setDistrictLoading(false);
+      return;
+    }
+
+    let cancelled = false;
+    const loadDistrictScope = async () => {
+      setDistrictLoading(true);
+      setDistrictError(null);
+      try {
+        const { data: shopList, error: shopError } = await pulseSupabase
+          .from("shops")
+          .select("id,shop_name,shop_number")
+          .eq("district_id", shopMeta.district_id)
+          .order("shop_number", { ascending: true });
+
+        if (shopError) {
+          throw shopError;
+        }
+
+        let shopsInDistrict = (shopList ?? []) as Array<{
+          id: string;
+          shop_name: string | null;
+          shop_number: number | null;
+        }>;
+
+        if (!shopsInDistrict.length && hierarchy?.district_name) {
+          try {
+            const { data: alignmentRows, error: alignmentError } = await supabase
+              .from("shop_alignment")
+              .select("store,shop_name")
+              .eq("district", hierarchy.district_name)
+              .order("store", { ascending: true });
+
+            if (!alignmentError && alignmentRows?.length) {
+              shopsInDistrict = alignmentRows.map(
+                (row: { store?: number | string | null; shop_name?: string | null }, index: number) => {
+                  const storeNumberRaw = typeof row.store === "number" ? row.store : Number(row.store);
+                  const storeNumber = Number.isFinite(storeNumberRaw) ? (storeNumberRaw as number) : null;
+                  return {
+                    id: `alignment-${storeNumber ?? index + 1}`,
+                    shop_name: row.shop_name ?? null,
+                    shop_number: storeNumber,
+                  };
+                },
+              );
+            }
+          } catch (alignmentErr) {
+            console.error("DistrictScopeKpiSection alignment lookup failed", alignmentErr);
+          }
+        }
+
+        const shopIds = shopsInDistrict.map((shop) => shop.id);
+
+        let dailyRows: DistrictShopTotalsRow[] = [];
+        let weeklyRows: DistrictShopTotalsRow[] = [];
+
+        if (shopIds.length) {
+          const [dailyResponse, weeklyResponse] = await Promise.all([
+            pulseSupabase
+              .from("shop_daily_totals")
+              .select(
+                "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1",
+              )
+              .eq("check_in_date", districtTodayISO())
+              .in("shop_id", shopIds),
+            pulseSupabase
+              .from("shop_wtd_totals")
+              .select(
+                "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1",
+              )
+              .eq("week_start", districtWeekStartISO())
+              .in("shop_id", shopIds),
+          ]);
+
+          if (dailyResponse.error && dailyResponse.error.code !== "PGRST116") {
+            throw dailyResponse.error;
+          }
+          if (weeklyResponse.error && weeklyResponse.error.code !== "PGRST116") {
+            throw weeklyResponse.error;
+          }
+
+          dailyRows = (dailyResponse.data ?? []) as DistrictShopTotalsRow[];
+          weeklyRows = (weeklyResponse.data ?? []) as DistrictShopTotalsRow[];
+        }
+
+        const [districtDailyResponse, districtWeeklyResponse] = await Promise.all([
+          pulseSupabase
+            .from("district_daily_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name",
+            )
+            .eq("district_id", shopMeta.district_id)
+            .eq("check_in_date", districtTodayISO())
+            .maybeSingle(),
+          pulseSupabase
+            .from("district_wtd_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name",
+            )
+            .eq("district_id", shopMeta.district_id)
+            .eq("week_start", districtWeekStartISO())
+            .order("current_date", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (districtDailyResponse.error && districtDailyResponse.error.code !== "PGRST116") {
+          throw districtDailyResponse.error;
+        }
+        if (districtWeeklyResponse.error && districtWeeklyResponse.error.code !== "PGRST116") {
+          throw districtWeeklyResponse.error;
+        }
+
+        const dailyMap = new Map(dailyRows.map((row) => [row.shop_id, row] as const));
+        const weeklyMap = new Map(weeklyRows.map((row) => [row.shop_id, row] as const));
+
+        const nextRows: DistrictGridRow[] = [];
+
+        shopsInDistrict.forEach((shop) => {
+          const label = shop.shop_name ?? `Shop #${shop.shop_number ?? "?"}`;
+          const descriptor = shop.shop_number ? `Shop #${shop.shop_number}` : shop.shop_name ?? "Live shop";
+          const dailyTotals = dailyMap.get(shop.id) ?? null;
+          const weeklyTotals = weeklyMap.get(shop.id) ?? null;
+          const hasShopTotals = Boolean(dailyTotals || weeklyTotals);
+          const isCurrentShop =
+            shop.id === shopMeta.id ||
+            (typeof shop.shop_number === "number" && typeof shopMeta?.shop_number === "number"
+              ? shop.shop_number === shopMeta.shop_number
+              : false);
+          nextRows.push({
+            id: shop.id,
+            label,
+            descriptor,
+            kind: "shop",
+            isCurrentShop,
+            metrics: hasShopTotals
+              ? buildDistrictGridMetrics(
+                  buildDistrictShopSliceFromTotals(dailyTotals),
+                  buildDistrictShopSliceFromTotals(weeklyTotals),
+                )
+              : buildDistrictPlaceholderGridMetrics(),
+          });
+        });
+
+        if (!shopsInDistrict.length) {
+          const placeholders = buildDistrictPlaceholderShopRows(resolveDistrictPlaceholderCount(), {
+            descriptor: "Hierarchy listing",
+            highlightCurrent: Boolean(shopMeta?.id),
+          });
+          nextRows.push(...placeholders);
+        }
+
+        const districtDaily = convertDistrictTotalsRowToShopRow(
+          (districtDailyResponse.data as DistrictTotalsRow | null) ?? null,
+          `district-${shopMeta.district_id}`,
+        );
+        const districtWeekly = convertDistrictTotalsRowToShopRow(
+          (districtWeeklyResponse.data as DistrictTotalsRow | null) ?? null,
+          `district-${shopMeta.district_id}`,
+        );
+        const hasDistrictTotals = Boolean(districtDaily || districtWeekly);
+        const fallbackDescriptor = shopsInDistrict.length
+          ? "Awaiting KPI submissions"
+          : "No shops resolved for this district yet.";
+
+        const districtRow: DistrictGridRow = {
+          id: `district-${shopMeta.district_id}`,
+          label:
+            hierarchy?.district_name ??
+            (districtDailyResponse.data as DistrictTotalsRow | null)?.district_name ??
+            (districtWeeklyResponse.data as DistrictTotalsRow | null)?.district_name ??
+            "District rollup",
+          descriptor: hasDistrictTotals ? "District total" : fallbackDescriptor,
+          kind: "district",
+          metrics: hasDistrictTotals
+            ? buildDistrictGridMetrics(
+                buildDistrictShopSliceFromTotals(districtDaily ?? null),
+                buildDistrictShopSliceFromTotals(districtWeekly ?? null),
+              )
+            : buildDistrictPlaceholderGridMetrics(),
+        };
+
+        nextRows.push(districtRow);
+
+        if (!cancelled) {
+          setDistrictRows(nextRows);
+          setDistrictError(null);
+        }
+      } catch (err) {
+        console.error("DistrictScopeKpiSection load error", err);
+        if (!cancelled) {
+          const placeholderDistrictRow: DistrictGridRow = {
+            id: `district-placeholder-${shopMeta.district_id ?? "unknown"}`,
+            label: hierarchy?.district_name ?? "District overview",
+            descriptor: "Unable to load district shops right now.",
+            kind: "district",
+            metrics: buildDistrictPlaceholderGridMetrics(),
+          };
+          const placeholderRows = buildDistrictPlaceholderShopRows(resolveDistrictPlaceholderCount(), {
+            descriptor: "Hierarchy slot",
+            highlightCurrent: Boolean(shopMeta?.id),
+          });
+          setDistrictRows([...placeholderRows, placeholderDistrictRow]);
+          setDistrictError("Unable to load district shops right now.");
+        }
+      } finally {
+        if (!cancelled) {
+          setDistrictLoading(false);
+        }
+      }
+    };
+
+    loadDistrictScope();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [districtGridVisible, shopMeta?.district_id, shopMeta?.id, shopMeta?.shop_number, hierarchy?.district_name]);
+
+  const districtName = hierarchy?.district_name ?? "District overview";
+  const districtShopCount = districtRows.filter((row) => row.kind === "shop").length;
+  const headerStatus = districtLoading && !districtRows.length
+    ? "Syncing shops"
+    : `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`;
+
+  if (!districtGridVisible) {
+    return (
+      <SectionCard
+        title="District Scope KPIs"
+        eyebrow="District coverage"
+        accent="emerald"
+        actionHref="/pulse-check5"
+        actionLabel="Open Pulse Check"
+      >
+        <SectionStatus tone="error" message="Link a district to view scope KPIs." />
+      </SectionCard>
+    );
+  }
 
   return (
     <SectionCard
-      title="Full-Period Scheduler"
-      eyebrow="DM tools"
-      accent="azure"
-      actionHref="/pocket-manager5/features/dm-schedule"
-      actionLabel="Open DM schedule"
-      quickLinks={["dm-schedule", "dm-logbook", "cadence"]}
+      title="District Scope KPIs"
+      eyebrow="District coverage"
+      accent="emerald"
+      actionHref="/pulse-check5"
+      actionLabel="Open Pulse Check"
     >
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_0.9fr]">
-        <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-slate-400">
-            <span className="font-semibold text-slate-200">Q{periodInfo.quarter} · Period {periodInfo.period}</span>
-            <span>{periodRange}</span>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">District scope KPIs</p>
+            <h3 className="text-lg font-semibold text-white">{districtName}</h3>
           </div>
-          <div className="mt-4 grid grid-cols-7 gap-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-            {DM_DAY_NAMES.map((day) => (
-              <span key={day} className="text-center">
-                {day}
-              </span>
-            ))}
-          </div>
-          <div className="mt-2 space-y-1.5">
-            {calendarGrid.map((week, weekIdx) => (
-              <div key={`week-${weekIdx}`} className="grid grid-cols-7 gap-1.5">
-                {week.map((day) => {
-                  const dayEntries = entriesByDate[day.iso] ?? [];
-                  const visibleEntries = dayEntries.slice(0, 2);
-                  const overflow = Math.max(dayEntries.length - visibleEntries.length, 0);
-                  const dayBorder = day.isToday
-                    ? "border-emerald-400/60 bg-emerald-500/5"
-                    : day.isPast
-                    ? "border-slate-800/60 bg-slate-900/40"
-                    : "border-slate-700/60 bg-slate-900/70";
-                  const dayText = day.isPast ? "text-slate-500" : "text-white";
-
-                  return (
-                    <div
-                      key={day.iso}
-                      className={`rounded-2xl border p-3 shadow-[0_4px_12px_rgba(1,6,20,0.35)] ${dayBorder}`}
-                    >
-                      <div className="flex items-center justify-between text-sm font-semibold">
-                        <span className={dayText}>{day.dayNumber}</span>
-                        {day.isToday && <span className="text-[10px] font-semibold uppercase tracking-[0.3em] text-emerald-300">Now</span>}
-                      </div>
-                      <div className="mt-1 space-y-1">
-                        {visibleEntries.map((entry) => (
+          <p className="text-[10px] text-slate-400">{headerStatus}</p>
+        </div>
+        {districtError && <p className="text-sm text-amber-200">{districtError}</p>}
+        <div className="overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 shadow-[0_20px_50px_rgba(1,6,20,0.6)]">
+          {districtLoading && !districtRows.length ? (
+            <div className="px-4 py-6 text-center text-sm text-slate-400">Loading district shops…</div>
+          ) : districtRows.length ? (
+            <div className="overflow-x-auto">
+              <div className="min-w-[1040px]">
+                <div
+                  className="grid bg-slate-900/60 text-[10px] uppercase tracking-[0.3em] text-slate-300"
+                  style={{ gridTemplateColumns: DISTRICT_GRID_TEMPLATE }}
+                >
+                  <div className="px-3 py-2 text-left">Shop</div>
+                  {DISTRICT_KPI_HEADERS.map((header) => (
+                    <div key={`district-header-${header.key}`} className="px-3 py-2 text-center">
+                      {header.label}
+                    </div>
+                  ))}
+                </div>
+                <div className="divide-y divide-white/5">
+                  {districtRows.map((row, index) => {
+                    const zebra = index % 2 ? "bg-slate-950/30" : "bg-slate-950/60";
+                    const highlightClass =
+                      row.kind === "district"
+                        ? "bg-emerald-500/10"
+                        : row.isCurrentShop
+                        ? "bg-sky-500/10"
+                        : zebra;
+                    return (
+                      <div
+                        key={row.id}
+                        className={`grid px-3 py-2 text-sm transition ${highlightClass}`}
+                        style={{ gridTemplateColumns: DISTRICT_GRID_TEMPLATE }}
+                      >
+                        <div>
+                          <p className="text-sm font-semibold text-white">{row.label}</p>
+                          <p className="text-[11px] text-slate-400">{row.descriptor}</p>
+                        </div>
+                        {DISTRICT_KPI_HEADERS.map((header) => (
                           <div
-                            key={`${entry.iso}-${entry.visitType}-${entry.locationLabel}`}
-                            className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 ${DM_VISIT_BADGES[entry.visitType] ?? "border-slate-700/60 text-slate-200"}`}
+                            key={`${row.id}-${header.key}`}
+                            className="px-3 py-2 text-center text-[11px] font-semibold text-slate-100"
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${DM_STATUS_DOTS[entry.status]}`} />
-                            <span className="text-[9px] font-semibold leading-none">{entry.visitType}</span>
+                            {row.metrics[header.key]}
                           </div>
                         ))}
-                        {overflow > 0 && <p className="text-[9px] text-slate-500">+{overflow} more</p>}
-                        {dayEntries.length === 0 && <p className="text-[9px] text-slate-600">Open</p>}
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap gap-3 text-[10px] text-slate-400">
-            <span className="inline-flex items-center gap-1">
-              <span className={`h-2 w-2 rounded-full ${DM_STATUS_DOTS.complete}`} /> Complete
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className={`h-2 w-2 rounded-full ${DM_STATUS_DOTS.locked}`} /> Locked
-            </span>
-            <span className="inline-flex items-center gap-1">
-              <span className={`h-2 w-2 rounded-full ${DM_STATUS_DOTS.planned}`} /> Planned
-            </span>
-          </div>
-        </div>
-
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Period tracker</p>
-            <div className="mt-3 grid grid-cols-2 gap-3">
-              <div>
-                <p className="text-xs text-slate-400">Visits locked</p>
-                <p className="text-2xl font-semibold text-white">{totalVisits}</p>
-                <p className="text-[11px] text-slate-500">Target 12</p>
-              </div>
-              <div>
-                <p className="text-xs text-slate-400">Admin / project</p>
-                <p className="text-2xl font-semibold text-white">{adminBlocks}</p>
-                <p className="text-[11px] text-slate-500">Home office days</p>
-              </div>
-            </div>
-            <div className="mt-4 space-y-2">
-              <div>
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Week progress</span>
-                  <span>
-                    W{periodInfo.weekOfPeriod} / {periodInfo.weeksInPeriod}
-                  </span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-slate-800">
-                  <div className="h-full rounded-full bg-emerald-400" style={{ width: `${weekProgress}%` }} />
-                </div>
-              </div>
-              <div>
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>Visit completion</span>
-                  <span>{visitCompletionPct}%</span>
-                </div>
-                <div className="mt-1 h-1.5 rounded-full bg-slate-800">
-                  <div className="h-full rounded-full bg-cyan-400" style={{ width: `${visitCompletionPct}%` }} />
+                    );
+                  })}
                 </div>
               </div>
             </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Visit plan</p>
-            <ul className="mt-3 space-y-2">
-              {dueChecklist.map((item) => (
-                <li
-                  key={item.type}
-                  className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-900/40 px-3 py-2"
-                >
-                  <div>
-                    <p className="text-xs text-slate-400">{item.type}</p>
-                    <p className="text-sm font-semibold text-white">
-                      {item.actual} / {item.required}
-                    </p>
-                  </div>
-                  <span className={`text-[11px] font-semibold ${item.met ? "text-emerald-300" : "text-amber-300"}`}>
-                    {item.met ? "On target" : "Need locks"}
-                  </span>
-                </li>
-              ))}
-            </ul>
-            <div className="mt-3 border-t border-slate-800/60 pt-3">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Visit mix</p>
-              <ul className="mt-2 space-y-1 text-sm text-slate-200">
-                {visitMix.map((mix) => (
-                  <li key={mix.type} className="flex items-center justify-between">
-                    <span>{mix.type}</span>
-                    <span className="text-slate-400">{mix.count}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Coverage grid</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {coverageSummary.map((shop) => (
-                <div key={shop.shopId} className={`rounded-2xl border px-3 py-2 ${shop.toneClass}`}>
-                  <p className="text-xs text-slate-300">{shop.label}</p>
-                  <p className="text-lg font-semibold text-white">{shop.count} visits</p>
-                  <p className={`text-[11px] font-semibold ${shop.badgeClass}`}>{shop.statusLabel}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Monthly lookahead</p>
-                <p className="text-base font-semibold text-white">Current & next month</p>
-              </div>
-              <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Tap to lock dates</p>
-            </div>
-            <div className="mt-4 space-y-4">
-              {monthlyCalendars.map((month) => (
-                <div key={month.label} className="rounded-2xl border border-slate-800/70 bg-slate-900/40 p-4">
-                  <p className="text-lg font-semibold text-white">{month.label}</p>
-                  <div className="mt-3 grid grid-cols-7 gap-1 text-[11px] uppercase tracking-[0.3em] text-slate-500">
-                    {DM_DAY_NAMES.map((day) => (
-                      <span key={`${month.label}-${day}`} className="text-center">
-                        {day}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="mt-2 space-y-1.5">
-                    {month.weeks.map((week, idx) => (
-                      <div key={`${month.label}-week-${idx}`} className="grid grid-cols-7 gap-1.5">
-                        {week.map((cell) => {
-                          const cellTone = cell.isCurrentMonth ? "text-white" : "text-slate-600";
-                          const borderTone = cell.isCurrentMonth ? "border-slate-800/60" : "border-slate-900/40";
-                          const todayRing = cell.isToday ? "ring-1 ring-emerald-400/60" : "";
-                          const visitBadge = cell.hasEntries ? "border-cyan-400/50 bg-cyan-500/5" : "";
-                          const pastOpacity = cell.isPast && !cell.isToday ? "opacity-70" : "";
-
-                          return (
-                            <div
-                              key={cell.iso}
-                              className={`rounded-xl border bg-slate-950/50 p-3 text-center text-sm font-semibold ${cellTone} ${borderTone} ${todayRing} ${visitBadge} ${pastOpacity}`}
-                            >
-                              {cell.dayNumber}
-                              {cell.hasEntries && <div className="mx-auto mt-2 h-1.5 w-1.5 rounded-full bg-cyan-300" />}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          ) : (
+            <div className="px-4 py-6 text-center text-sm text-slate-400">No shops resolved for this district yet.</div>
+          )}
         </div>
       </div>
     </SectionCard>
@@ -913,32 +1173,6 @@ const MANAGER_EXTRA_TILES: WorkspaceTileMeta[] = [
   },
 ];
 
-function AiAssistantCard() {
-  return (
-    <SectionCard
-      title="AI Assistant"
-      eyebrow="ChatGPT on device"
-      accent="pink"
-      actionHref="/pocket-manager5/features/chatbot"
-      actionLabel="Launch assistant"
-      quickLinks={["chatbot", "alerts"]}
-    >
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-sm text-slate-200">
-            Ask policy questions, draft visit recaps, and get next-step coaching just like the in-app assistant experience.
-          </p>
-          <p className="mt-2 text-xs uppercase tracking-[0.3em] text-pink-200">Scripts • Notes • Coaching</p>
-        </div>
-        <div className="inline-flex items-center gap-2 rounded-2xl border border-pink-400/40 bg-pink-500/10 px-4 py-2 text-sm font-semibold text-pink-100">
-          <Brain className="h-4 w-4" />
-          Powered by GPT
-        </div>
-      </div>
-    </SectionCard>
-  );
-}
-
 function WorkspaceTile({ title, subtitle, href, icon: Icon, accent }: WorkspaceTileMeta) {
   return (
     <Link
@@ -983,6 +1217,10 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
   const cadenceWeekly = snapshot.cadence.weeklyPct ?? null;
   const challengesToday = snapshot.cadence.challengesToday ?? null;
   const challengesWeek = snapshot.cadence.challengesWeek ?? null;
+  const devActive = snapshot.development.activePlans;
+  const devCompleted = snapshot.development.completedPlans;
+  const devOnHold = snapshot.development.onHoldPlans;
+  const devAvgDays = snapshot.development.avgActiveDays;
   const updatedLabel = snapshot.updatedAt
     ? new Date(snapshot.updatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
     : null;
@@ -1014,6 +1252,11 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
           : `${integerFormatter.format(challengesToday)} / ${integerFormatter.format(challengesWeek)}`,
       caption: "Today / WTD",
     },
+    {
+      label: "Development plans",
+      value: integerFormatter.format(devActive ?? 0),
+      caption: `${integerFormatter.format(devCompleted ?? 0)} complete • ${integerFormatter.format(devOnHold ?? 0)} on hold`,
+    },
   ];
 
   const trainingPercentValue = trainingPct ?? 0;
@@ -1021,6 +1264,7 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
   const inTrainingText = inTraining == null ? "Preview data pending" : `${inTraining} teammates in training`;
   const cadenceDailyDisplay = cadenceDaily == null ? "--" : Math.round(cadenceDaily).toString();
   const cadenceWeeklyDisplay = cadenceWeekly == null ? "--" : Math.round(cadenceWeekly).toString();
+  const devAvgDaysDisplay = Number.isFinite(devAvgDays) ? Math.round(devAvgDays) : null;
 
   return (
     <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#030d1f]/95 via-[#040b1b]/96 to-[#01040c]/98 p-5 shadow-[0_30px_80px_rgba(5,15,35,0.65)]">
@@ -1031,7 +1275,7 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
         </div>
         {updatedLabel && <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Updated {updatedLabel}</p>}
       </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         {metricTiles.map((tile) => (
           <div key={tile.label} className="rounded-2xl border border-white/10 bg-[#050f23]/85 p-3 shadow-[0_16px_36px_rgba(1,6,20,0.55)]">
             <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">{tile.label}</p>
@@ -1051,6 +1295,12 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
               style={{ width: `${Math.max(0, Math.min(100, trainingPercentValue))}%` }}
             />
           </div>
+          <p className="mt-3 text-xs text-slate-400">
+            Development pipeline: {integerFormatter.format(devActive ?? 0)} active •
+            {" "}
+            {integerFormatter.format(devCompleted ?? 0)} complete • {integerFormatter.format(devOnHold ?? 0)} on hold
+            {devAvgDaysDisplay != null ? ` • avg ${devAvgDaysDisplay} days open` : ""}
+          </p>
         </div>
         <div className="rounded-3xl border border-white/10 bg-[#041831]/85 p-4 shadow-[0_18px_42px_rgba(1,6,20,0.6)]">
           <p className="text-sm font-semibold text-white">Cadence streak</p>
@@ -1083,7 +1333,7 @@ function PeopleWorkspaceContent({ shopNumber }: { shopNumber: number | string })
   return (
     <>
       <ProfileSnapshotPanel snapshot={snapshot} />
-      <div className="mt-4 grid gap-4 md:grid-cols-3">
+      <div className="mt-4 grid gap-4 md:grid-cols-4">
         <MetricStat
           label="Current staff"
           value={integerFormatter.format(snapshot.staffing.currentCount)}
@@ -1098,6 +1348,11 @@ function PeopleWorkspaceContent({ shopNumber }: { shopNumber: number | string })
           label="Training completion"
           value={formatPercent(snapshot.training.completionPct)}
           sublabel={`${snapshot.training.inTrainingCount} teammates in training`}
+        />
+        <MetricStat
+          label="Development plans"
+          value={integerFormatter.format(snapshot.development.activePlans)}
+          sublabel={`${snapshot.development.completedPlans} done • ${snapshot.development.onHoldPlans} hold`}
         />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
@@ -1148,7 +1403,7 @@ function OpsHubSection({ shopId }: { shopId: string | null | undefined }) {
       eyebrow="Operations grid"
       accent="emerald"
       actionHref="/pocket-manager5/features/ops"
-      quickLinks={["ops", "inventory", "workbook", "checkbook", "crash-kit", "solinks", "claims", "mini-pos"]}
+      quickLinks={["ops", "inventory", "workbook", "checkbook", "crash-kit", "solinks", "claims", "alerts", "mini-pos"]}
     >
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
@@ -1169,7 +1424,7 @@ function ManagersClipboardSection() {
       eyebrow="Quick access tiles"
       accent="amber"
       actionHref="/pocket-manager5/features/managers-clipboard"
-      quickLinks={["cadence", "supply", "kpi-board", "wage-calculator"]}
+      quickLinks={["cadence", "supply", "kpi-board", "wage-calculator", "chatbot"]}
     >
       <p className="text-xs uppercase tracking-[0.3em] text-amber-200">Main tools</p>
       <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -1188,6 +1443,8 @@ function ManagersClipboardSection() {
 }
 
 function MiniPosShell({ children, variant = "card" }: { children: ReactNode; variant?: "card" | "inline" }) {
+  const appendShopHref = useShopHrefAppender();
+  const miniPosHref = appendShopHref("/pocket-manager5/features/mini-pos") ?? "/pocket-manager5/features/mini-pos";
   if (variant === "inline") {
     return (
       <div className="rounded-3xl border border-cyan-400/30 bg-slate-950/70 p-4">
@@ -1197,7 +1454,7 @@ function MiniPosShell({ children, variant = "card" }: { children: ReactNode; var
             <p className="text-sm text-slate-300">Work order shortcuts</p>
           </div>
           <Link
-            href="/pocket-manager5/features/mini-pos"
+            href={miniPosHref}
             className="inline-flex items-center gap-1 rounded-full border border-cyan-400/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-100 transition hover:border-cyan-300"
           >
             Open Mini POS ↗
@@ -1342,201 +1599,6 @@ function ProgressStat({ label, value, goal = 100, suffix = "%" }: ProgressStatPr
   );
 }
 
-const mixLabels: Array<{ key: keyof PulseTotals; label: string }> = [
-  { key: "big4", label: "Big 4" },
-  { key: "coolants", label: "Coolants" },
-  { key: "diffs", label: "Diffs" },
-  { key: "mobil1", label: "Mobil 1" },
-];
-
-function PulseOverviewShell({ children }: { children: ReactNode }) {
-  return (
-    <SectionCard
-      title="Daily Ops Overview"
-      eyebrow="Today vs week"
-      accent="emerald"
-      quickLinks={["daily-log", "turned-log", "mini-pos", "chatbot", "ops"]}
-    >
-      {children}
-    </SectionCard>
-  );
-}
-
-function PulseOverviewContent({ shopId, rollupContext }: { shopId: string | null | undefined; rollupContext?: HierarchyRollupScope }) {
-  const pulseTotals = usePulseTotalsSuspense(shopId);
-  const dailyTotals = pulseTotals?.daily ?? EMPTY_TOTALS;
-  const weeklyTotals = pulseTotals?.weekly ?? EMPTY_TOTALS;
-  const { district, region, division } = useHierarchyRollupsSuspense(rollupContext);
-
-  const mixItems = useMemo(() => {
-    return mixLabels.map(({ key, label }) => (
-      <div key={key} className="rounded-2xl border border-slate-800/70 bg-slate-950/40 p-3">
-        <p className="text-[10px] uppercase text-slate-500">{label}</p>
-        <p className="text-lg font-semibold text-emerald-200">
-          {mixPercent(weeklyTotals[key] ?? 0, weeklyTotals.cars)}
-        </p>
-      </div>
-    ));
-  }, [weeklyTotals]);
-  const hierarchyComparisons = useMemo(() => {
-    const entries: RollupSummary[] = [];
-    if (district) entries.push(district);
-    if (region) entries.push(region);
-    if (division) entries.push(division);
-    return entries;
-  }, [district, region, division]);
-
-  if (!shopId) {
-    return <SectionStatus tone="error" message="Link a shop to view KPIs." />;
-  }
-
-  if (!pulseTotals) {
-    return <SectionStatus message="No Pulse Check totals yet today." />;
-  }
-
-  return (
-    <>
-      <div className="grid gap-4 md:grid-cols-4">
-        <MetricStat label="Cars today" value={integerFormatter.format(dailyTotals.cars)} />
-        <MetricStat label="Sales today" value={currencyFormatter.format(dailyTotals.sales)} />
-        <MetricStat
-          label="ARO"
-          value={
-            dailyTotals.cars
-              ? currencyFormatter.format(Math.round(dailyTotals.sales / Math.max(dailyTotals.cars, 1)))
-              : "--"
-          }
-        />
-        <MetricStat label="Donations" value={currencyFormatter.format(weeklyTotals.donations)} sublabel="Week to date" />
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">{mixItems}</div>
-      <div className="rounded-2xl border border-emerald-400/30 bg-emerald-500/5 p-4">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-200">Hierarchy comparisons</p>
-        <div className="mt-3 space-y-3">
-          {hierarchyComparisons.length === 0 ? (
-            <SectionStatus message="Link your district or region to compare performance." />
-          ) : (
-            hierarchyComparisons.map((entry) => (
-              <div key={entry.scope} className="flex items-center justify-between gap-4 rounded-2xl border border-emerald-400/10 bg-slate-950/40 px-3 py-2">
-                <div>
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{entry.scope.toLowerCase()}</p>
-                  <p className="text-sm font-semibold text-white">{entry.label}</p>
-                </div>
-                <div className="text-right text-xs text-slate-300">
-                  <p className="text-base font-semibold text-emerald-100">{integerFormatter.format(entry.daily.cars)} cars</p>
-                  <p>WTD ARO {entry.weekly.aro ? currencyFormatter.format(Math.round(entry.weekly.aro)) : "--"}</p>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-    </>
-  );
-}
-
-function PulseOverviewSection({ shopId, rollupContext }: { shopId: string | null | undefined; rollupContext?: HierarchyRollupScope }) {
-  return (
-    <SectionErrorBoundary
-      fallback={
-        <PulseOverviewShell>
-          <SectionStatus tone="error" message="Unable to load shop KPIs right now." />
-        </PulseOverviewShell>
-      }
-    >
-      <Suspense
-        fallback={
-          <PulseOverviewShell>
-            <SectionStatus message="Refreshing shop KPIs�" />
-          </PulseOverviewShell>
-        }
-      >
-        <PulseOverviewShell>
-          <PulseOverviewContent shopId={shopId} rollupContext={rollupContext} />
-        </PulseOverviewShell>
-      </Suspense>
-    </SectionErrorBoundary>
-  );
-}
-
-function AlertsBroadcastCard({ shopNumber }: { shopNumber: number | string | null | undefined }) {
-  const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
-  const hasAlerts = snapshot.alerts.length > 0;
-
-  return (
-    <SectionCard
-      title="Alerts & Broadcasts"
-      eyebrow="Live policy feed"
-      accent="amber"
-      actionHref="/pocket-manager5/features/alerts"
-      actionLabel="Open alerts"
-      quickLinks={["alerts", "solinks", "claims"]}
-    >
-      {hasAlerts ? (
-        <ul className="space-y-3 text-sm text-amber-100">
-          {snapshot.alerts.map((alert) => (
-            <li
-              key={alert}
-              className="rounded-2xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-amber-50"
-            >
-              {alert}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <SectionStatus message="All clear—no broadcast alerts pending." />
-      )}
-    </SectionCard>
-  );
-}
-
-function VisitsCoachingSection({ shopNumber }: { shopNumber: number | string | null | undefined }) {
-  const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
-  return (
-    <SectionCard
-      title="Visits & Coaching"
-      eyebrow="DM tools"
-      accent="azure"
-      actionHref="/pocket-manager5/features/dm-schedule"
-      actionLabel="Open DM schedule"
-      quickLinks={["dm-schedule", "dm-logbook", "employee-management", "cadence"]}
-      formSlugs={DM_FORM_SLUGS}
-    >
-      <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-900/40 p-4">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Upcoming schedule</p>
-          <ul className="mt-3 space-y-3 text-sm text-slate-200">
-            {snapshot.visits.upcoming.length === 0 && <li>No visits scheduled for this shop.</li>}
-            {snapshot.visits.upcoming.map((visit) => (
-              <li key={visit.id} className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
-                <p className="text-xs text-slate-400">{formatDate(visit.date)}</p>
-                <p className="text-base font-semibold text-white">{visit.visitType ?? "Shop visit"}</p>
-                <p className="text-xs text-slate-400">{visit.location ?? "District"}</p>
-                {visit.notes && <p className="mt-1 text-xs text-slate-500">{visit.notes}</p>}
-              </li>
-            ))}
-          </ul>
-        </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-900/40 p-4">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Recent DM logs</p>
-          <ul className="mt-3 space-y-3 text-sm text-slate-200">
-            {snapshot.visits.recent.length === 0 && <li>No DM visit entries yet.</li>}
-            {snapshot.visits.recent.map((log) => (
-              <li key={log.id} className="rounded-xl border border-slate-800/70 bg-slate-950/40 p-3">
-                <div className="flex items-center justify-between text-xs text-slate-400">
-                  <span>{formatDate(log.date)}</span>
-                  {log.score !== null && <span className="text-emerald-300">{Math.round(log.score)}%</span>}
-                </div>
-                <p className="mt-1 text-base font-semibold text-white">{log.type.replace(/_/g, " ")}</p>
-                {log.submittedBy && <p className="text-xs text-slate-500">By {log.submittedBy}</p>}
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </SectionCard>
-  );
-}
 
 function LaborStaffingSection({ shopNumber }: { shopNumber: number | string | null | undefined }) {
   const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
@@ -1579,6 +1641,12 @@ function LaborStaffingSection({ shopNumber }: { shopNumber: number | string | nu
 
 function TrainingCadenceSection({ shopNumber }: { shopNumber: number | string | null | undefined }) {
   const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
+  const devActive = snapshot.development.activePlans;
+  const devCompleted = snapshot.development.completedPlans;
+  const devOnHold = snapshot.development.onHoldPlans;
+  const devAvgDays = Number.isFinite(snapshot.development.avgActiveDays)
+    ? Math.round(snapshot.development.avgActiveDays)
+    : null;
   return (
     <SectionCard
       title="Training & Cadence"
@@ -1604,6 +1672,35 @@ function TrainingCadenceSection({ shopNumber }: { shopNumber: number | string | 
           value={`${snapshot.cadence.challengesToday} / ${snapshot.cadence.challengesWeek}`}
           sublabel="Today / week"
         />
+      </div>
+      <div className="mt-4 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-pink-400/30 bg-pink-500/5 p-4">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pink-200">Development pipeline</p>
+          <div className="mt-3 space-y-2 text-sm text-pink-50">
+            <div className="flex items-center justify-between rounded-2xl border border-pink-400/20 bg-black/20 px-3 py-2">
+              <p className="text-xs uppercase tracking-[0.25em] text-pink-200/80">Active</p>
+              <p className="text-lg font-semibold text-white">{integerFormatter.format(devActive)}</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2">
+              <div className="rounded-2xl border border-pink-400/20 bg-black/20 px-3 py-2 text-center">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-pink-200/70">Completed</p>
+                <p className="text-base font-semibold text-white">{integerFormatter.format(devCompleted)}</p>
+              </div>
+              <div className="rounded-2xl border border-pink-400/20 bg-black/20 px-3 py-2 text-center">
+                <p className="text-[10px] uppercase tracking-[0.3em] text-pink-200/70">On hold</p>
+                <p className="text-base font-semibold text-white">{integerFormatter.format(devOnHold)}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-2xl border border-pink-400/30 bg-pink-500/5 p-4">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pink-200">Avg active days</p>
+          <p className="mt-3 text-4xl font-bold text-white">{devAvgDays != null ? devAvgDays : "--"}</p>
+          <p className="text-sm text-pink-100">Based on currently active development plans</p>
+          <p className="mt-3 text-xs text-pink-100/70">
+            Track coaching plans in the employee development table to keep momentum visible on desktop.
+          </p>
+        </div>
       </div>
     </SectionCard>
   );
@@ -1661,30 +1758,6 @@ function AdminSafetySection({ shopNumber }: { shopNumber: number | string | null
 }
 
 const SnapshotFallbacks = {
-  alerts: () => (
-    <SectionCard
-      title="Alerts & Broadcasts"
-      eyebrow="Live policy feed"
-      accent="amber"
-      actionHref="/pocket-manager5/features/alerts"
-      actionLabel="Open alerts"
-      quickLinks={["alerts", "solinks", "claims"]}
-    >
-      <SectionStatus message="Checking alerts…" />
-    </SectionCard>
-  ),
-  visits: () => (
-    <SectionCard
-      title="Visits & Coaching"
-      eyebrow="DM tools"
-      accent="azure"
-      actionHref="/pocket-manager5/features/dm-schedule"
-      actionLabel="Open DM schedule"
-      quickLinks={["dm-schedule", "dm-logbook", "employee-management", "cadence"]}
-    >
-      <SectionStatus message="Loading visit schedules…" />
-    </SectionCard>
-  ),
   labor: () => (
     <SectionCard
       title="Labor & Staffing"
@@ -1736,30 +1809,6 @@ const SnapshotFallbacks = {
 } as const;
 
 const SnapshotErrorStates = {
-  alerts: () => (
-    <SectionCard
-      title="Alerts & Broadcasts"
-      eyebrow="Live policy feed"
-      accent="amber"
-      actionHref="/pocket-manager5/features/alerts"
-      actionLabel="Open alerts"
-      quickLinks={["alerts", "solinks", "claims"]}
-    >
-      <SectionStatus tone="error" message="Alerts unavailable." />
-    </SectionCard>
-  ),
-  visits: () => (
-    <SectionCard
-      title="Visits & Coaching"
-      eyebrow="DM tools"
-      accent="azure"
-      actionHref="/pocket-manager5/features/dm-schedule"
-      actionLabel="Open DM schedule"
-      quickLinks={["dm-schedule", "dm-logbook", "employee-management", "cadence"]}
-    >
-      <SectionStatus tone="error" message="DM visit tools unavailable." />
-    </SectionCard>
-  ),
   labor: () => (
     <SectionCard
       title="Labor & Staffing"
@@ -1811,30 +1860,6 @@ const SnapshotErrorStates = {
 } as const;
 
 const SnapshotEmptyStates = {
-  alerts: () => (
-    <SectionCard
-      title="Alerts & Broadcasts"
-      eyebrow="Live policy feed"
-      accent="amber"
-      actionHref="/pocket-manager5/features/alerts"
-      actionLabel="Open alerts"
-      quickLinks={["alerts", "solinks", "claims"]}
-    >
-      <SectionStatus tone="error" message="Link a shop to unlock alert history." />
-    </SectionCard>
-  ),
-  visits: () => (
-    <SectionCard
-      title="Visits & Coaching"
-      eyebrow="DM tools"
-      accent="azure"
-      actionHref="/pocket-manager5/features/dm-schedule"
-      actionLabel="Open DM schedule"
-      quickLinks={["dm-schedule", "dm-logbook", "employee-management", "cadence"]}
-    >
-      <SectionStatus tone="error" message="Link a shop to preview visit plans." />
-    </SectionCard>
-  ),
   labor: () => (
     <SectionCard
       title="Labor & Staffing"
@@ -1886,8 +1911,6 @@ const SnapshotEmptyStates = {
 } as const;
 
 const SnapshotDataComponents = {
-  alerts: AlertsBroadcastCard,
-  visits: VisitsCoachingSection,
   labor: LaborStaffingSection,
   training: TrainingCadenceSection,
   inventory: InventorySuppliesSection,
@@ -1920,23 +1943,12 @@ export default function PocketManagerPage() {
     hierarchyLoading,
     hierarchyError,
     shopMeta,
-    divisionId,
   } = usePocketHierarchy();
   const heroName = storedShopName ?? (hierarchy?.shop_number ? `Shop ${hierarchy.shop_number}` : "Pocket Manager5");
-  const hierarchyRollupScope = useMemo<HierarchyRollupScope | undefined>(() => {
-    if (!shopMeta?.district_id && !shopMeta?.region_id && !divisionId) {
-      return undefined;
-    }
-
-    return {
-      districtId: shopMeta?.district_id ?? null,
-      regionId: shopMeta?.region_id ?? null,
-      divisionId: divisionId ?? null,
-      districtLabel: hierarchy?.district_name ?? null,
-      regionLabel: hierarchy?.region_name ?? null,
-      divisionLabel: hierarchy?.division_name ?? null,
-    };
-  }, [shopMeta?.district_id, shopMeta?.region_id, divisionId, hierarchy?.district_name, hierarchy?.region_name, hierarchy?.division_name]);
+  const canSeeDmWorkspace = useMemo(() => {
+    const scope = hierarchy?.scope_level?.toUpperCase();
+    return scope === "DISTRICT" || scope === "REGION" || scope === "DIVISION";
+  }, [hierarchy?.scope_level]);
 
   if (needsLogin) {
     return (
@@ -2015,26 +2027,24 @@ export default function PocketManagerPage() {
             <ManagersClipboardSection />
           </div>
           <div className="space-y-6">
-            <PulseOverviewSection shopId={shopMeta?.id} rollupContext={hierarchyRollupScope} />
             <OpsHubSection shopId={shopMeta?.id} />
+            <SnapshotCardRenderer type="inventory" shopNumber={shopMeta?.shop_number} />
           </div>
         </div>
         <div className="grid gap-6 lg:grid-cols-2">
           <SnapshotCardRenderer type="labor" shopNumber={shopMeta?.shop_number} />
           <SnapshotCardRenderer type="training" shopNumber={shopMeta?.shop_number} />
         </div>
-        <div className="grid gap-6 lg:grid-cols-2">
+        <div className="grid gap-6">
           <SnapshotCardRenderer type="admin" shopNumber={shopMeta?.shop_number} />
-          <SnapshotCardRenderer type="inventory" shopNumber={shopMeta?.shop_number} />
         </div>
         <DailyLogCard />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <DmToolsRail />
-          <DmScheduleShowcase />
-        </div>
-        <SnapshotCardRenderer type="visits" shopNumber={shopMeta?.shop_number} />
-        <SnapshotCardRenderer type="alerts" shopNumber={shopMeta?.shop_number} />
-        <AiAssistantCard />
+        {canSeeDmWorkspace && (
+          <section className="space-y-6" aria-label="District manager workspace">
+            <DmToolsRail />
+            <DistrictScopeKpiSection shopMeta={shopMeta} hierarchy={hierarchy} />
+          </section>
+        )}
       </div>
     </main>
   );

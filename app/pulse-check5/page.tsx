@@ -1,13 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import * as XLSX from "xlsx";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { getCachedSummaryForLogin, normalizeLogin, writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 import { RetailPills } from "@/app/components/RetailPills";
 import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
 import { buildRetailTimestampLabel } from "@/lib/retailTimestamp";
+
+const CHECKIN_SIM_TEST_URL =
+  "https://okzgxhennmjmvcnnzyur.supabase.co/storage/v1/object/sign/test-data%20Gulf/Checkins%20Test%20Sheet%20Master..xlsx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iYmNkZTQ0OC0zMDkxLTRlOTMtYjY4Ni0yMDljYzYyZjEwODAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZXN0LWRhdGEgR3VsZi9DaGVja2lucyBUZXN0IFNoZWV0IE1hc3Rlci4ueGxzeCIsImlhdCI6MTc2NDU2Njg2OCwiZXhwIjoxNzk2MTAyODY4fQ.W7kvJi2M_Y4KrernR0CzNTdkUwRkN7a10JQobCGun2k" as const;
 
 type ScopeLevel = "SHOP" | "DISTRICT" | "REGION" | "DIVISION";
 
@@ -61,6 +65,9 @@ type TotalsRow = {
   total_fuel_filters: number | null;
   total_donations: number | null;
   total_mobil1: number | null;
+  district_id?: string | null;
+  region_id?: string | null;
+  current_date?: string | null;
   district_name?: string | null;
 };
 
@@ -109,9 +116,19 @@ type DistrictGridRow = {
   id: string;
   label: string;
   descriptor: string;
-  kind: "district" | "shop";
+  kind: "district" | "shop" | "region";
   isCurrentShop?: boolean;
   metrics: Record<TrendKpiKey, string>;
+};
+
+type DistrictScopeOption = {
+  key: string;
+  type: "district" | "region";
+  label: string;
+  helper?: string | null;
+  districtId?: string | null;
+  regionId?: string | null;
+  alignmentDistrictName?: string | null;
 };
 
 type CheckInRow = {
@@ -141,6 +158,280 @@ const METRIC_FIELDS: MetricField[] = [
   { key: "donations", label: "Donations", format: "currency" },
   { key: "mobil1", label: "Mobil 1" },
 ];
+
+const METRIC_FORMAT_LOOKUP: Record<MetricKey, MetricField["format"] | undefined> = METRIC_FIELDS.reduce(
+  (acc, field) => {
+    acc[field.key] = field.format;
+    return acc;
+  },
+  {} as Record<MetricKey, MetricField["format"] | undefined>,
+);
+
+type SimSlotEntry = {
+  slot: TimeSlotKey;
+  metrics: Partial<Record<MetricKey, string>>;
+  temperature?: Temperature;
+  shopNumber?: number | null;
+};
+
+type SimRowIssue = {
+  row: number;
+  message: string;
+};
+
+const SIM_SLOT_HEADER_ALIASES = ["slot", "time slot", "timeslot", "window", "time", "slot label"] as const;
+const SIM_TEMPERATURE_ALIASES = ["temp", "temperature", "floor temp", "floor temperature"] as const;
+const SIM_SHOP_HEADER_ALIASES = [
+  "shop",
+  "shop #",
+  "shop number",
+  "store",
+  "store #",
+  "store number",
+  "location",
+  "location #",
+] as const;
+
+const METRIC_HEADER_ALIASES: Record<MetricKey, string[]> = {
+  cars: ["cars", "car count", "# cars"],
+  sales: ["sales", "revenue", "$ sales", "sales $"],
+  big4: ["big4", "big 4"],
+  coolants: ["coolants", "coolant"],
+  diffs: ["diffs", "differentials", "diff"],
+  fuelFilters: ["fuel filters", "fuel filter", "ff"],
+  donations: ["donations", "donation", "charity"],
+  mobil1: ["mobil1", "mobil 1", "m1"],
+};
+
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const waitWithCancellation = async (controller: { cancelled: boolean }, duration: number) => {
+  const step = 500;
+  let elapsed = 0;
+  while (elapsed < duration && !controller.cancelled) {
+    const next = Math.min(step, duration - elapsed);
+    await wait(next);
+    elapsed += next;
+  }
+};
+
+const normalizeCellString = (value: unknown): string => {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value.toString();
+  }
+  return "";
+};
+
+const escapeLikePattern = (value: string) => value.replace(/[\\%_]/g, "\\$&");
+
+// Query alignment rows from the canonical `company_alignment` table,
+// falling back to the legacy `shop_alignment` table when needed.
+const fetchAlignmentRows = async (
+  column: string,
+  op: "eq" | "ilike",
+  value: string,
+  limit?: number,
+) => {
+  const selectCols = "store,shop_name";
+  const order = { ascending: true } as const;
+
+  const runQuery = async (table: string) => {
+    try {
+      if (op === "eq") {
+        const q = supabase.from(table).select(selectCols).eq(column, value).order("store", order);
+        if (limit) (q as unknown as { limit?: (n: number) => unknown }).limit?.(limit);
+        return await q;
+      }
+
+      const q = supabase.from(table).select(selectCols).ilike(column, value).order("store", order);
+      if (limit) (q as unknown as { limit?: (n: number) => unknown }).limit?.(limit);
+      return await q;
+    } catch (err) {
+      return { data: null, error: err };
+    }
+  };
+
+  let result = await runQuery("company_alignment");
+  if ((result?.error || !result?.data) && result?.error?.code !== "PGRST116") {
+    // try fallback
+    result = await runQuery("shop_alignment");
+  }
+  return result;
+};
+
+const normalizeSheetRow = (row: Record<string, unknown>): Record<string, unknown> => {
+  return Object.entries(row).reduce<Record<string, unknown>>((acc, [key, cell]) => {
+    if (typeof key === "string") {
+      const normalizedKey = key.trim().toLowerCase();
+      if (normalizedKey) {
+        acc[normalizedKey] = cell;
+      }
+    }
+    return acc;
+  }, {} as Record<string, unknown>);
+};
+
+const pickAliasValue = (row: Record<string, unknown>, aliases: readonly string[]) => {
+  for (const alias of aliases) {
+    if (alias in row) {
+      const value = row[alias];
+      if (value !== undefined && value !== null && normalizeCellString(value) !== "") {
+        return value;
+      }
+    }
+  }
+  return null;
+};
+
+const parseNumericCell = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const cleaned = value.replace(/[^0-9.-]/g, "").trim();
+    if (!cleaned) {
+      return null;
+    }
+    const parsed = Number(cleaned);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const parseShopNumber = (value: unknown): number | null => {
+  const numeric = parseNumericCell(value);
+  if (numeric === null) {
+    return null;
+  }
+  const rounded = Math.round(numeric);
+  return Number.isFinite(rounded) ? rounded : null;
+};
+
+const temperatureMap: Record<string, Temperature> = {
+  green: "green",
+  yellow: "yellow",
+  red: "red",
+};
+
+const resolveTemperatureFromValue = (value: unknown): Temperature | null => {
+  const text = normalizeCellString(value).toLowerCase();
+  if (!text) {
+    return null;
+  }
+  const direct = temperatureMap[text];
+  if (direct) {
+    return direct;
+  }
+  if (text.startsWith("g")) return "green";
+  if (text.startsWith("y")) return "yellow";
+  if (text.startsWith("r")) return "red";
+  return null;
+};
+
+const resolveSlotKeyFromValue = (value: unknown): TimeSlotKey | null => {
+  const text = normalizeCellString(value).toLowerCase();
+  if (!text) return null;
+
+  // Common textual matches
+  if (/(noon|12\s*:?(00)?\s*(pm)?|lunch)/.test(text)) return "12:00";
+  if (/(2[:.]?30|14[:.]?30|afternoon|midday)/.test(text)) return "14:30";
+  if (/(5\s*pm|17[:.]?00|evening)/.test(text)) return "17:00";
+  if (/(8\s*pm|20[:.]?00|close|closing)/.test(text)) return "20:00";
+
+  // Numeric / ordinal / shorthand slot identifiers (1..4, slot 1, s1, 1st)
+  const numericMatch = text.match(/(?:^|\b)(?:slot|s|window|timeslot|shift)?\s*#?\s*([1-4])(st|nd|rd|th)?(?:\b|$)/);
+  if (numericMatch && numericMatch[1]) {
+    const idx = Number(numericMatch[1]);
+    switch (idx) {
+      case 1:
+        return "12:00";
+      case 2:
+        return "14:30";
+      case 3:
+        return "17:00";
+      case 4:
+        return "20:00";
+      default:
+        return null;
+    }
+  }
+
+  // Bare numbers like "1", "2" on their own
+  const bareNum = text.match(/^([1-4])$/);
+  if (bareNum && bareNum[1]) {
+    const idx = Number(bareNum[1]);
+    if (idx === 1) return "12:00";
+    if (idx === 2) return "14:30";
+    if (idx === 3) return "17:00";
+    if (idx === 4) return "20:00";
+  }
+
+  return null;
+};
+
+
+const buildSimEntriesFromRows = (
+  rows: Record<string, unknown>[],
+  targetShopNumber: number | null,
+  sheetName?: string | null,
+): { entries: SimSlotEntry[]; issues: SimRowIssue[] } => {
+  const entries: SimSlotEntry[] = [];
+  const issues: SimRowIssue[] = [];
+
+  rows.forEach((rawRow, index) => {
+    const rowNumber = index + 2; // account for header row
+    const row = normalizeSheetRow(rawRow);
+    const slotValue = pickAliasValue(row, SIM_SLOT_HEADER_ALIASES);
+    let slot = resolveSlotKeyFromValue(slotValue);
+    // If the row doesn't include a slot label, try inferring from the sheet name.
+    if (!slot && sheetName) {
+      slot = resolveSlotKeyFromValue(sheetName);
+    }
+    if (!slot) {
+      issues.push({ row: rowNumber, message: "Missing or unrecognized slot label" });
+      return;
+    }
+
+    const rowShopNumber = parseShopNumber(pickAliasValue(row, SIM_SHOP_HEADER_ALIASES));
+    if (targetShopNumber && rowShopNumber && rowShopNumber !== targetShopNumber) {
+      return;
+    }
+
+    const metrics: Partial<Record<MetricKey, string>> = {};
+    let hasMetric = false;
+    METRIC_FIELDS.forEach((field) => {
+      const raw = pickAliasValue(row, METRIC_HEADER_ALIASES[field.key]);
+      const numeric = parseNumericCell(raw);
+      if (numeric === null) {
+        return;
+      }
+      hasMetric = true;
+      const format = METRIC_FORMAT_LOOKUP[field.key];
+      if (format === "currency") {
+        metrics[field.key] = numeric.toFixed(2);
+      } else {
+        metrics[field.key] = Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(2);
+      }
+    });
+
+    if (!hasMetric) {
+      issues.push({ row: rowNumber, message: "No numeric metric values were detected" });
+      return;
+    }
+
+    entries.push({
+      slot,
+      metrics,
+      temperature: resolveTemperatureFromValue(pickAliasValue(row, SIM_TEMPERATURE_ALIASES)) ?? undefined,
+      shopNumber: rowShopNumber,
+    });
+  });
+
+  return { entries, issues };
+};
 
 const SLOT_DEFINITIONS: Record<TimeSlotKey, { label: string; description: string; dbSlot: string }> = {
   "12:00": { label: "Noon", description: "12 PM window", dbSlot: "12pm" },
@@ -324,6 +615,31 @@ const cloneSlots = (source: SlotStateMap): SlotStateMap => {
   return next as SlotStateMap;
 };
 
+const mergeSimEntryIntoSlotState = (existing: SlotState | undefined, entry: SimSlotEntry): SlotState => {
+  const base = existing
+    ? {
+        ...existing,
+        metrics: { ...existing.metrics },
+      }
+    : createEmptySlotState();
+
+  (Object.keys(entry.metrics) as MetricKey[]).forEach((metricKey) => {
+    const value = entry.metrics[metricKey];
+    if (typeof value === "string" && value.trim().length) {
+      base.metrics[metricKey] = value;
+    }
+  });
+
+  if (entry.temperature) {
+    base.temperature = entry.temperature;
+  }
+
+  base.status = "draft";
+  base.dirty = true;
+  base.submittedAt = null;
+  return base;
+};
+
 const createTotalsAccumulator = (): Totals => ({ ...EMPTY_TOTALS });
 
 const buildSlotTotals = (slotMap: SlotStateMap, slotKeys: TimeSlotKey[]): Totals => {
@@ -442,6 +758,25 @@ const resolvePlaceholderCount = (candidate?: number | null) => {
   return 4;
 };
 
+const coerceLabelString = (value: unknown): string | null => {
+  if (typeof value !== "string") {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length ? trimmed : null;
+};
+
+const resolveDistrictLabelFromRow = (row: Record<string, unknown>, fallbackIndex: number) => {
+  const labelKeys = ["name", "district_name", "label", "title", "display_name", "code"];
+  for (const key of labelKeys) {
+    const candidate = coerceLabelString(row[key]);
+    if (candidate) {
+      return candidate;
+    }
+  }
+  return `District ${fallbackIndex + 1}`;
+};
+
 
 const todayISO = () => new Date().toISOString().split("T")[0];
 
@@ -482,6 +817,8 @@ export default function PulseCheckPage() {
   const [districtGridRows, setDistrictGridRows] = useState<DistrictGridRow[]>([]);
   const [districtGridLoading, setDistrictGridLoading] = useState(false);
   const [districtGridError, setDistrictGridError] = useState<string | null>(null);
+  const [regionDistricts, setRegionDistricts] = useState<Array<{ id: string | null; label: string }>>([]);
+  const [selectedScopeKey, setSelectedScopeKey] = useState<string | null>(null);
   const [loadingHierarchy, setLoadingHierarchy] = useState(false);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [loadingTotals, setLoadingTotals] = useState(false);
@@ -496,6 +833,11 @@ export default function PulseCheckPage() {
   const [proxyBusy, setProxyBusy] = useState(false);
   const [proxyMessage, setProxyMessage] = useState<string | null>(null);
   const [proxyMessageTone, setProxyMessageTone] = useState<"info" | "error" | "success">("info");
+  const [simBusy, setSimBusy] = useState(false);
+  const [simStatus, setSimStatus] = useState<string | null>(null);
+  const [simProgress, setSimProgress] = useState(0);
+  const [simQueueSize, setSimQueueSize] = useState(0);
+  const simControllerRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const [selectedBreakdownDate, setSelectedBreakdownDate] = useState(() => todayISO());
   const needsLogin = authChecked && !loginEmail;
   const panelBaseClasses = (tone: PulsePanelTone = "aurora", padding: string = "p-5") =>
@@ -504,6 +846,79 @@ export default function PulseCheckPage() {
     `pointer-events-none absolute inset-0 ${PULSE_PANEL_TONES[tone].overlay}`;
   const scope = hierarchy?.scope_level?.toUpperCase() as ScopeLevel | undefined;
   const canProxy = scope ? scope !== "SHOP" : false;
+  const scopeOptions = useMemo<DistrictScopeOption[]>(() => {
+    const map = new Map<string, DistrictScopeOption>();
+    const addOption = (option: DistrictScopeOption) => {
+      if (!option.key) {
+        return;
+      }
+      const normalizedLabel = option.label?.trim() || (option.type === "region" ? "Region overview" : "District view");
+      if (!map.has(option.key)) {
+        map.set(option.key, { ...option, label: normalizedLabel });
+      }
+    };
+
+    if (shopMeta?.district_id) {
+      addOption({
+        key: `district:${shopMeta.district_id}`,
+        type: "district",
+        districtId: shopMeta.district_id,
+        alignmentDistrictName: hierarchy?.district_name ?? null,
+        label: hierarchy?.district_name ?? "My district",
+        helper: "Linked to this login",
+      });
+    } else if (hierarchy?.district_name) {
+      addOption({
+        key: "district:hierarchy",
+        type: "district",
+        districtId: null,
+        alignmentDistrictName: hierarchy.district_name,
+        label: hierarchy.district_name,
+        helper: "Alignment fallback (link district for KPIs)",
+      });
+    }
+
+    regionDistricts.forEach((district) => {
+      if (!district.id) {
+        return;
+      }
+      addOption({
+        key: `district:${district.id}`,
+        type: "district",
+        districtId: district.id,
+        alignmentDistrictName: district.label,
+        label: district.label,
+      });
+    });
+
+    if (shopMeta?.region_id) {
+      addOption({
+        key: `region:${shopMeta.region_id}`,
+        type: "region",
+        regionId: shopMeta.region_id,
+        label: hierarchy?.region_name ? `${hierarchy.region_name} region` : "Region overview",
+        helper: "Roll up to region",
+      });
+    }
+
+    return Array.from(map.values());
+  }, [shopMeta?.district_id, shopMeta?.region_id, hierarchy?.district_name, hierarchy?.region_name, regionDistricts]);
+
+  useEffect(() => {
+    if (!scopeOptions.length) {
+      setSelectedScopeKey(null);
+      return;
+    }
+    setSelectedScopeKey((prev) => {
+      if (prev && scopeOptions.some((option) => option.key === prev)) {
+        return prev;
+      }
+      return scopeOptions[0]?.key ?? null;
+    });
+  }, [scopeOptions]);
+
+  const selectedScope = useMemo(() => scopeOptions.find((option) => option.key === selectedScopeKey) ?? null, [scopeOptions, selectedScopeKey]);
+  const districtGridVisible = scopeOptions.length > 0 || Boolean(hierarchy?.district_name);
 
   const lookupShopMeta = useCallback(async (shopNumber: number) => {
     const clients = [pulseSupabase, supabase];
@@ -705,6 +1120,93 @@ export default function PulseCheckPage() {
       cancelled = true;
     };
   }, [hierarchy, lookupShopMeta]);
+
+  useEffect(() => {
+    if (!shopMeta?.region_id) {
+      setRegionDistricts([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    const loadRegionDistricts = async () => {
+      try {
+        const { data, error } = await pulseSupabase
+          .from("districts")
+          .select("*")
+          .eq("region_id", shopMeta.region_id);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (error && error.code !== "PGRST116") {
+          console.error("Region districts lookup error", error);
+          setRegionDistricts(
+            shopMeta.district_id
+              ? [
+                  {
+                    id: shopMeta.district_id,
+                    label: hierarchy?.district_name ?? "My district",
+                  },
+                ]
+              : []
+          );
+          return;
+        }
+
+        const mapped = (data ?? []).map((row, index) => {
+          const record = row as Record<string, unknown> & { id?: string | null };
+          const id = typeof record.id === "string" ? record.id : null;
+          return {
+            id,
+            label: resolveDistrictLabelFromRow(record, index),
+          };
+        });
+
+        const normalized = mapped.reduce<Array<{ id: string | null; label: string }>>((acc, entry) => {
+          if (!entry.id) {
+            return acc;
+          }
+          if (!acc.some((existing) => existing.id === entry.id)) {
+            acc.push(entry);
+          }
+          return acc;
+        }, []);
+
+        if (shopMeta.district_id && !normalized.some((entry) => entry.id === shopMeta.district_id)) {
+          normalized.push({
+            id: shopMeta.district_id,
+            label: hierarchy?.district_name ?? "My district",
+          });
+        }
+
+        normalized.sort((a, b) => a.label.localeCompare(b.label));
+
+        setRegionDistricts(normalized);
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Region districts lookup exception", err);
+          setRegionDistricts(
+            shopMeta.district_id
+              ? [
+                  {
+                    id: shopMeta.district_id,
+                    label: hierarchy?.district_name ?? "My district",
+                  },
+                ]
+              : []
+          );
+        }
+      }
+    };
+
+    loadRegionDistricts();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [shopMeta?.region_id, shopMeta?.district_id, hierarchy?.district_name]);
 
   const hydrateSlotsFromRows = useCallback((rows: CheckInRow[]): SlotStateMap => {
     const next = buildInitialSlots();
@@ -909,78 +1411,165 @@ export default function PulseCheckPage() {
   }, [shopMeta?.id, refreshAll]);
 
   useEffect(() => {
-    if (!shopMeta?.district_id) {
+    if (!districtGridVisible) {
+      setDistrictGridRows([]);
+      setDistrictGridError(null);
+      setDistrictGridLoading(false);
+      return;
+    }
+
+    if (!selectedScope) {
+      if (!scopeOptions.length) {
+        setDistrictGridRows([]);
+        setDistrictGridError("Link a district to this shop to view scope KPIs.");
+      }
+      setDistrictGridLoading(false);
+      return;
+    }
+
+    if (selectedScope.type === "district" && !selectedScope.districtId && !selectedScope.alignmentDistrictName) {
       const placeholderRows = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchy?.shops_in_district), {
         descriptor: "Link this shop to a district",
         highlightCurrent: Boolean(shopMeta?.id),
       });
-      const placeholderDistrictRow: DistrictGridRow = {
-        id: "district-unlinked",
-        label: hierarchy?.district_name ?? "District overview",
-        descriptor: "Link a district to this shop to load KPIs.",
-        kind: "district",
-        metrics: buildPlaceholderGridMetrics(),
-      };
-      setDistrictGridRows([...placeholderRows, placeholderDistrictRow]);
+      setDistrictGridRows([
+        ...placeholderRows,
+        {
+          id: "district-unlinked",
+          label: selectedScope.label ?? hierarchy?.district_name ?? "District overview",
+          descriptor: "Link a district to this shop to load KPIs.",
+          kind: "district",
+          metrics: buildPlaceholderGridMetrics(),
+        },
+      ]);
       setDistrictGridError("Link a district to this shop to view scope KPIs.");
       setDistrictGridLoading(false);
       return;
     }
 
-    let cancelled = false;
-    const loadDistrictScope = async () => {
-      setDistrictGridLoading(true);
-      setDistrictGridError(null);
-      try {
-        const { data: shopList, error: shopError } = await pulseSupabase
-          .from("shops")
-          .select("id,shop_name,shop_number")
-          .eq("district_id", shopMeta.district_id)
-          .order("shop_number", { ascending: true });
+    if (selectedScope.type === "region" && !selectedScope.regionId) {
+      setDistrictGridRows([
+        {
+          id: "region-unlinked",
+          label: selectedScope.label ?? hierarchy?.region_name ?? "Region overview",
+          descriptor: "Unable to resolve your region scope.",
+          kind: "region",
+          metrics: buildPlaceholderGridMetrics(),
+        },
+      ]);
+      setDistrictGridError("Unable to resolve your region scope.");
+      setDistrictGridLoading(false);
+      return;
+    }
 
-        if (shopError) {
-          throw shopError;
+    let cancelled = false;
+
+    const loadScope = async () => {
+      const runDistrictScope = async ({
+        districtId,
+        districtLabel,
+        alignmentName,
+      }: {
+        districtId?: string | null;
+        districtLabel: string;
+        alignmentName?: string | null;
+      }) => {
+        type DistrictShop = { id: string; shop_name: string | null; shop_number: number | null };
+        let shopsInDistrict: DistrictShop[] = [];
+        let hierarchyShopCount = districtId && districtId === shopMeta?.district_id ? hierarchy?.shops_in_district ?? null : null;
+        const normalizedAlignmentName = alignmentName?.trim() ?? "";
+
+        if (districtId) {
+          const { data: shopList, error: shopError } = await pulseSupabase
+            .from("shops")
+            .select("id,shop_name,shop_number")
+            .eq("district_id", districtId)
+            .order("shop_number", { ascending: true });
+
+          if (shopError) {
+            throw shopError;
+          }
+
+          shopsInDistrict = (shopList ?? []) as DistrictShop[];
         }
 
-        let shopsInDistrict = (shopList ?? []) as Array<{
-          id: string;
-          shop_name: string | null;
-          shop_number: number | null;
-        }>;
-        const hierarchyShopCount = hierarchy?.shops_in_district ?? null;
-
-        if (!shopsInDistrict.length && hierarchy?.district_name) {
+        if (!shopsInDistrict.length && normalizedAlignmentName) {
           try {
-            const { data: alignmentRows, error: alignmentError } = await supabase
-              .from("shop_alignment")
-              .select("store,shop_name")
-              .eq("district", hierarchy.district_name)
-              .order("store", { ascending: true });
+            const result = await fetchAlignmentRows("district", "ilike", `${normalizedAlignmentName}%`);
+            const alignmentRows = result?.data ?? null;
+            const alignmentError = result?.error ?? null;
 
-            if (!alignmentError && alignmentRows?.length) {
-              shopsInDistrict = alignmentRows.map(
-                (row: { store?: number | string | null; shop_name?: string | null }, index: number) => {
-                  const storeNumberRaw = typeof row.store === "number" ? row.store : Number(row.store);
-                  const storeNumber = Number.isFinite(storeNumberRaw) ? (storeNumberRaw as number) : null;
-                  return {
-                    id: `alignment-${storeNumber ?? index + 1}`,
-                    shop_name: row.shop_name ?? null,
-                    shop_number: storeNumber,
-                  };
+            if (alignmentError) {
+              throw alignmentError;
+            }
+
+            const mappedAlignment = (alignmentRows ?? []).map((row, index) => {
+              const numericStore = typeof row.store === "number" ? row.store : Number(row.store);
+              const storeNumber = Number.isFinite(numericStore) ? Number(numericStore) : null;
+              return {
+                shop_number: storeNumber,
+                shop_name: row.shop_name ?? null,
+                fallbackId: `alignment-${storeNumber ?? index + 1}`,
+              };
+            });
+
+            const alignmentNumbers = mappedAlignment
+              .map((entry) => entry.shop_number)
+              .filter((value): value is number => typeof value === "number");
+
+            const resolvedPulseMap = new Map<number, DistrictShop>();
+            if (alignmentNumbers.length) {
+              const { data: resolvedShops, error: resolvedError } = await pulseSupabase
+                .from("shops")
+                .select("id,shop_name,shop_number")
+                .in("shop_number", alignmentNumbers);
+
+              if (resolvedError && resolvedError.code !== "PGRST116") {
+                throw resolvedError;
+              }
+
+              (resolvedShops ?? []).forEach((shop) => {
+                if (typeof shop.shop_number === "number") {
+                  resolvedPulseMap.set(shop.shop_number, {
+                    id: shop.id,
+                    shop_name: shop.shop_name,
+                    shop_number: shop.shop_number,
+                  });
                 }
-              );
+              });
+            }
+
+            shopsInDistrict = mappedAlignment.map((entry, index) => {
+              if (entry.shop_number !== null && resolvedPulseMap.has(entry.shop_number)) {
+                const resolved = resolvedPulseMap.get(entry.shop_number)!;
+                return {
+                  ...resolved,
+                  shop_name: entry.shop_name ?? resolved.shop_name,
+                };
+              }
+              return {
+                id: entry.fallbackId ?? `alignment-${index + 1}`,
+                shop_name: entry.shop_name,
+                shop_number: entry.shop_number,
+              };
+            });
+
+            if (!hierarchyShopCount) {
+              hierarchyShopCount = shopsInDistrict.length || null;
             }
           } catch (alignmentErr) {
-            console.error("Fallback shop_alignment lookup failed", alignmentErr);
+            console.error("Alignment fallback error", alignmentErr);
           }
         }
 
-        const shopIds = shopsInDistrict.map((shop) => shop.id);
+        const realShopIds = shopsInDistrict
+          .map((shop) => shop.id)
+          .filter((id) => typeof id === "string" && !id.startsWith("alignment-"));
 
         let dailyRows: ShopTotalsRow[] = [];
         let weeklyRows: ShopTotalsRow[] = [];
 
-        if (shopIds.length) {
+        if (realShopIds.length) {
           const [dailyResponse, weeklyResponse] = await Promise.all([
             pulseSupabase
               .from("shop_daily_totals")
@@ -988,14 +1577,14 @@ export default function PulseCheckPage() {
                 "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
               )
               .eq("check_in_date", todayISO())
-              .in("shop_id", shopIds),
+              .in("shop_id", realShopIds),
             pulseSupabase
               .from("shop_wtd_totals")
               .select(
                 "shop_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1"
               )
               .eq("week_start", getWeekStartISO())
-              .in("shop_id", shopIds),
+              .in("shop_id", realShopIds),
           ]);
 
           if (dailyResponse.error && dailyResponse.error.code !== "PGRST116") {
@@ -1009,61 +1598,74 @@ export default function PulseCheckPage() {
           weeklyRows = (weeklyResponse.data ?? []) as ShopTotalsRow[];
         }
 
-        const [districtDailyResponse, districtWeeklyResponse] = await Promise.all([
-          pulseSupabase
-            .from("district_daily_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
-            )
-            .eq("district_id", shopMeta.district_id)
-            .eq("check_in_date", todayISO())
-            .maybeSingle(),
-          pulseSupabase
-            .from("district_wtd_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
-            )
-            .eq("district_id", shopMeta.district_id)
-            .eq("week_start", getWeekStartISO())
-            .order("current_date", { ascending: false })
-            .limit(1)
-            .maybeSingle(),
-        ]);
+        let districtDailyRow: TotalsRow | null = null;
+        let districtWeeklyRow: TotalsRow | null = null;
 
-        if (districtDailyResponse.error && districtDailyResponse.error.code !== "PGRST116") {
-          throw districtDailyResponse.error;
-        }
-        if (districtWeeklyResponse.error && districtWeeklyResponse.error.code !== "PGRST116") {
-          throw districtWeeklyResponse.error;
+        if (districtId) {
+          const [districtDailyResponse, districtWeeklyResponse] = await Promise.all([
+            pulseSupabase
+              .from("district_daily_totals")
+              .select(
+                "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+              )
+              .eq("district_id", districtId)
+              .eq("check_in_date", todayISO())
+              .maybeSingle(),
+            pulseSupabase
+              .from("district_wtd_totals")
+              .select(
+                "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+              )
+              .eq("district_id", districtId)
+              .eq("week_start", getWeekStartISO())
+              .order("current_date", { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+          ]);
+
+          if (districtDailyResponse.error && districtDailyResponse.error.code !== "PGRST116") {
+            throw districtDailyResponse.error;
+          }
+          if (districtWeeklyResponse.error && districtWeeklyResponse.error.code !== "PGRST116") {
+            throw districtWeeklyResponse.error;
+          }
+
+          districtDailyRow = (districtDailyResponse.data as TotalsRow | null) ?? null;
+          districtWeeklyRow = (districtWeeklyResponse.data as TotalsRow | null) ?? null;
         }
 
         const dailyMap = new Map(dailyRows.map((row) => [row.shop_id, row]));
         const weeklyMap = new Map(weeklyRows.map((row) => [row.shop_id, row]));
 
         const nextRows: DistrictGridRow[] = [];
-        const districtDaily = convertTotalsRowToShopRow(
-          districtDailyResponse.data ?? null,
-          `district-${shopMeta.district_id}`
-        );
-        const districtWeekly = convertTotalsRowToShopRow(
-          districtWeeklyResponse.data ?? null,
-          `district-${shopMeta.district_id}`
-        );
+        const districtRowId = districtId
+          ? `district-${districtId}`
+          : `district-${normalizedAlignmentName || "alignment"}`;
+        const districtDaily = districtId
+          ? convertTotalsRowToShopRow(districtDailyRow, districtRowId)
+          : null;
+        const districtWeekly = districtId
+          ? convertTotalsRowToShopRow(districtWeeklyRow, districtRowId)
+          : null;
         const hasDistrictTotals = Boolean(districtDaily || districtWeekly);
         const fallbackDescriptor = shopsInDistrict.length
-          ? "Awaiting KPI submissions"
+          ? normalizedAlignmentName
+            ? "Alignment listing (limited KPIs)"
+            : "Awaiting KPI submissions"
           : "No shops resolved for this district yet.";
 
         const districtRow: DistrictGridRow = {
-          id: `district-${shopMeta.district_id}`,
-          label:
-            hierarchy?.district_name ??
-            districtDailyResponse.data?.district_name ??
-            districtWeeklyResponse.data?.district_name ??
-            "District rollup",
-          descriptor: hasDistrictTotals ? "District total" : fallbackDescriptor,
+          id: districtRowId,
+          label: districtLabel || normalizedAlignmentName || "District rollup",
+          descriptor: districtId
+            ? hasDistrictTotals
+              ? "District total"
+              : fallbackDescriptor
+            : normalizedAlignmentName
+            ? "Alignment listing (link district for KPIs)"
+            : fallbackDescriptor,
           kind: "district",
-          metrics: hasDistrictTotals
+          metrics: districtId && hasDistrictTotals
             ? buildGridMetrics(
                 buildShopSliceFromTotals(districtDaily ?? null),
                 buildShopSliceFromTotals(districtWeekly ?? null)
@@ -1078,7 +1680,7 @@ export default function PulseCheckPage() {
           const weeklyTotals = weeklyMap.get(shop.id) ?? null;
           const hasShopTotals = Boolean(dailyTotals || weeklyTotals);
           const isCurrentShop =
-            shop.id === shopMeta.id ||
+            shop.id === shopMeta?.id ||
             (typeof shop.shop_number === "number" && typeof shopMeta?.shop_number === "number"
               ? shop.shop_number === shopMeta.shop_number
               : false);
@@ -1099,35 +1701,180 @@ export default function PulseCheckPage() {
 
         if (!shopsInDistrict.length) {
           const placeholders = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchyShopCount), {
-            descriptor: "Hierarchy listing",
+            descriptor: normalizedAlignmentName ? "Alignment listing" : "Hierarchy listing",
             highlightCurrent: Boolean(shopMeta?.id),
           });
           nextRows.push(...placeholders);
         }
 
-          nextRows.push(districtRow);
+        nextRows.push(districtRow);
+
+        if (!cancelled) {
+          setDistrictGridRows(nextRows);
+          setDistrictGridError(
+            !districtId && normalizedAlignmentName
+              ? "Showing alignment roster. Link this district for live KPIs."
+              : null,
+          );
+        }
+      };
+
+      const runRegionScope = async (regionId: string, regionLabel: string) => {
+        const districtIds = regionDistricts.map((district) => district.id).filter((id): id is string => Boolean(id));
+        if (!districtIds.length) {
+          throw new Error("No districts resolved for this region.");
+        }
+
+        const [districtDailyResponse, districtWeeklyResponse, regionDailyResponse, regionWeeklyResponse] = await Promise.all([
+          pulseSupabase
+            .from("district_daily_totals")
+            .select(
+              "district_id,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+            )
+            .eq("check_in_date", todayISO())
+            .in("district_id", districtIds),
+          pulseSupabase
+            .from("district_wtd_totals")
+            .select(
+              "district_id,current_date,total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,district_name"
+            )
+            .eq("week_start", getWeekStartISO())
+            .in("district_id", districtIds),
+          pulseSupabase
+            .from("region_daily_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,region_name"
+            )
+            .eq("region_id", regionId)
+            .eq("check_in_date", todayISO())
+            .maybeSingle(),
+          pulseSupabase
+            .from("region_wtd_totals")
+            .select(
+              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,region_name,current_date"
+            )
+            .eq("region_id", regionId)
+            .eq("week_start", getWeekStartISO())
+            .order("current_date", { ascending: false })
+            .limit(1)
+            .maybeSingle(),
+        ]);
+
+        if (districtDailyResponse.error && districtDailyResponse.error.code !== "PGRST116") {
+          throw districtDailyResponse.error;
+        }
+        if (districtWeeklyResponse.error && districtWeeklyResponse.error.code !== "PGRST116") {
+          throw districtWeeklyResponse.error;
+        }
+        if (regionDailyResponse.error && regionDailyResponse.error.code !== "PGRST116") {
+          throw regionDailyResponse.error;
+        }
+        if (regionWeeklyResponse.error && regionWeeklyResponse.error.code !== "PGRST116") {
+          throw regionWeeklyResponse.error;
+        }
+
+        const dailyMap = new Map<string, TotalsRow>();
+        ((districtDailyResponse.data ?? []) as TotalsRow[]).forEach((row) => {
+          if (row.district_id) {
+            dailyMap.set(row.district_id, row);
+          }
+        });
+
+        const weeklyMap = new Map<string, TotalsRow>();
+        ((districtWeeklyResponse.data ?? []) as TotalsRow[]).forEach((row) => {
+          if (!row.district_id) {
+            return;
+          }
+          const existing = weeklyMap.get(row.district_id);
+          if (!existing) {
+            weeklyMap.set(row.district_id, row);
+            return;
+          }
+          const nextTimestamp = row.current_date ? Date.parse(row.current_date) : 0;
+          const existingTimestamp = existing.current_date ? Date.parse(existing.current_date) : 0;
+          if (nextTimestamp >= existingTimestamp) {
+            weeklyMap.set(row.district_id, row);
+          }
+        });
+
+        const regionDailyRow = convertTotalsRowToShopRow(regionDailyResponse.data ?? null, `region-${regionId}`);
+        const regionWeeklyRow = convertTotalsRowToShopRow(regionWeeklyResponse.data ?? null, `region-${regionId}`);
+        const nextRows: DistrictGridRow[] = [];
+        const hasRegionTotals = Boolean(regionDailyRow || regionWeeklyRow);
+        nextRows.push({
+          id: `region-${regionId}`,
+          label:
+            regionLabel ||
+            regionDailyResponse.data?.region_name ||
+            regionWeeklyResponse.data?.region_name ||
+            "Region overview",
+          descriptor: hasRegionTotals ? "Region total" : "Awaiting KPI submissions",
+          kind: "region",
+          metrics: hasRegionTotals
+            ? buildGridMetrics(
+                buildShopSliceFromTotals(regionDailyRow ?? null),
+                buildShopSliceFromTotals(regionWeeklyRow ?? null)
+              )
+            : buildPlaceholderGridMetrics(),
+        });
+
+        regionDistricts.forEach((district, index) => {
+          if (!district.id) {
+            return;
+          }
+          const dailyRow = convertTotalsRowToShopRow(dailyMap.get(district.id) ?? null, `district-${district.id}`);
+          const weeklyRow = convertTotalsRowToShopRow(weeklyMap.get(district.id) ?? null, `district-${district.id}`);
+          const hasTotals = Boolean(dailyRow || weeklyRow);
+          nextRows.push({
+            id: `district-${district.id}`,
+            label: district.label || `District ${index + 1}`,
+            descriptor: hasTotals ? "District total" : "Awaiting KPI submissions",
+            kind: "district",
+            metrics: hasTotals
+              ? buildGridMetrics(
+                  buildShopSliceFromTotals(dailyRow ?? null),
+                  buildShopSliceFromTotals(weeklyRow ?? null)
+                )
+              : buildPlaceholderGridMetrics(),
+          });
+        });
 
         if (!cancelled) {
           setDistrictGridRows(nextRows);
           setDistrictGridError(null);
         }
-      } catch (err) {
-        console.error("loadDistrictScope error", err);
-        if (!cancelled) {
-          const placeholderDistrictRow: DistrictGridRow = {
-            id: `district-placeholder-${shopMeta.district_id}`,
-            label: hierarchy?.district_name ?? "District overview",
-            descriptor: "Unable to load district shops right now.",
-            kind: "district",
-            metrics: buildPlaceholderGridMetrics(),
-          };
-          const placeholderShopRows = buildPlaceholderShopRows(resolvePlaceholderCount(hierarchy?.shops_in_district), {
-            descriptor: "Hierarchy slot",
-            highlightCurrent: Boolean(shopMeta?.id),
+      };
+
+      setDistrictGridLoading(true);
+      setDistrictGridError(null);
+
+      try {
+        if (selectedScope.type === "region" && selectedScope.regionId) {
+          await runRegionScope(selectedScope.regionId, selectedScope.label);
+        } else if (selectedScope.type === "district") {
+          await runDistrictScope({
+            districtId: selectedScope.districtId,
+            districtLabel: selectedScope.label,
+            alignmentName: selectedScope.alignmentDistrictName ?? hierarchy?.district_name ?? null,
           });
-          const placeholderRows = [...placeholderShopRows, placeholderDistrictRow];
-          setDistrictGridRows(placeholderRows);
-          setDistrictGridError("Unable to load district shops right now.");
+        }
+      } catch (err) {
+        console.error("district scope load error", err);
+        if (!cancelled) {
+          setDistrictGridRows([
+            {
+              id: `${selectedScope.type}-placeholder`,
+              label:
+                selectedScope.label ||
+                (selectedScope.type === "region"
+                  ? hierarchy?.region_name ?? "Region overview"
+                  : hierarchy?.district_name ?? "District overview"),
+              descriptor: "Unable to load scope KPIs right now.",
+              kind: selectedScope.type === "region" ? "region" : "district",
+              metrics: buildPlaceholderGridMetrics(),
+            },
+          ]);
+          setDistrictGridError("Unable to load scope KPIs right now.");
         }
       } finally {
         if (!cancelled) {
@@ -1136,12 +1883,24 @@ export default function PulseCheckPage() {
       }
     };
 
-    loadDistrictScope();
+    loadScope();
 
     return () => {
       cancelled = true;
     };
-  }, [shopMeta?.district_id, shopMeta?.id, shopMeta?.shop_number, hierarchy?.district_name, hierarchy?.shops_in_district]);
+  }, [
+    districtGridVisible,
+    hierarchy?.district_name,
+    hierarchy?.region_name,
+    hierarchy?.shops_in_district,
+    regionDistricts,
+    scopeOptions,
+    selectedScope,
+    shopMeta?.district_id,
+    shopMeta?.id,
+    shopMeta?.region_id,
+    shopMeta?.shop_number,
+  ]);
 
   const resolvedShopNumber = useMemo(() => {
     if (typeof shopMeta?.shop_number === "number" && Number.isFinite(shopMeta.shop_number)) {
@@ -1431,7 +2190,25 @@ export default function PulseCheckPage() {
     () => districtGridRows.filter((row) => row.kind === "shop").length,
     [districtGridRows]
   );
-  const districtGridVisible = Boolean(shopMeta?.district_id || hierarchy?.district_name);
+  const districtRollupCount = useMemo(
+    () => districtGridRows.filter((row) => row.kind === "district").length,
+    [districtGridRows]
+  );
+  const scopeCountLabel = useMemo(() => {
+    if (districtGridLoading && !districtGridRows.length) {
+      return selectedScope?.type === "region" ? "Syncing districts" : "Syncing shops";
+    }
+    if (selectedScope?.type === "region") {
+      if (!districtRollupCount) {
+        return "No districts resolved";
+      }
+      return `${districtRollupCount} district${districtRollupCount === 1 ? "" : "s"}`;
+    }
+    if (!districtShopCount) {
+      return "No shops resolved";
+    }
+    return `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`;
+  }, [districtGridLoading, districtGridRows.length, districtRollupCount, districtShopCount, selectedScope?.type]);
 
   useEffect(() => {
     if (activeSlot && slotUnlockedMap[activeSlot]) {
@@ -1500,74 +2277,145 @@ export default function PulseCheckPage() {
     setStatusMessage("Form reset");
   }, [slotSnapshot]);
 
-  const handleSubmit = useCallback(async () => {
-    if (!shopMeta?.id) {
-      setStatusMessage("Resolve your shop before submitting.");
-      return;
+  const ensureShopForAction = useCallback(async (): Promise<ShopMeta | null> => {
+    if (shopMeta?.id) {
+      return shopMeta;
     }
 
-    const slotState = currentSlotState;
-    const submittedAt = new Date().toISOString();
-    const payload = {
-      shop_id: shopMeta.id,
-      check_in_date: todayISO(),
-      time_slot: currentDefinition.dbSlot,
-      cars: toNumberValue(slotState.metrics.cars),
-      sales: toNumberValue(slotState.metrics.sales),
-      big4: toNumberValue(slotState.metrics.big4),
-      coolants: toNumberValue(slotState.metrics.coolants),
-      diffs: toNumberValue(slotState.metrics.diffs),
-      fuel_filters: toNumberValue(slotState.metrics.fuelFilters),
-      donations: toNumberValue(slotState.metrics.donations),
-      mobil1: toNumberValue(slotState.metrics.mobil1),
-      temperature: slotState.temperature,
-      is_submitted: true,
-      submitted_at: submittedAt,
+    const candidateNumbers = new Set<number>();
+    const pushCandidate = (value: unknown) => {
+      const numeric = typeof value === "number" ? value : Number(value);
+      if (Number.isFinite(numeric)) {
+        candidateNumbers.add(Number(numeric));
+      }
     };
 
-    setSubmitting(true);
-    setStatusMessage(null);
+    pushCandidate(shopMeta?.shop_number);
+    pushCandidate(homeShopMeta?.shop_number);
+    pushCandidate(hierarchy?.shop_number);
 
-    try {
-      const { error } = await pulseSupabase
-        .from("check_ins")
-        .upsert(payload, { onConflict: "shop_id,check_in_date,time_slot" });
+    for (const shopNumber of candidateNumbers) {
+      try {
+        const resolved = await lookupShopMeta(shopNumber);
+        if (resolved) {
+          setShopMeta(resolved);
+          if (!homeShopMeta) {
+            setHomeShopMeta(resolved);
+          }
+          return resolved;
+        }
+      } catch (err) {
+        console.error("ensureShopForAction lookup error", err);
+      }
+    }
 
-      if (error) {
-        throw error;
+    // Fallback: try resolving via alignment table using district/name context
+    const alignmentDistrict = (selectedScope && (selectedScope.alignmentDistrictName ?? selectedScope.label)) ?? hierarchy?.district_name;
+    if (alignmentDistrict) {
+      try {
+        const pattern = escapeLikePattern(String(alignmentDistrict));
+        const { data: alignmentRow, error: alignmentError } = await supabase
+          .from("shop_alignment")
+          .select("store,shop_name")
+          .ilike("district", `${pattern}%`)
+          .order("store", { ascending: true })
+          .limit(1)
+          .maybeSingle();
+
+        if (!alignmentError && alignmentRow && alignmentRow.store != null) {
+          const storeNum = typeof alignmentRow.store === "number" ? alignmentRow.store : Number(alignmentRow.store);
+          if (Number.isFinite(storeNum)) {
+            const resolved = await lookupShopMeta(Number(storeNum));
+            if (resolved) {
+              setShopMeta(resolved);
+              if (!homeShopMeta) setHomeShopMeta(resolved);
+              return resolved;
+            }
+          }
+        }
+      } catch (err) {
+        console.error("ensureShopForAction alignment lookup error", err);
+      }
+    }
+
+    return null;
+  }, [shopMeta, homeShopMeta, hierarchy?.shop_number, hierarchy?.district_name, lookupShopMeta, selectedScope]);
+
+  const submitSlot = useCallback(
+    async (slotKey: TimeSlotKey, overrideState?: SlotState) => {
+      const activeShop = await ensureShopForAction();
+      if (!activeShop?.id) {
+        setStatusMessage("Resolve your shop before submitting.");
+        return false;
       }
 
-      setSlots((prev) => {
-        const next = { ...prev };
-        next[currentSlotKey] = {
+      const slotState = overrideState ?? slots[slotKey] ?? createEmptySlotState();
+      const definition = SLOT_DEFINITIONS[slotKey];
+      const submittedAt = new Date().toISOString();
+      const payload = {
+        shop_id: activeShop.id,
+        check_in_date: todayISO(),
+        time_slot: definition.dbSlot,
+        cars: toNumberValue(slotState.metrics.cars),
+        sales: toNumberValue(slotState.metrics.sales),
+        big4: toNumberValue(slotState.metrics.big4),
+        coolants: toNumberValue(slotState.metrics.coolants),
+        diffs: toNumberValue(slotState.metrics.diffs),
+        fuel_filters: toNumberValue(slotState.metrics.fuelFilters),
+        donations: toNumberValue(slotState.metrics.donations),
+        mobil1: toNumberValue(slotState.metrics.mobil1),
+        temperature: slotState.temperature,
+        is_submitted: true,
+        submitted_at: submittedAt,
+      };
+
+      setSubmitting(true);
+      setStatusMessage(null);
+
+      try {
+        const { error } = await pulseSupabase
+          .from("check_ins")
+          .upsert(payload, { onConflict: "shop_id,check_in_date,time_slot" });
+
+        if (error) {
+          throw error;
+        }
+
+        const submittedState: SlotState = {
           ...slotState,
           status: "submitted",
           submittedAt,
           dirty: false,
         };
-        return next;
-      });
 
-      setSlotSnapshot((prev) => {
-        const base = prev ? { ...prev } : buildInitialSlots();
-        base[currentSlotKey] = {
-          ...slotState,
-          status: "submitted",
-          submittedAt,
-          dirty: false,
-        };
-        return base;
-      });
+        setSlots((prev) => ({
+          ...prev,
+          [slotKey]: submittedState,
+        }));
 
-      setStatusMessage(`${currentDefinition.label} slot submitted`);
-      await loadTotals(shopMeta.id);
-    } catch (err) {
-      console.error("handleSubmit error", err);
-      setStatusMessage("Unable to submit slot right now.");
-    } finally {
-      setSubmitting(false);
-    }
-  }, [shopMeta?.id, currentSlotKey, currentSlotState, currentDefinition, loadTotals]);
+        setSlotSnapshot((prev) => {
+          const base = prev ? { ...prev } : buildInitialSlots();
+          base[slotKey] = submittedState;
+          return base;
+        });
+
+        setStatusMessage(`${definition.label} slot submitted`);
+        await loadTotals(activeShop.id);
+        return true;
+      } catch (err) {
+        console.error("submitSlot error", err);
+        setStatusMessage("Unable to submit slot right now.");
+        return false;
+      } finally {
+        setSubmitting(false);
+      }
+    },
+    [ensureShopForAction, slots, loadTotals]
+  );
+
+  const handleSubmit = useCallback(async () => {
+    await submitSlot(currentSlotKey);
+  }, [currentSlotKey, submitSlot]);
 
   const handleProxySubmit = useCallback(async () => {
     const trimmed = proxyInput.trim();
@@ -1622,6 +2470,137 @@ export default function PulseCheckPage() {
     setProxyMessage("Returned to home shop.");
     setProxyInput("");
   }, [homeShopMeta]);
+
+  const stopSim = useCallback((message?: string) => {
+    simControllerRef.current.cancelled = true;
+    setSimStatus(message ?? "Cancelling simulation…");
+  }, []);
+
+  const runSimTest = useCallback(async () => {
+    const controller = { cancelled: false };
+    simControllerRef.current = controller;
+    setSimBusy(true);
+    setSimStatus("Preparing simulation…");
+    setSimProgress(0);
+    setSimQueueSize(0);
+
+    const activeShop = await ensureShopForAction();
+    if (!activeShop?.id) {
+      setSimStatus("Resolve your shop before running the sim.");
+      setSimBusy(false);
+      simControllerRef.current = { cancelled: false };
+      return;
+    }
+
+    try {
+      const response = await fetch(CHECKIN_SIM_TEST_URL);
+      if (!response.ok) {
+        throw new Error(`Sim workbook request failed (${response.status})`);
+      }
+
+      const buffer = await response.arrayBuffer();
+      const workbook = XLSX.read(buffer, { type: "array" });
+      if (!workbook.SheetNames || workbook.SheetNames.length === 0) {
+        throw new Error("Simulation workbook is empty.");
+      }
+
+      const allEntries: SimSlotEntry[] = [];
+      const allIssues: SimRowIssue[] = [];
+
+      for (const sheetName of workbook.SheetNames) {
+        const worksheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(worksheet, { defval: null });
+        const { entries: parsedEntriesForSheet, issues: rowIssuesForSheet } = buildSimEntriesFromRows(
+          rows,
+          activeShop.shop_number ?? null,
+          sheetName,
+        );
+        allEntries.push(...parsedEntriesForSheet);
+        allIssues.push(...rowIssuesForSheet);
+      }
+
+      const parsedEntries = allEntries;
+      const rowIssues = allIssues;
+
+      if (rowIssues.length) {
+        console.warn("Simulation sheet issues", rowIssues);
+        const preview = rowIssues
+          .slice(0, 3)
+          .map((issue) => `Row ${issue.row}: ${issue.message}`)
+          .join("; ");
+        const suffix = rowIssues.length > 3 ? ` (+${rowIssues.length - 3} more)` : "";
+        setSimStatus(`Fix simulation sheet rows before running: ${preview}${suffix}`);
+        setSimQueueSize(0);
+        return;
+      }
+
+      const queue = slotOrder
+        .map((slot) => parsedEntries.find((entry) => entry.slot === slot))
+        .filter((entry): entry is SimSlotEntry => Boolean(entry));
+
+      if (!queue.length) {
+        throw new Error("No matching slots were found for this shop in the sim sheet.");
+      }
+
+      setSimQueueSize(queue.length);
+      setSimProgress(queue.length ? 0 : 100);
+
+      if (controller.cancelled) {
+        setSimStatus("Simulation cancelled");
+        return;
+      }
+
+      let workingSlots: SlotStateMap = { ...slots };
+
+      for (let index = 0; index < queue.length; index += 1) {
+        if (controller.cancelled) {
+          break;
+        }
+
+        const entry = queue[index];
+        const mergedState = mergeSimEntryIntoSlotState(workingSlots[entry.slot], entry);
+        workingSlots = { ...workingSlots, [entry.slot]: mergedState };
+        setSlots(workingSlots);
+        setActiveSlot(entry.slot);
+        setSimStatus(`Submitting ${SLOT_DEFINITIONS[entry.slot].label} (${index + 1}/${queue.length})`);
+        setSimProgress(Math.round(((index + 1) / queue.length) * 100));
+
+        const success = await submitSlot(entry.slot, mergedState);
+        if (!success) {
+          setSimStatus("Simulation halted after a submission error.");
+          return;
+        }
+
+        if (index < queue.length - 1) {
+          const delay = 3000 + Math.floor(Math.random() * 4000);
+          setSimStatus(`Next slot in ${Math.round(delay / 1000)}s…`);
+          await waitWithCancellation(controller, delay);
+        }
+      }
+
+      setSimStatus(controller.cancelled ? "Simulation cancelled" : "Simulation complete");
+      if (!controller.cancelled && queue.length) {
+        setSimProgress(100);
+      }
+    } catch (err) {
+      console.error("runSimTest error", err);
+      setSimStatus("Simulation failed. Check console for details.");
+    } finally {
+      setSimBusy(false);
+      simControllerRef.current = { cancelled: false };
+      if (controller.cancelled) {
+        setSimStatus("Simulation cancelled");
+      }
+    }
+  }, [ensureShopForAction, slots, submitSlot]);
+
+  const handleSimToggle = useCallback(() => {
+    if (simBusy) {
+      stopSim("Cancelling simulation…");
+      return;
+    }
+    void runSimTest();
+  }, [runSimTest, simBusy, stopSim]);
 
   const renderStatusBanner = () => {
     if (!statusMessage) {
@@ -1738,13 +2717,30 @@ export default function PulseCheckPage() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
                       <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">District scope KPIs</p>
-                      <h3 className="text-lg font-semibold text-white">{hierarchy?.district_name ?? "District overview"}</h3>
+                      <h3 className="text-lg font-semibold text-white">
+                        {selectedScope?.label ?? hierarchy?.district_name ?? "District overview"}
+                      </h3>
+                      {selectedScope?.helper && (
+                        <p className="text-[11px] text-slate-400">{selectedScope.helper}</p>
+                      )}
                     </div>
-                    <p className="text-[10px] text-slate-400">
-                      {districtGridLoading && !districtGridRows.length
-                        ? "Syncing shops"
-                        : `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`}
-                    </p>
+                    <div className="flex flex-col items-end gap-1 text-right">
+                      <label className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Scope view</label>
+                      <select
+                        aria-label="Select scope"
+                        value={selectedScopeKey ?? ""}
+                        disabled={scopeOptions.length === 0}
+                        onChange={(event) => setSelectedScopeKey(event.target.value || null)}
+                        className="min-w-[11rem] rounded-xl border border-white/15 bg-slate-950/60 px-2.5 py-1 text-[11px] font-semibold text-white shadow-inner focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {scopeOptions.map((option) => (
+                          <option key={option.key} value={option.key} className="text-slate-900">
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-[10px] text-slate-400">{scopeCountLabel}</p>
+                    </div>
                   </div>
                   {districtGridError && <p className="text-sm text-amber-200">{districtGridError}</p>}
                   <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_20px_50px_rgba(1,6,20,0.6)]">
@@ -1768,7 +2764,7 @@ export default function PulseCheckPage() {
                             {districtGridRows.map((row, index) => {
                               const zebra = index % 2 ? "bg-slate-950/30" : "bg-slate-950/60";
                               const highlightClass =
-                                row.kind === "district"
+                                row.kind === "district" || row.kind === "region"
                                   ? "bg-emerald-500/10"
                                   : row.isCurrentShop
                                   ? "bg-sky-500/10"
@@ -1979,6 +2975,39 @@ export default function PulseCheckPage() {
                       >
                         {submitting ? "Saving…" : "Submit check-in"}
                       </button>
+                      <button
+                        type="button"
+                        onClick={handleSimToggle}
+                        className="mt-1 inline-flex items-center justify-center rounded-full border border-cyan-400/60 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] text-cyan-100 transition hover:bg-cyan-500/10 disabled:opacity-40"
+                        disabled={busy && !simBusy}
+                      >
+                        {simBusy ? "Stop sim" : "Run sim test"}
+                      </button>
+                      <a
+                        href={CHECKIN_SIM_TEST_URL}
+                        target="_blank"
+                        rel="noreferrer noopener"
+                        className="inline-flex items-center justify-center rounded-full border border-slate-600 px-3 py-1 text-[10px] font-semibold text-slate-200 transition hover:border-slate-400"
+                      >
+                        Download sheet
+                      </a>
+                      {(simBusy || simStatus) && (
+                        <div className="mt-2 w-full rounded-xl border border-cyan-400/30 bg-cyan-500/5 px-3 py-2 text-[11px] text-cyan-100" aria-live="polite">
+                          <div className="flex items-center justify-between text-[9px] uppercase tracking-[0.4em] text-cyan-200">
+                            <span>Sim status</span>
+                            {simQueueSize > 0 && <span>{simProgress}%</span>}
+                          </div>
+                          <div className="mt-1 h-1.5 rounded-full bg-slate-800">
+                            <div
+                              className={`h-full rounded-full ${simBusy ? "bg-cyan-300" : "bg-emerald-300"}`}
+                              style={{ width: `${simQueueSize > 0 ? simProgress : simBusy ? 15 : 0}%` }}
+                            />
+                          </div>
+                          <p className="mt-1 text-[11px] text-cyan-100/90">
+                            {simStatus ?? (simBusy ? "Simulation running" : "Ready")}
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

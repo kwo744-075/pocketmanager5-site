@@ -14,7 +14,8 @@ const resolveSupabaseUrl = () =>
   process.env.POCKET_MANAGER_SUPABASE_URL ??
   process.env.PM_SUPABASE_URL ??
   process.env.EXPO_PUBLIC_PM_SUPABASE_URL ??
-  process.env.EXPO_PUBLIC_SUPABASE_URL;
+  process.env.EXPO_PUBLIC_SUPABASE_URL ??
+  process.env.SUPABASE_URL;
 
 export function getSupabaseAdmin(): SupabaseClient {
   if (cachedAdmin) {

@@ -12,6 +12,11 @@ export type HierarchySummary = {
   region_name: string | null;
   district_name: string | null;
   shop_number: string | null;
+  shops_in_district: number | null;
+  districts_in_region: number | null;
+  shops_in_region: number | null;
+  regions_in_division: number | null;
+  shops_in_division: number | null;
 };
 
 export type ShopMeta = {

@@ -38,6 +38,12 @@ export type PocketManagerSnapshot = {
     completionPct: number;
     inTrainingCount: number;
   };
+  development: {
+    activePlans: number;
+    completedPlans: number;
+    onHoldPlans: number;
+    avgActiveDays: number;
+  };
   cadence: {
     dailyPct: number;
     weeklyPct: number;
@@ -82,6 +88,12 @@ export const EMPTY_SNAPSHOT: PocketManagerSnapshot = {
   training: {
     completionPct: 0,
     inTrainingCount: 0,
+  },
+  development: {
+    activePlans: 0,
+    completedPlans: 0,
+    onHoldPlans: 0,
+    avgActiveDays: 0,
   },
   cadence: {
     dailyPct: 0,
@@ -129,6 +141,12 @@ type StaffRow = {
 type TrainingRow = {
   id: string;
   training_status: string | null;
+};
+
+type DevelopmentRow = {
+  id: string;
+  status: string | null;
+  started_at: string | null;
 };
 
 type CadenceRow = {
@@ -259,6 +277,7 @@ export async function fetchPocketManagerSnapshot(shopNumberInput: number | strin
     laborWeekRows,
     staffRows,
     trainingRows,
+    developmentRows,
     cadenceTodayRows,
     cadenceWeekRows,
     challengesTodayRows,
@@ -304,6 +323,13 @@ export async function fetchPocketManagerSnapshot(shopNumberInput: number | strin
         .select("id, training_status")
         .eq("shop_id", shopKey),
       "employee_training"
+    ),
+    handleList<DevelopmentRow>(
+      supabase
+        .from("employee_development")
+        .select("id, status, started_at")
+        .eq("shop_id", shopKey),
+      "employee_development"
     ),
     handleList<CadenceRow>(
       supabase
@@ -430,6 +456,22 @@ export async function fetchPocketManagerSnapshot(shopNumberInput: number | strin
     ? Math.round((completedTraining / trainingRows.length) * 100)
     : 0;
 
+  const activeDevelopmentRows = developmentRows.filter((row) => row.status === "active");
+  const completedDevelopment = developmentRows.filter((row) => row.status === "completed").length;
+  const onHoldDevelopment = developmentRows.filter((row) => row.status === "on_hold").length;
+  let totalActiveAges = 0;
+  activeDevelopmentRows.forEach((row) => {
+    if (!row.started_at) return;
+    const started = new Date(row.started_at);
+    if (Number.isNaN(started.getTime())) return;
+    const diffMs = now.getTime() - started.getTime();
+    if (diffMs < 0) return;
+    totalActiveAges += Math.round(diffMs / (1000 * 60 * 60 * 24));
+  });
+  const avgActiveDays = activeDevelopmentRows.length
+    ? Math.round(totalActiveAges / activeDevelopmentRows.length)
+    : 0;
+
   const cadenceDailyPct = cadenceTodayRows.length
     ? Math.round(
         (cadenceTodayRows.filter((row) => row.completed).length / cadenceTodayRows.length) * 100
@@ -493,6 +535,12 @@ export async function fetchPocketManagerSnapshot(shopNumberInput: number | strin
     training: {
       completionPct: trainingCompletionPct,
       inTrainingCount,
+    },
+    development: {
+      activePlans: activeDevelopmentRows.length,
+      completedPlans: completedDevelopment,
+      onHoldPlans: onHoldDevelopment,
+      avgActiveDays,
     },
     cadence: {
       dailyPct: cadenceDailyPct,

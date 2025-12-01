@@ -1,3 +1,5 @@
+import { getRetailCalendarInfo } from "@/lib/retailTimestamp";
+
 export const shortDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
 export const DM_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const DM_VISIT_BADGES: Record<string, string> = {
@@ -57,8 +59,12 @@ export const DM_SCHEDULE_BLUEPRINT: ScheduleBlueprint[] = [
   { week: 4, weekday: 4, shopId: "home", visitType: "Admin", focus: "Close period + recap", status: "planned" },
 ];
 
-const RETAIL_PERIOD_PATTERN = [5, 4, 4, 5, 4, 4, 5, 4, 4, 5, 4, 4] as const;
-const MS_IN_DAY = 86_400_000;
+const SHOP_COUNT = DM_COVERAGE_SHOPS.length;
+const VISIT_REQUIREMENT_PATTERN: Record<1 | 2 | 3, Record<string, number>> = {
+  1: { "Plan To Win": 1, "Standard Visit": 1 },
+  2: { "Standard Visit": 2 },
+  3: { "Standard Visit": 1, "Quarterly Audit": 1 },
+};
 
 export type RetailPeriodInfo = {
   period: number;
@@ -89,43 +95,14 @@ export type SampleScheduleEntry = {
 };
 
 export const getRetailPeriodInfo = (targetDate: Date = new Date()): RetailPeriodInfo => {
-  const fiscalAnchor = new Date(targetDate.getFullYear() - 1, 11, 31);
-  while (fiscalAnchor.getDay() !== 0) {
-    fiscalAnchor.setDate(fiscalAnchor.getDate() - 1);
-  }
-
-  const cursorStart = new Date(fiscalAnchor);
-  for (let index = 0; index < RETAIL_PERIOD_PATTERN.length; index += 1) {
-    const weeks = RETAIL_PERIOD_PATTERN[index];
-    const periodEnd = new Date(cursorStart);
-    periodEnd.setDate(periodEnd.getDate() + weeks * 7 - 1);
-
-    if (targetDate >= cursorStart && targetDate <= periodEnd) {
-      const weeksIntoPeriod = Math.floor((targetDate.getTime() - cursorStart.getTime()) / MS_IN_DAY / 7) + 1;
-      return {
-        period: index + 1,
-        quarter: Math.floor(index / 3) + 1,
-        weekOfPeriod: Math.max(weeksIntoPeriod, 1),
-        weeksInPeriod: weeks,
-        startDate: new Date(cursorStart),
-        endDate: periodEnd,
-      };
-    }
-
-    cursorStart.setDate(cursorStart.getDate() + weeks * 7);
-  }
-
-  const fallbackWeeks = RETAIL_PERIOD_PATTERN[RETAIL_PERIOD_PATTERN.length - 1];
-  const fallbackStart = new Date(cursorStart);
-  const fallbackEnd = new Date(cursorStart);
-  fallbackEnd.setDate(fallbackEnd.getDate() + fallbackWeeks * 7 - 1);
+  const { period, quarter, weekOfPeriod, weeksInPeriod, periodStart, periodEnd } = getRetailCalendarInfo(targetDate);
   return {
-    period: 12,
-    quarter: 4,
-    weekOfPeriod: fallbackWeeks,
-    weeksInPeriod: fallbackWeeks,
-    startDate: fallbackStart,
-    endDate: fallbackEnd,
+    period,
+    quarter,
+    weekOfPeriod,
+    weeksInPeriod,
+    startDate: periodStart,
+    endDate: periodEnd,
   };
 };
 
@@ -216,48 +193,28 @@ export const buildVisitMix = (entries: SampleScheduleEntry[]) => {
     .map(([type, count]) => ({ type, count }));
 };
 
-export const getVisitsDueForPeriod = (period: number): string[] => {
-  const visitsDue: string[] = [];
+export const getVisitRequirementsForPeriod = (period: number, shopCount: number = SHOP_COUNT) => {
   const positionInCycle = ((period - 1) % 3) + 1;
+  const perShopRequirements = VISIT_REQUIREMENT_PATTERN[positionInCycle as 1 | 2 | 3] ?? VISIT_REQUIREMENT_PATTERN[1];
+  const totalShops = Math.max(shopCount, 1);
 
-  switch (positionInCycle) {
-    case 1:
-      visitsDue.push("Plan To Win");
-      visitsDue.push("Standard Visit");
-      break;
-    case 2:
-      visitsDue.push("Standard Visit");
-      visitsDue.push("Standard Visit");
-      break;
-    case 3:
-      visitsDue.push("Quarterly Audit");
-      visitsDue.push("Standard Visit");
-      break;
-    default:
-      break;
-  }
-
-  return visitsDue;
+  return Object.entries(perShopRequirements).map(([type, perShopCount]) => ({
+    type,
+    required: perShopCount * totalShops,
+  }));
 };
 
 export const buildDueChecklist = (entries: SampleScheduleEntry[], period: number) => {
-  const dueCounts = getVisitsDueForPeriod(period).reduce<Record<string, number>>((acc, visit) => {
-    acc[visit] = (acc[visit] ?? 0) + 1;
-    return acc;
-  }, {});
-
+  const requirements = getVisitRequirementsForPeriod(period);
   const actualCounts = entries.reduce<Record<string, number>>((acc, entry) => {
     acc[entry.visitType] = (acc[entry.visitType] ?? 0) + 1;
     return acc;
   }, {});
 
-  return Object.entries(dueCounts).map(([type, required]) => {
-    const actual = actualCounts[type] ?? 0;
-    return {
-      type,
-      required,
-      actual,
-      met: actual >= required,
-    };
-  });
+  return requirements.map(({ type, required }) => ({
+    type,
+    required,
+    actual: actualCounts[type] ?? 0,
+    met: (actualCounts[type] ?? 0) >= required,
+  }));
 };

@@ -18,7 +18,17 @@ const getYearAnchor = (year: number) => {
   return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
 };
 
-const getRetailCalendarInfo = (rawDate: Date) => {
+export type RetailCalendarInfo = {
+  quarter: number;
+  period: number;
+  weekOfPeriod: number;
+  weeksInPeriod: number;
+  periodStart: Date;
+  periodEnd: Date;
+  formattedDate: string;
+};
+
+export const getRetailCalendarInfo = (rawDate: Date = new Date()): RetailCalendarInfo => {
   const date = new Date(rawDate.getFullYear(), rawDate.getMonth(), rawDate.getDate());
 
   let fiscalYear = date.getFullYear();
@@ -32,9 +42,7 @@ const getRetailCalendarInfo = (rawDate: Date) => {
   const weeksInYear = Math.round((nextYearStart.getTime() - yearStart.getTime()) / MS_PER_WEEK);
   const hasLeapWeek = weeksInYear > 52;
 
-  let period = 12;
-  let quarter = 4;
-  let weekOfPeriod = PERIOD_WEEK_PATTERN[2];
+  let resolvedInfo: RetailCalendarInfo | null = null;
   const cursor = new Date(yearStart);
 
   for (let index = 0; index < 12; index += 1) {
@@ -48,25 +56,43 @@ const getRetailCalendarInfo = (rawDate: Date) => {
     periodEnd.setDate(periodEnd.getDate() + weeksInPeriod * 7 - 1);
 
     if (date >= periodStart && date <= periodEnd) {
-      period = index + 1;
-      quarter = Math.floor(index / 3) + 1;
       const elapsed = date.getTime() - periodStart.getTime();
-      weekOfPeriod = Math.floor(elapsed / MS_PER_WEEK) + 1;
+      const weekOfPeriod = Math.min(weeksInPeriod, Math.max(Math.floor(elapsed / MS_PER_WEEK) + 1, 1));
+      resolvedInfo = {
+        quarter: Math.floor(index / 3) + 1,
+        period: index + 1,
+        weekOfPeriod,
+        weeksInPeriod,
+        periodStart,
+        periodEnd,
+        formattedDate: formatDate(date),
+      };
       break;
     }
 
     cursor.setDate(cursor.getDate() + weeksInPeriod * 7);
   }
 
-  return {
-    quarter,
-    period,
-    week: Math.max(weekOfPeriod, 1),
-    formattedDate: formatDate(date),
-  };
+  if (!resolvedInfo) {
+    const fallbackWeeks = PERIOD_WEEK_PATTERN[PERIOD_WEEK_PATTERN.length - 1];
+    const periodStart = new Date(cursor);
+    const periodEnd = new Date(cursor);
+    periodEnd.setDate(periodEnd.getDate() + fallbackWeeks * 7 - 1);
+    resolvedInfo = {
+      quarter: 4,
+      period: 12,
+      weekOfPeriod: fallbackWeeks,
+      weeksInPeriod: fallbackWeeks,
+      periodStart,
+      periodEnd,
+      formattedDate: formatDate(date),
+    };
+  }
+
+  return resolvedInfo;
 };
 
 export const buildRetailTimestampLabel = (targetDate: Date = new Date()): string => {
-  const { quarter, period, week, formattedDate } = getRetailCalendarInfo(new Date(targetDate));
-  return `Q${quarter}-P${period}-W${week} ${formattedDate}`;
+  const { quarter, period, weekOfPeriod, formattedDate } = getRetailCalendarInfo(new Date(targetDate));
+  return `Q${quarter}-P${period}-W${weekOfPeriod} ${formattedDate}`;
 };

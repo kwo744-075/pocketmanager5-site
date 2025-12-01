@@ -13,10 +13,17 @@ export type FormField =
       step?: number;
     }
   | {
+      type: "hidden";
+      name: string;
+      defaultValue?: string;
+      required?: boolean;
+    }
+  | {
       type: "select";
       name: string;
       label: string;
-      options: Array<{ label: string; value: string }>;
+      options?: Array<{ label: string; value: string }>;
+      optionsSource?: "alignedShops";
       placeholder?: string;
       helpText?: string;
       required?: boolean;
@@ -82,10 +89,10 @@ export const FORM_REGISTRY: FormConfig[] = [
     successMessage: "Visit plan saved locally — push to Supabase when ready.",
     sections: [
       {
-        title: "Visit overview",
-        description: "Lock the date, shop, and visit focus before sharing with your district team.",
+        title: "Visit details",
+        description: "Date is locked from the calendar — just choose the visit focus and aligned shop.",
         fields: [
-          { type: "date", name: "visitDate", label: "Visit date", required: true },
+          { type: "hidden", name: "visitDate", required: true },
           {
             type: "select",
             name: "visitType",
@@ -94,77 +101,13 @@ export const FORM_REGISTRY: FormConfig[] = [
             options: DM_VISIT_TYPES.map((label) => ({ label, value: label })),
           },
           {
-            type: "text",
-            name: "shopNumber",
-            label: "Shop number",
-            placeholder: "Shop 1245",
-            required: true,
-          },
-          {
             type: "select",
-            name: "visitWindow",
-            label: "Visit window",
-            options: [
-              { label: "AM focus", value: "am" },
-              { label: "PM focus", value: "pm" },
-              { label: "Full day", value: "full-day" },
-            ],
-            placeholder: "Full day",
-          },
-        ],
-      },
-      {
-        title: "Prep checklist",
-        description: "Validate cadence and reporting touch-points ahead of the visit.",
-        fields: [
-          {
-            type: "checklist",
-            name: "prepChecklist",
-            label: "Pre-visit confirmations",
-            helpText: "Mark the items you have already reviewed.",
-            items: [
-              { id: "pulse", label: "Pulse totals & KPIs reviewed" },
-              { id: "labor", label: "Labor plan vs actual pulled" },
-              { id: "training", label: "Training tracker updated" },
-              { id: "inventory", label: "Inventory & workbook notes captured" },
-              { id: "ops", label: "OPS action log scrubbed" },
-            ],
-          },
-          {
-            type: "textarea",
-            name: "prepNotes",
-            label: "Additional prep notes",
-            placeholder: "Key context, partner alignment, roadblocks…",
-          },
-        ],
-      },
-      {
-        title: "Visit focus",
-        description: "Outline the three systems you will drive during the visit.",
-        fields: [
-          {
-            type: "textarea",
-            name: "peopleFocus",
-            label: "People / staffing focus",
-            placeholder: "Pipeline gaps, coaching priorities, recruiting commitments…",
-          },
-          {
-            type: "textarea",
-            name: "operationsFocus",
-            label: "Operations focus",
-            placeholder: "Mix, compliance, playbook execution, facility needs…",
-          },
-          {
-            type: "textarea",
-            name: "growthFocus",
-            label: "Growth + brand moments",
-            placeholder: "Donations, CSI follow-up, marketing plays, partner visits…",
-          },
-          {
-            type: "text",
-            name: "successMetrics",
-            label: "Success metrics",
-            placeholder: "e.g., 2 coaching commitments, refreshed 30-60-90, logbook entry submitted",
+            name: "shopNumber",
+            label: "Aligned shop",
+            placeholder: "Select shop",
+            helpText: "Pulled from your district alignment.",
+            required: true,
+            optionsSource: "alignedShops",
           },
         ],
       },
