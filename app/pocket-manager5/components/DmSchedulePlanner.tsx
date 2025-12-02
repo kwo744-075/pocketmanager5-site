@@ -20,11 +20,14 @@ import {
   type SampleScheduleEntry,
 } from "./dmScheduleUtils";
 
-const longPeriodDateFormatter = new Intl.DateTimeFormat("en-US", {
-  month: "short",
+const numericPeriodDateFormatter = new Intl.DateTimeFormat("en-US", {
+  month: "numeric",
   day: "numeric",
   year: "numeric",
 });
+
+const formatPeriodRangeLabel = (start: Date, end: Date) =>
+  `${numericPeriodDateFormatter.format(start)} - ${numericPeriodDateFormatter.format(end)}`;
 
 export const useSampleScheduleData = () => {
   const today = useMemo(() => new Date(), []);
@@ -300,7 +303,7 @@ export function DmSchedulePlanner({
     current: false,
     next: false,
   });
-  const { periodPanels } = useDmSchedulePlannerData({
+  const { periodPanels, visitMix, coverageSummary, coverageHeadline } = useDmSchedulePlannerData({
     scheduleEntries: scheduleEntriesProp,
     calendarGrid: calendarGridProp,
     periodInfo: periodInfoProp,
@@ -398,9 +401,20 @@ export function DmSchedulePlanner({
     [activeSelectedDate, handleDaySelection],
   );
 
+  const visibleVisitMix = visitMix.filter((mix) => mix.count > 0);
+  const coverageTiles = coverageSummary.slice(0, 6);
+
   return (
     <div className="space-y-5">
       <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4">
+        {visibleVisitMix.length > 0 && (
+          <p className="mb-4 text-[12px] text-slate-300">
+            <span className="font-semibold uppercase tracking-[0.3em] text-emerald-200">Visit mix:&nbsp;</span>
+            <span className="text-slate-100">
+              {visibleVisitMix.map((mix) => `${mix.type} – ${mix.count}`).join(" · ")}
+            </span>
+          </p>
+        )}
         <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-[0.3em] text-slate-500">
           {DM_DAY_NAMES.map((day) => (
             <span key={day} className="text-center">
@@ -412,6 +426,19 @@ export function DmSchedulePlanner({
           {periodPanels.map((panel) => {
             const isCleared = clearedPanels[panel.key];
             const entryLookup = isCleared ? {} : panel.entries;
+            const flattenedEntries = Object.values(entryLookup).flat();
+            const entryTypeCounts = flattenedEntries.reduce<Record<string, number>>((acc, entry) => {
+              acc[entry.visitType] = (acc[entry.visitType] ?? 0) + 1;
+              return acc;
+            }, {});
+            const panelVisitCount = flattenedEntries.filter((entry) => entry.visitType !== "Off").length;
+            const totalRequired = panel.dueSummary.reduce((sum, due) => sum + due.count, 0);
+            const totalScheduled = panel.dueSummary.reduce(
+              (sum, due) => sum + (entryTypeCounts[due.type] ?? 0),
+              0,
+            );
+            const auditHeadline = totalRequired > 0 ? `${totalScheduled}/${totalRequired}` : `${totalScheduled}`;
+            const periodRangeLabel = formatPeriodRangeLabel(panel.info.startDate, panel.info.endDate);
             return (
               <div key={panel.key} className="rounded-2xl border border-white/5 bg-slate-950/60 p-3 md:p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
@@ -421,10 +448,11 @@ export function DmSchedulePlanner({
                       <span className="rounded-full bg-blue-500/90 px-2.5 py-0.5 tracking-wide">Q{panel.info.quarter}</span>
                       <span className="rounded-full bg-emerald-500/90 px-2.5 py-0.5 tracking-wide">P{panel.info.period}</span>
                       <span className="rounded-full bg-amber-500/90 px-2.5 py-0.5 tracking-wide">Wk{panel.info.weekOfPeriod}</span>
-                      <span className="text-[10px] uppercase tracking-wide text-slate-400">
-                        {longPeriodDateFormatter.format(panel.info.startDate)}
-                      </span>
                     </div>
+                    <p className="mt-2 text-[11px] text-slate-300">
+                      {panel.key === "current" ? `Period ending ${periodRangeLabel}` : periodRangeLabel}
+                    </p>
+                    <p className="mt-1 text-xs text-slate-300">Visits locked: {panelVisitCount}</p>
                   </div>
                   <div className="flex flex-col items-end gap-3 text-right">
                     <button
@@ -435,14 +463,22 @@ export function DmSchedulePlanner({
                       {isCleared ? "Restore period" : "Clear period"}
                     </button>
                     <div className="min-w-[180px]">
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Audits due</p>
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
+                        Required audits scheduled {auditHeadline}
+                      </p>
                       <ul className="mt-1 space-y-0.5 text-[11px] text-slate-200">
-                        {panel.dueSummary.map((item) => (
-                          <li key={`${panel.key}-${item.type}`} className="flex items-center justify-end gap-2">
-                            <span>{item.type}</span>
-                            <span className="text-slate-500">×{item.count}</span>
-                          </li>
-                        ))}
+                        {panel.dueSummary.map((item) => {
+                          const scheduled = entryTypeCounts[item.type] ?? 0;
+                          const metRequirement = scheduled >= item.count;
+                          return (
+                            <li key={`${panel.key}-${item.type}`} className="flex items-center justify-between gap-2">
+                              <span>{item.type}</span>
+                              <span className={metRequirement ? "text-emerald-300" : "text-slate-500"}>
+                                {scheduled}/{item.count}
+                              </span>
+                            </li>
+                          );
+                        })}
                       </ul>
                     </div>
                   </div>
@@ -463,6 +499,26 @@ export function DmSchedulePlanner({
             <span className="inline-flex items-center gap-1">
               <span className={`h-2 w-2 rounded-full ${DM_STATUS_DOTS.planned}`} /> Planned
             </span>
+          </div>
+        )}
+        {coverageTiles.length > 0 && (
+          <div className="mt-6 space-y-3">
+            <div className="flex flex-wrap items-center justify-between text-[10px] uppercase tracking-[0.3em] text-slate-500">
+              <span>Shop coverage snapshot</span>
+              <span className="text-emerald-200">{coverageHeadline}</span>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {coverageTiles.map((shop) => (
+                <div
+                  key={shop.shopId}
+                  className={`rounded-2xl border border-slate-800/60 bg-slate-950/40 px-3 py-2 text-left ${shop.toneClass}`}
+                >
+                  <p className="text-[11px] text-slate-200/80">{shop.label}</p>
+                  <p className="text-lg font-semibold text-white">{shop.count} visits</p>
+                  <p className={`text-[10px] font-semibold ${shop.badgeClass}`}>{shop.statusLabel}</p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
       </div>
