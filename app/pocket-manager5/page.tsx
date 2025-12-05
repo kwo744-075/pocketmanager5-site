@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { Component, Suspense, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import { BrandWordmark } from "@/app/components/BrandWordmark";
-import { HierarchyStamp } from "@/app/components/HierarchyStamp";
 import { RetailPills } from "@/app/components/RetailPills";
 import {
   AlarmClock,
@@ -110,20 +109,6 @@ const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
         href: "/pocket-manager5/features/daily-log",
         icon: FileText,
         accent: "from-emerald-500/30 via-emerald-500/5 to-transparent",
-      },
-      {
-        label: "DM Schedule",
-        description: "Visit planning + cadence",
-        href: "/pocket-manager5/features/dm-schedule",
-        icon: CalendarDays,
-        accent: "from-cyan-500/30 via-cyan-500/5 to-transparent",
-      },
-      {
-        label: "Pulse Check 5",
-        description: "District rollups",
-        href: "/pulse-check5",
-        icon: TrendingUp,
-        accent: "from-sky-500/30 via-sky-500/5 to-transparent",
       },
     ],
   },
@@ -415,15 +400,14 @@ function QuickActionLink({ icon: Icon, label, description, href, accent }: Quick
 
 type HeroSectionProps = {
   heroName: string;
-  hierarchy: HierarchySummary | null;
-  hierarchyLoading: boolean;
-  hierarchyError: string | null;
   loginEmail: string | null;
   appendShopHref: ShopHrefAppender;
 };
 
-function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, loginEmail, appendShopHref }: HeroSectionProps) {
+function HeroSection({ heroName, loginEmail, appendShopHref }: HeroSectionProps) {
   const homeShortcutHref = appendShopHref("/") ?? "/";
+  const pulseShortcutHref = appendShopHref("/pulse-check5") ?? "/pulse-check5";
+  const loginDisplay = loginEmail ?? heroName;
 
   return (
     <header className="rounded-3xl border border-slate-900/70 bg-gradient-to-br from-slate-950 via-slate-950/90 to-slate-900/40 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
@@ -431,50 +415,26 @@ function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, lo
         <div className="space-y-5">
           <div className="flex flex-wrap items-center gap-3">
             <BrandWordmark brand="pocket" mode="dark" className="text-4xl" />
-            <span className="inline-flex items-center rounded-full border border-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-400">
-              Pocket Manager 5
-            </span>
-          </div>
-          <div className="flex flex-wrap items-stretch gap-3">
-            <div className="flex-1 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
-              <RetailPills />
-            </div>
             <Link
               href={homeShortcutHref}
-              className="min-w-[160px] shrink-0 rounded-2xl border border-emerald-400/40 bg-emerald-500/5 px-4 py-3 text-left shadow-inner shadow-emerald-500/10 transition hover:-translate-y-0.5 hover:border-emerald-300/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"
+              className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-100 transition hover:border-emerald-300/70"
             >
-              <div className="flex items-center gap-3">
-                <span className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-2 text-emerald-200">
-                  <ThumbsUp className="h-5 w-5" />
-                </span>
-                <div>
-                  <p className="text-sm font-semibold text-white">Home Screen</p>
-                  <p className="text-xs text-emerald-100/80">Pocket Manager hub</p>
-                </div>
-              </div>
+              <ThumbsUp className="h-3.5 w-3.5" /> Home
             </Link>
           </div>
-          <p className="text-lg leading-relaxed text-slate-200">Brining it all together</p>
-        </div>
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-900/70 bg-slate-950/80 p-4">
-            <div className="flex flex-col gap-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Signed in</p>
-                <p className="text-lg font-semibold text-white">{heroName}</p>
-                {loginEmail ? <p className="text-sm text-slate-400">{loginEmail}</p> : null}
-              </div>
-              <div className="rounded-xl border border-slate-800/70 bg-slate-900/50 p-3">
-                {hierarchyLoading ? (
-                  <p className="text-sm text-slate-400">Loading scope...</p>
-                ) : hierarchyError ? (
-                  <p className="text-sm text-amber-200">{hierarchyError}</p>
-                ) : (
-                  <HierarchyStamp hierarchy={hierarchy} loginEmail={loginEmail} />
-                )}
-              </div>
-            </div>
+          <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
+            <RetailPills />
           </div>
+          <p className="text-lg leading-relaxed text-slate-200">Bringing it all together</p>
+        </div>
+        <div className="rounded-2xl border border-slate-900/70 bg-slate-950/80 p-4">
+          <p className="text-2xl font-semibold text-white">{loginDisplay}</p>
+          <Link
+            href={pulseShortcutHref}
+            className="mt-4 inline-flex items-center gap-2 rounded-full border border-sky-400/40 bg-sky-500/10 px-4 py-2 text-sm font-semibold text-sky-100 transition hover:border-sky-300"
+          >
+            <TrendingUp className="h-4 w-4" /> Pulse Check 5
+          </Link>
         </div>
       </div>
     </header>
@@ -2492,8 +2452,6 @@ export default function PocketManagerPage() {
     loginEmail,
     storedShopName,
     hierarchy,
-    hierarchyLoading,
-    hierarchyError,
     shopMeta,
   } = usePocketHierarchy();
   const appendShopHref = useShopHrefAppender();
@@ -2525,14 +2483,7 @@ export default function PocketManagerPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
-        <HeroSection
-          heroName={heroName}
-          hierarchy={hierarchy}
-          hierarchyLoading={hierarchyLoading}
-          hierarchyError={hierarchyError}
-          loginEmail={loginEmail}
-          appendShopHref={appendShopHref}
-        />
+        <HeroSection heroName={heroName} loginEmail={loginEmail} appendShopHref={appendShopHref} />
         <QuickActionsRail appendShopHref={appendShopHref} />
         <div className="grid gap-6 xl:grid-cols-3">
           <div className="space-y-6">

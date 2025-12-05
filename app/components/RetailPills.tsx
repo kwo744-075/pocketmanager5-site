@@ -55,7 +55,9 @@ export function RetailPills() {
       <span className={`${pillBase} bg-blue-500/90`}>{q}</span>
       <span className={`${pillBase} bg-emerald-500/90`}>{p}</span>
       <span className={`${pillBase} bg-amber-500/90`}>{w}</span>
-      <span className="text-[10px] uppercase tracking-wide text-slate-400">{d}</span>
+      <span className="text-[10px] uppercase tracking-wide text-slate-300" style={{ textShadow: "none" }}>
+        {d}
+      </span>
     </div>
   );
 }

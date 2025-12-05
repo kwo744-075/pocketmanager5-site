@@ -39,6 +39,10 @@ body {
   padding-right: 2rem;
 }
 
+.brand-wordmark--pocket {
+  padding-right: 1.5rem;
+}
+
 .brand-wordmark--no-badge {
   padding-right: 0;
 }
@@ -83,8 +87,8 @@ body {
 
 /* Slight tweaks so the 5 sits above the “er” in Manager */
 .brand-wordmark--pocket .brand-wordmark__badge {
-  top: 0.18em; /* grazes the Pocket "t" */
-  right: -0.35em;
+  top: 0.12em; /* grazes the Pocket "t" */
+  right: -0.6em;
 }
 
 /* Pulse badge can sit slightly higher */
