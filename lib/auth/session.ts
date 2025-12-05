@@ -25,7 +25,7 @@ export type ServerSession = {
 
 
 export async function getServerSession(): Promise<ServerSession> {
-  const cookieStore = cookies();
+  const cookieStore = await cookies();
   const supabase = createServerClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
     cookies: {
       getAll() {
@@ -79,6 +79,6 @@ export async function requireAlignmentContext() {
   return session;
 }
 
-export function getDefaultAlignmentCookieName() {
+export async function getDefaultAlignmentCookieName() {
   return ACTIVE_ALIGNMENT_COOKIE;
 }

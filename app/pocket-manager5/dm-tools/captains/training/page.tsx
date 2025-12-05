@@ -1,25 +1,58 @@
+import { CalendarClock, GraduationCap, LayoutList, Users } from "lucide-react";
 import { CaptainsTopBar } from "../components/CaptainsTopBar";
-import { ComingSoonPanel } from "../components/ComingSoonPanel";
+import { CaptainLanding, type CaptainLandingCard } from "../components/CaptainLanding";
 
-const BULLETS = [
-  "CTT / LMS module completion tracker with overdue callouts",
-  "Bench readiness matrix for ASM → GM progression",
-  "Ride-along + certification scheduling",
-  "Training demand forecast vs. capacity",
-  "Shareable coaching plans per store",
+const TRAINING_CARDS: CaptainLandingCard[] = [
+  {
+    title: "Completion Tracker",
+    description: "Placeholder for CTT / LMS module completion with overdue callouts.",
+    status: "Concept",
+    badge: "SOON",
+    badgeTone: "text-rose-200 border-rose-400/70",
+    icon: GraduationCap,
+    disabled: true,
+  },
+  {
+    title: "Bench Readiness",
+    description: "Future matrix for ASM → GM progression and readiness tags.",
+    status: "Concept",
+    badge: "SOON",
+    badgeTone: "text-rose-200 border-rose-400/70",
+    icon: Users,
+    disabled: true,
+  },
+  {
+    title: "Ride-along Scheduling",
+    description: "Reserved for ride-along + certification scheduling tools.",
+    status: "Concept",
+    badge: "SOON",
+    badgeTone: "text-rose-200 border-rose-400/70",
+    icon: CalendarClock,
+    disabled: true,
+  },
+  {
+    title: "Coaching Plans",
+    description: "Placeholder for shareable coaching plan templates per store.",
+    status: "Concept",
+    badge: "SOON",
+    badgeTone: "text-rose-200 border-rose-400/70",
+    icon: LayoutList,
+    disabled: true,
+  },
 ];
 
 export default function TrainingCaptainPage() {
   return (
-    <div>
+    <div className="space-y-8">
       <CaptainsTopBar
         title="Training & Development Captain"
         description="Track certification pipelines and coaching plans in one space."
       />
-      <ComingSoonPanel
-        title="Training Captain is nearly here"
-        description="We are pairing LMS feeds with coaching plans so you can see completion, gaps, and readiness without spreadsheets."
-        bullets={BULLETS}
+      <CaptainLanding
+        eyebrow="Training hub"
+        title="Development modules warming up"
+        description="We will light up each card as LMS + coaching feeds are wired."
+        cards={TRAINING_CARDS}
       />
     </div>
   );

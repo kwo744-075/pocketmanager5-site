@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
-import { formatRecognitionMetricValue, RECOGNITION_METRICS } from "@shared/features/recognition-captain/config";
+import { formatRecognitionMetricValue, RECOGNITION_METRICS } from "@/lib/recognition-captain/config";
+import type { CelebrationEntry, ConfirmationRow, ManualAwardEntry } from "@/lib/recognition-captain/types";
 import { loadRecognitionRun, RecognitionRunNotFoundError, type RecognitionRunRecord } from "../run-utils";
 
 export const dynamic = "force-dynamic";
@@ -8,13 +9,19 @@ export const runtime = "nodejs";
 
 type SummaryExportRequest = {
   runId?: string | null;
+  manualAwards?: ManualAwardEntry[];
+  confirmations?: ConfirmationRow[];
+  birthdays?: CelebrationEntry[];
 };
 
 export async function POST(request: Request) {
   try {
     const body = await readRequestBody<SummaryExportRequest>(request);
     const run = await loadRecognitionRun(body.runId);
-    const csv = buildSummaryCsv(run);
+    const manualAwards = body.manualAwards ?? run.manualAwards ?? [];
+    const confirmations = body.confirmations ?? run.confirmations ?? [];
+    const birthdays = body.birthdays ?? run.birthdays ?? [];
+    const csv = buildSummaryCsv(run, manualAwards, confirmations, birthdays);
     const downloadUrl = `data:text/csv;base64,${Buffer.from(csv, "utf8").toString("base64")}`;
 
     return NextResponse.json({
@@ -44,7 +51,12 @@ async function readRequestBody<T>(request: Request): Promise<T> {
   }
 }
 
-function buildSummaryCsv(run: RecognitionRunRecord): string {
+function buildSummaryCsv(
+  run: RecognitionRunRecord,
+  manualAwards: ManualAwardEntry[],
+  confirmations: ConfirmationRow[],
+  birthdays: CelebrationEntry[],
+): string {
   const rows: (string | number)[][] = [];
 
   rows.push(["Recognition Run ID", run.id]);
@@ -108,6 +120,59 @@ function buildSummaryCsv(run: RecognitionRunRecord): string {
       ...metricValues,
     ]);
   });
+
+  if (manualAwards.length) {
+    rows.push([]);
+    rows.push(["Manual Awards"]);
+    rows.push(["Level", "Award", "Winner", "Shop", "Rationale", "Captured By"]);
+    manualAwards.forEach((entry) => {
+      rows.push([
+        entry.level,
+        entry.title,
+        entry.winnerName,
+        entry.winnerShop ? `#${entry.winnerShop}` : "—",
+        entry.rationale || "—",
+        entry.createdBy ?? "—",
+      ]);
+    });
+  }
+
+  const notedConfirmations = confirmations.filter((row) => {
+    const dm = row.dmNote?.trim();
+    const rd = row.rdNote?.trim();
+    return Boolean(dm || rd);
+  });
+
+  if (notedConfirmations.length) {
+    rows.push([]);
+    rows.push(["Confirmation Notes"]);
+    rows.push(["Award", "Winner", "Shop", "DM Note", "RD Note"]);
+    notedConfirmations.forEach((row) => {
+      rows.push([
+        row.awardLabel,
+        row.winnerName,
+        row.shopLabel ?? (row.shopNumber ? `#${row.shopNumber}` : "—"),
+        row.dmNote ?? "",
+        row.rdNote ?? "",
+      ]);
+    });
+  }
+
+  if (birthdays.length) {
+    rows.push([]);
+    rows.push(["Upcoming Birthdays"]);
+    rows.push(["Name", "Shop", "Date", "Days Until", "Favorite Treat", "Celebration Notes"]);
+    birthdays.forEach((entry) => {
+      rows.push([
+        entry.name,
+        entry.shopNumber,
+        entry.dateLabel,
+        entry.daysUntil,
+        entry.favoriteTreat ?? "",
+        entry.celebrationNotes ?? entry.note ?? "",
+      ]);
+    });
+  }
 
   return rows.map((cells) => cells.map(csvEscape).join(",")).join("\n");
 }

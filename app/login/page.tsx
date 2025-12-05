@@ -81,6 +81,19 @@ const LOGIN_SCOPES: {
   },
 ];
 
+const LOCAL_LOGIN_COOKIE = "pm-local-login";
+
+const persistLegacyAuthCookie = (login: string | null) => {
+  if (typeof document === "undefined") return;
+  if (login) {
+    const encoded = encodeURIComponent(login);
+    const maxAge = 60 * 60 * 24 * 30; // 30 days
+    document.cookie = `${LOCAL_LOGIN_COOKIE}=${encoded}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  } else {
+    document.cookie = `${LOCAL_LOGIN_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+  }
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -131,6 +144,7 @@ export default function LoginPage() {
 
       if (!matchedLogin) {
         setError("Invalid email or password.");
+        persistLegacyAuthCookie(null);
         return;
       }
 
@@ -157,6 +171,7 @@ export default function LoginPage() {
       localStorage.setItem("userDivision", row.Division ?? "");
       localStorage.setItem("userRegion", row.Region ?? "");
       localStorage.setItem("userDistrict", row.District ?? "");
+      persistLegacyAuthCookie(loginEmail);
 
       if (scopeLevel === "SHOP") {
         localStorage.setItem("shopStore", String(row.store ?? ""));
@@ -183,6 +198,7 @@ export default function LoginPage() {
     } catch (err) {
       console.error("Unexpected login error:", err);
       setError("Unexpected error – please try again.");
+      persistLegacyAuthCookie(null);
     } finally {
       setLoading(false);
     }

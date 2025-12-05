@@ -2,9 +2,11 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { createServerClient } from "@supabase/auth-helpers-nextjs";
 import { loadAlignmentContextForUser } from "./lib/auth/alignment";
+import { LOGIN_BYPASS_ENABLED } from "./lib/auth/bypass";
 
 const PUBLIC_PATHS = new Set(["/login", "/auth/callback", "/auth/error", "/health"]);
 const ACTIVE_ALIGNMENT_COOKIE = "pm-active-alignment";
+const LEGACY_LOGIN_COOKIE = "pm-local-login";
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -19,6 +21,9 @@ const isBypassedPath = (pathname: string) => {
 };
 
 export async function middleware(request: NextRequest) {
+  if (LOGIN_BYPASS_ENABLED) {
+    return NextResponse.next();
+  }
   if (!hasEnv) {
     console.warn("[Middleware] Missing Supabase env vars; skipping auth middleware");
     return NextResponse.next();
@@ -46,7 +51,13 @@ export async function middleware(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
 
+  const legacyLoginCookie = request.cookies.get(LEGACY_LOGIN_COOKIE)?.value;
+
   if (!user) {
+    if (legacyLoginCookie) {
+      return response;
+    }
+
     const loginUrl = new URL("/login", request.url);
     const redirectTarget = `${request.nextUrl.pathname}${request.nextUrl.search}`;
     loginUrl.searchParams.set("redirectTo", redirectTarget);

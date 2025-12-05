@@ -225,6 +225,8 @@ function buildEmployeeProfileSubmission(data: Record<string, unknown>, context: 
   const staffName = stringValue(data["staffName"]);
   const shopNumber = normalizeShopNumber(context.shopNumber);
   const shopId = context.shopId ?? null;
+  const birthDate = stringValue(data["dateOfBirth"]);
+  const celebrationProfile = buildCelebrationProfilePayload(data);
 
   if (!shopNumber) {
     throw new SubmissionValidationError("Link a shop before creating employee profiles.");
@@ -246,8 +248,25 @@ function buildEmployeeProfileSubmission(data: Record<string, unknown>, context: 
       staff_name: staffName,
       employee_phone_number: stringValue(data["phoneNumber"]),
       date_of_hired: stringValue(data["hireDate"]),
+      birth_date: birthDate,
+      celebration_profile_json: celebrationProfile,
     }),
   };
+}
+
+function buildCelebrationProfilePayload(data: Record<string, unknown>): Record<string, string> | null {
+  const favoriteTreat = stringValue(data["favoriteTreat"]);
+  const celebrationNotes = stringValue(data["celebrationNotes"]);
+
+  const profile: Record<string, string> = {};
+  if (favoriteTreat) {
+    profile.favoriteTreat = favoriteTreat;
+  }
+  if (celebrationNotes) {
+    profile.celebrationNotes = celebrationNotes;
+  }
+
+  return Object.keys(profile).length ? profile : null;
 }
 
 function buildPhoneSheetSubmission(

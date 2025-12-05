@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
-import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@shared/features/inventory-captain/config";
+import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@/lib/inventory-captain/config";
 import { loadInventoryShopDirectory, loadInventoryThresholdConfig } from "@/lib/inventoryCaptainServer";
 
 export const dynamic = "force-dynamic";

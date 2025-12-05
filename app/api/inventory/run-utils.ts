@@ -1,6 +1,6 @@
 import { supabaseServer } from "@/lib/supabaseServer";
-import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@shared/features/inventory-captain/config";
-import type { InventoryRunRecord } from "@shared/features/inventory-captain/runTypes";
+import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@/lib/inventory-captain/config";
+import type { InventoryRunRecord } from "@/lib/inventory-captain/runTypes";
 
 export class InventoryRunNotFoundError extends Error {
   constructor(message: string) {

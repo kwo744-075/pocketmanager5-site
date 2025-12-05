@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import * as XLSX from "xlsx";
-import { resolveInventoryCategory } from "@shared/features/inventory-captain/config";
+import { resolveInventoryCategory } from "@/lib/inventory-captain/config";
 import { getServerSession } from "@/lib/auth/session";
 import { buildShopDirectoryMap, loadInventoryShopDirectory, loadInventoryThresholdConfig, saveInventoryRun } from "@/lib/inventoryCaptainServer";
 import type {
@@ -10,7 +10,7 @@ import type {
   InventoryLogRow,
   InventoryProcessResponse,
   ShopDayInventoryStatus,
-} from "@shared/features/inventory-captain/types";
+} from "@/lib/inventory-captain/types";
 
 const EXCEL_EPOCH = Date.UTC(1899, 11, 30);
 const CATEGORY_KEYS: InventoryCategory[] = ["lubesOil", "oilFilters", "airFilters", "wipers", "cabins"];
@@ -99,9 +99,15 @@ const parseWorkbook = (buffer: ArrayBuffer): InventoryLogRow[] => {
           case "date":
             entry[field] = toIsoDate(rawValue) ?? undefined;
             break;
-          default:
-            entry[field] = typeof rawValue === "string" ? rawValue.trim() : rawValue ?? undefined;
+          default: {
+            const normalized = typeof rawValue === "string"
+              ? rawValue.trim()
+              : rawValue != null
+                ? String(rawValue).trim()
+                : undefined;
+            entry[field] = normalized ? normalized : undefined;
             break;
+          }
         }
       });
       if (!entry.storeNumber || !entry.date) {
