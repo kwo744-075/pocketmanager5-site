@@ -3,10 +3,20 @@ import { fetchShopTotals, type PulseTotalsResult } from "@/lib/pulseTotals";
 import { fetchPocketManagerSnapshot, type PocketManagerSnapshot } from "@/lib/pocketManagerData";
 import { fetchHierarchyRollups } from "@/lib/pulseRollups";
 import { fetchMiniPosOverview, type MiniPosOverview } from "@/lib/miniPosOverview";
+import {
+  EMPTY_PEOPLE_PREVIEW,
+  EMPTY_SCHEDULING_PREVIEW,
+  fetchEmployeeSchedulingPreview,
+  fetchPeopleFeaturePreview,
+  type EmployeeSchedulingPreview,
+  type PeopleFeaturePreview,
+} from "@/lib/peopleFeatureData";
 import { getWeekStartISO, todayISO } from "@/lib/dateUtils";
 
 const NULL_PULSE_PROMISE = Promise.resolve<PulseTotalsResult | null>(null);
 const NULL_SNAPSHOT_PROMISE = Promise.resolve<PocketManagerSnapshot | null>(null);
+const NULL_PEOPLE_PREVIEW_PROMISE = Promise.resolve<PeopleFeaturePreview>(EMPTY_PEOPLE_PREVIEW);
+const NULL_SCHEDULING_PREVIEW_PROMISE = Promise.resolve<EmployeeSchedulingPreview>(EMPTY_SCHEDULING_PREVIEW);
 const EMPTY_HIERARCHY_ROLLUPS = { district: null, region: null, division: null } as Awaited<ReturnType<typeof fetchHierarchyRollups>>;
 const NULL_HIERARCHY_PROMISE = Promise.resolve(EMPTY_HIERARCHY_ROLLUPS);
 const NULL_MINI_POS_PROMISE = Promise.resolve<MiniPosOverview | null>(null);
@@ -18,6 +28,8 @@ const cachedHierarchyRollups = cache((serialized: string) => {
   return fetchHierarchyRollups(payload);
 });
 const cachedMiniPosOverview = cache((shopId: string) => fetchMiniPosOverview(shopId));
+const cachedPeoplePreview = cache((shopNumber: string) => fetchPeopleFeaturePreview(shopNumber));
+const cachedSchedulingPreview = cache((shopNumber: string) => fetchEmployeeSchedulingPreview(shopNumber));
 
 export type HierarchyRollupScope = {
   districtId?: string | null;
@@ -104,4 +116,26 @@ export function useMiniPosOverviewSuspense(shopId: string | null | undefined) {
   }, [shopId]);
 
   return use(overviewPromise);
+}
+
+export function usePeopleFeaturePreviewSuspense(shopNumber: number | string | null | undefined) {
+  const peoplePromise = useMemo(() => {
+    if (!shopNumber && shopNumber !== 0) {
+      return NULL_PEOPLE_PREVIEW_PROMISE;
+    }
+    return cachedPeoplePreview(shopNumber.toString());
+  }, [shopNumber]);
+
+  return use(peoplePromise);
+}
+
+export function useEmployeeSchedulingPreviewSuspense(shopNumber: number | string | null | undefined) {
+  const schedulingPromise = useMemo(() => {
+    if (!shopNumber && shopNumber !== 0) {
+      return NULL_SCHEDULING_PREVIEW_PROMISE;
+    }
+    return cachedSchedulingPreview(shopNumber.toString());
+  }, [shopNumber]);
+
+  return use(schedulingPromise);
 }

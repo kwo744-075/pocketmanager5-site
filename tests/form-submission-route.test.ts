@@ -21,6 +21,21 @@ const profile: Profile = {
   full_name: "Pocket DM",
 };
 
+test("dm-visit-plan falls back when DM profile missing", async () => {
+  const data = {
+    visitDate: "2026-01-10",
+    visitType: "Standard Visit",
+    shopNumber: "1501",
+  };
+
+  const plan = await buildSubmissionPlan("dm-visit-plan", data, contextBase, null);
+  assert.ok(plan);
+  const payload = plan?.payload as Record<string, unknown>;
+  assert.equal(payload.dm_id, null);
+  assert.equal(payload.created_by, contextBase.loginEmail);
+  assert.equal(payload.location_id, "1501");
+});
+
 test("dm-30-60-90 maps to dm_visit_playbooks", async () => {
   const data = {
     shopNumber: "447",

@@ -66,14 +66,9 @@ export default async function PocketManagerFormPage({
         <FormRenderer
           form={form}
           initialValues={Object.keys(initialValues).length ? initialValues : undefined}
-          sectionHeaderAccessory={
+          sectionHeaderBadges={
             selectedDateLabel && form.slug === "dm-visit-plan"
-              ? (section) =>
-                  section.title === "Visit details" ? (
-                    <span className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
-                      {selectedDateLabel}
-                    </span>
-                  ) : null
+              ? { "Visit details": selectedDateLabel }
               : undefined
           }
         />

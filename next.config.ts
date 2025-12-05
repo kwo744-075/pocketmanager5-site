@@ -1,4 +1,5 @@
 import os from "node:os";
+import path from "node:path";
 import type { NextConfig } from "next";
 
 const parsedEnvOrigins = (process.env.NEXT_DEV_ALLOWED_ORIGINS ?? "")
@@ -21,6 +22,20 @@ const allowedDevOrigins = autoDetectedLanHosts.size ? Array.from(autoDetectedLan
 
 const nextConfig: NextConfig = {
   allowedDevOrigins,
+  experimental: {
+    externalDir: true,
+  },
+  turbopack: {
+    resolveAlias: {
+      "@shared": path.resolve(__dirname, "../shared"),
+    },
+  },
+  webpack: (config) => {
+    config.resolve ??= {};
+    config.resolve.alias ??= {};
+    config.resolve.alias["@shared"] = path.resolve(__dirname, "../shared");
+    return config;
+  },
 };
 
 export default nextConfig;

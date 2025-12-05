@@ -2,9 +2,19 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { fetchDmSchedulePreview, fetchEmployeeSchedulingPreview, fetchPeopleFeaturePreview, type EmployeeSchedulingPreview, type PeopleFeaturePreview } from "@/lib/peopleFeatureData";
-import { DmCoverageTracker, DmSchedulePlanner } from "../../components/DmSchedulePlanner";
+import { DmSchedulePlanner, DmVisitMixRunningSummary } from "../../components/DmSchedulePlanner";
+import {
+  DM_RUNNING_PERIOD_WINDOW,
+  buildRetailPeriodSequence,
+  getRetailPeriodInfo,
+  type SampleScheduleEntry,
+  type ScheduleLocationId,
+} from "../../components/dmScheduleUtils";
+import { MiniPosWorkspace } from "../components/MiniPosWorkspace";
 import { FEATURE_LOOKUP, FEATURE_REGISTRY, getDocUrl, type FeatureMeta, type FeatureSlug } from "../../featureRegistry";
 import { FORM_REGISTRY, type FormConfig } from "../../forms/formRegistry";
+import { getServerSession, type ServerSession } from "@/lib/auth/session";
+import { resolvePermittedShopNumber, normalizeShopIdentifier } from "@/lib/auth/alignment";
 
 interface FeaturePageProps {
   params: Promise<{ slug: FeatureSlug }>;
@@ -56,7 +66,8 @@ export function generateStaticParams() {
 export default async function FeatureDetailPage({ params, searchParams }: FeaturePageProps) {
   const { slug } = await params;
   const resolvedSearch = searchParams ? await searchParams : undefined;
-  const shopNumber = resolveShopParam(resolvedSearch);
+  const session = await getServerSession();
+  const shopNumber = resolvePermittedShopNumber(session.alignment, resolveShopParam(resolvedSearch));
   const feature = FEATURE_LOOKUP[slug];
 
   if (!feature) {
@@ -70,8 +81,13 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
 
   if (feature.slug === "dm-schedule") {
     // dmPreview intentionally fetched for potential future use, but not required by the page component.
+    const plannerPrefill = await loadDmSchedulePlannerPrefill(session, shopNumber ?? null);
     await fetchDmSchedulePreview(shopNumber);
-    return <DmScheduleFeaturePage feature={feature} docUrl={docUrl} shopNumber={shopNumber} />;
+    return <DmScheduleFeaturePage feature={feature} docUrl={docUrl} shopNumber={shopNumber} plannerPrefill={plannerPrefill} />;
+  }
+
+  if (feature.slug === "mini-pos") {
+    return <MiniPosFeaturePage feature={feature} docUrl={docUrl} />;
   }
 
   if (feature.slug === "employee-management") {
@@ -194,10 +210,153 @@ type DmScheduleFeaturePageProps = {
   feature: FeatureMeta;
   docUrl?: string;
   shopNumber: string | null;
+  plannerPrefill: PlannerPrefill | null;
 };
 
-function DmScheduleFeaturePage({ feature, docUrl, shopNumber }: DmScheduleFeaturePageProps) {
+type DmScheduleRow = {
+  id: string | null;
+  date: string | null;
+  visit_type: string | null;
+  location_id: string | null;
+  location_text: string | null;
+  notes: string | null;
+};
+
+type PlannerPrefill = {
+  scheduleEntries: SampleScheduleEntry[];
+  historicalEntries: SampleScheduleEntry[];
+};
+
+const mapScheduleRowToEntry = (row: DmScheduleRow): SampleScheduleEntry | null => {
+  if (!row.date || !row.visit_type) {
+    return null;
+  }
+  const date = new Date(row.date);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+  const iso = row.date.split("T")[0] ?? row.date;
+  const resolvedShopId = (row.location_id?.trim() || row.location_text?.trim() || "home") as ScheduleLocationId;
+  const locationLabel = row.location_text ?? (row.location_id ? `Shop ${row.location_id}` : "Home Office");
+  const status = date.getTime() < Date.now() ? "complete" : "locked";
+  return {
+    date,
+    iso,
+    visitType: row.visit_type,
+    shopId: resolvedShopId,
+    focus: row.notes ?? "",
+    status,
+    locationLabel,
+  };
+};
+
+async function loadDmSchedulePlannerPrefill(
+  session: ServerSession,
+  shopNumber: string | null,
+  anchorDate: Date = new Date(),
+): Promise<PlannerPrefill | null> {
+  try {
+    const { supabase: supabaseClient, user, alignment } = session;
+
+    if (!user) {
+      return null;
+    }
+
+    const normalizedShopFilter = normalizeShopIdentifier(shopNumber);
+    const allowedShopKeys = new Set(
+      (alignment?.shops ?? [])
+        .map((shopId) => normalizeShopIdentifier(shopId))
+        .filter((value): value is string => Boolean(value)),
+    );
+
+    const trailingPeriods = buildRetailPeriodSequence(anchorDate, DM_RUNNING_PERIOD_WINDOW);
+    const windowStart = (trailingPeriods[0] ?? getRetailPeriodInfo(anchorDate)).startDate;
+    const windowEnd = (trailingPeriods.at(-1) ?? getRetailPeriodInfo(anchorDate)).endDate;
+
+    const startIso = windowStart.toISOString().split("T")[0];
+    const endIso = windowEnd.toISOString().split("T")[0];
+
+    const filters = [
+      user.id ? { column: "dm_id", value: user.id } : null,
+      user.email ? { column: "created_by", value: user.email.toLowerCase() } : null,
+    ].filter(Boolean) as Array<{ column: string; value: string }>;
+
+    if (!filters.length) {
+      return null;
+    }
+
+    const selectColumns = "id,date,visit_type,location_id,location_text,notes";
+    const queries = filters.map(({ column, value }) => {
+      let query = supabaseClient
+        .from("dm_schedule")
+        .select(selectColumns)
+        .eq(column, value)
+        .gte("date", startIso)
+        .lte("date", endIso)
+        .order("date", { ascending: true });
+
+      if (normalizedShopFilter) {
+        query = query.eq("location_id", normalizedShopFilter);
+      }
+
+      return query;
+    });
+
+    const results = await Promise.all(queries);
+
+    const rows = new Map<string, DmScheduleRow>();
+    for (const result of results) {
+      if (result.error) {
+        console.warn("[DmSchedule] Unable to load visit submissions", result.error);
+        continue;
+      }
+      (result.data ?? []).forEach((row) => {
+        const normalizedLocation = normalizeShopIdentifier(row.location_id ?? row.location_text ?? null);
+        if (allowedShopKeys.size && (!normalizedLocation || !allowedShopKeys.has(normalizedLocation))) {
+          return;
+        }
+
+        const key = row.id ?? `${row.date ?? ""}:${row.location_id ?? ""}:${row.visit_type ?? ""}`;
+        if (!rows.has(key)) {
+          rows.set(key, row);
+        }
+      });
+    }
+
+    if (!rows.size) {
+      return null;
+    }
+
+    const historicalEntries = Array.from(rows.values())
+      .map(mapScheduleRowToEntry)
+      .filter((entry): entry is SampleScheduleEntry => Boolean(entry))
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+
+    if (!historicalEntries.length) {
+      return null;
+    }
+
+    const activePeriod = getRetailPeriodInfo(anchorDate);
+    const scheduleEntries = historicalEntries.filter((entry) => {
+      const ts = entry.date.getTime();
+      return ts >= activePeriod.startDate.getTime() && ts <= activePeriod.endDate.getTime();
+    });
+
+    return { scheduleEntries, historicalEntries };
+  } catch (error) {
+    console.warn("[DmSchedule] Planner data fetch failed", error);
+    return null;
+  }
+}
+
+async function DmScheduleFeaturePage({ feature, docUrl, shopNumber, plannerPrefill }: DmScheduleFeaturePageProps) {
   const liveWorkspaceHref = appendShopQuery("/pocket-manager5/features/dm-schedule", shopNumber);
+  const sharedPlannerInputs = plannerPrefill
+    ? {
+        scheduleEntries: plannerPrefill.scheduleEntries,
+        historicalEntries: plannerPrefill.historicalEntries,
+      }
+    : undefined;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -209,22 +368,26 @@ function DmScheduleFeaturePage({ feature, docUrl, shopNumber }: DmScheduleFeatur
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
 
-        <div className="mt-6 flex flex-wrap items-center gap-3">
-          <div>
+        <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
+          <div className="space-y-2">
             <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">District schedule</p>
-            <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
+            <div className="flex flex-wrap items-center gap-3">
+              <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
+              <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                {feature.status}
+              </span>
+            </div>
           </div>
-          <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-            {feature.status}
-          </span>
+          <div className="w-full min-w-[280px] flex-1 sm:max-w-md">
+            <DmVisitMixRunningSummary {...(sharedPlannerInputs ?? {})} />
+          </div>
         </div>
 
         <section className="mt-8 rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Full-period template</p>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Full-Year Template</p>
               <p className="mt-1 text-2xl font-semibold text-white">DM Period Schedule</p>
-              <p className="text-sm text-slate-300">Stacked current and next periods with due-visit callouts before you lock coverage.</p>
             </div>
             <div className="flex flex-wrap gap-3">
               <Link
@@ -246,11 +409,83 @@ function DmScheduleFeaturePage({ feature, docUrl, shopNumber }: DmScheduleFeatur
             </div>
           </div>
           <div className="mt-6 space-y-6">
-            <DmCoverageTracker />
-            <DmSchedulePlanner shopNumber={shopNumber} />
+            <DmSchedulePlanner shopNumber={shopNumber} {...(sharedPlannerInputs ?? {})} />
           </div>
         </section>
 
+      </div>
+    </main>
+  );
+}
+
+type MiniPosFeaturePageProps = {
+  feature: FeatureMeta;
+  docUrl?: string;
+};
+
+function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
+  return (
+    <main className="min-h-screen bg-slate-950 text-slate-100">
+      <div className="mx-auto max-w-7xl px-4 py-12 space-y-8">
+        <Link
+          href="/pocket-manager5"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
+        >
+          <span aria-hidden>↩</span> Back to Pocket Manager5
+        </Link>
+
+        <section className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-8 shadow-2xl shadow-black/30">
+          <div className="flex flex-wrap items-start gap-4">
+            <div className="flex-1">
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Checkout lane</p>
+              <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
+              <p className="mt-3 text-lg text-slate-300">{feature.summary}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {feature.tags.map((tag) => (
+                  <span key={tag} className="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-300">
+                    {tag}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <span className="rounded-full border border-slate-800/60 px-4 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+              {feature.status}
+            </span>
+          </div>
+          <div className="mt-6 grid gap-6 md:grid-cols-2">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
+              <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
+              {docUrl ? (
+                <Link
+                  href={docUrl}
+                  className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-200 underline-offset-4 hover:text-emerald-100 hover:underline"
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  View spec ↗
+                </Link>
+              ) : (
+                <p className="mt-2 text-sm text-slate-400">Parity with native Mini POS implementation.</p>
+              )}
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Forms & exports</p>
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+                {feature.forms?.map((form) => (
+                  <span key={form} className="rounded-full border border-slate-800/60 px-3 py-1">
+                    {form}
+                  </span>
+                )) || <span className="text-slate-500">Documented in workspace.</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <MiniPosWorkspace />
       </div>
     </main>
   );

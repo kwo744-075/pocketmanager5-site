@@ -39,10 +39,10 @@ type ViewMode = "daily" | "weekly";
 export default function ShopPulseSummaryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [shopId, setShopId] = useState<string | null>(searchParams.get("shopId"));
-  const [shopName, setShopName] = useState<string | null>(searchParams.get("shopName"));
-  const [shopNumber, setShopNumber] = useState<string | null>(searchParams.get("shopNumber"));
-  const [retailLabel] = useState(() => searchParams.get("retailLabel"));
+  const [shopId, setShopId] = useState<string | null>(searchParams?.get("shopId") ?? null);
+  const [shopName, setShopName] = useState<string | null>(searchParams?.get("shopName") ?? null);
+  const [shopNumber, setShopNumber] = useState<string | null>(searchParams?.get("shopNumber") ?? null);
+  const [retailLabel] = useState(() => searchParams?.get("retailLabel") ?? null);
   const [authChecked, setAuthChecked] = useState(false);
   const [view, setView] = useState<ViewMode>("daily");
   const [totals, setTotals] = useState<PulseTotalsResult>({ daily: EMPTY_TOTALS, weekly: EMPTY_TOTALS });

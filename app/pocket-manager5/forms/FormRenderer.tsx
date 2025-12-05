@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
 import { pulseSupabase, supabase } from "@/lib/supabaseClient";
 import type { FormConfig, FormField } from "./formRegistry";
@@ -32,7 +32,7 @@ type FormRendererProps = {
   onAfterSubmit?: (payload: { values: Record<string, FieldValue>; savedAt: string | null }) => void;
   hideStatusPanel?: boolean;
   submitLabelOverride?: string;
-  sectionHeaderAccessory?: (section: FormConfig["sections"][number]) => ReactNode;
+  sectionHeaderBadges?: Record<string, string>;
 };
 
 export function FormRenderer({
@@ -44,7 +44,7 @@ export function FormRenderer({
   onAfterSubmit,
   hideStatusPanel = false,
   submitLabelOverride,
-  sectionHeaderAccessory,
+  sectionHeaderBadges,
 }: FormRendererProps) {
   const resolvedStorageKey = storageKey ?? `pm-form-${form.slug}`;
   const { loginEmail, hierarchy, shopMeta, storedShopName } = usePocketHierarchy(contextPath ?? `/pocket-manager5/forms/${form.slug}`);
@@ -302,7 +302,7 @@ export function FormRenderer({
   return (
     <form onSubmit={handleSubmit} className="space-y-8">
       {form.sections.map((section) => {
-        const accessory = sectionHeaderAccessory?.(section);
+        const sectionBadge = sectionHeaderBadges?.[section.title];
         return (
           <section key={section.title} className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 shadow-2xl shadow-black/30">
             <header className="mb-5">
@@ -311,7 +311,13 @@ export function FormRenderer({
                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{form.title}</p>
                   <h2 className="text-2xl font-semibold text-white">{section.title}</h2>
                 </div>
-                {accessory && <div className="text-sm text-emerald-200">{accessory}</div>}
+                {sectionBadge && (
+                  <div className="text-sm text-emerald-200">
+                    <span className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-xs font-semibold text-emerald-100">
+                      {sectionBadge}
+                    </span>
+                  </div>
+                )}
               </div>
               {section.description && <p className="mt-2 text-sm text-slate-400">{section.description}</p>}
             </header>
