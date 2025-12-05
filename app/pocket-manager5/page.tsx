@@ -15,6 +15,7 @@ import {
   CalendarDays,
   Calculator,
   Camera,
+  Crown,
   CheckSquare,
   ClipboardCheck,
   FileCheck2,
@@ -28,7 +29,6 @@ import {
   Phone,
   Search,
   ShieldCheck,
-  Sparkles,
   TicketPercent,
   TrendingUp,
   UserCog,
@@ -43,10 +43,16 @@ import {
   type FormSlug,
 } from "@/app/pocket-manager5/forms/formRegistry";
 import { usePocketHierarchy, type HierarchySummary, type ShopMeta } from "@/hooks/usePocketHierarchy";
-import { useMiniPosOverviewSuspense, useSnapshotSuspense } from "@/hooks/usePocketManagerData";
-import { EMPTY_SNAPSHOT } from "@/lib/pocketManagerData";
+import {
+  useEmployeeSchedulingPreviewSuspense,
+  useMiniPosOverviewSuspense,
+  usePeopleFeaturePreviewSuspense,
+  useSnapshotSuspense,
+} from "@/hooks/usePocketManagerData";
+import { EMPTY_SNAPSHOT, type PocketManagerSnapshot } from "@/lib/pocketManagerData";
 import { formatPercent } from "@/lib/pulseFormatting";
 import { pulseSupabase, supabase } from "@/lib/supabaseClient";
+import type { CoachingPreview, EmployeeSchedulingPreview, PeopleFeaturePreview, StaffPreview } from "@/lib/peopleFeatureData";
 
 type QuickAction = {
   label: string;
@@ -98,6 +104,40 @@ const QUICK_ACTIONS: QuickAction[] = [
     href: "/pulse-check5",
     icon: TrendingUp,
     accent: "from-sky-500/30 via-sky-500/5 to-transparent",
+  },
+];
+
+type HeroShortcut = {
+  label: string;
+  description: string;
+  href: string;
+  icon: LucideIcon;
+};
+
+const HERO_SHORTCUTS: HeroShortcut[] = [
+  {
+    label: "Home Screen",
+    description: "Pocket Manager hub",
+    href: "/",
+    icon: Building2,
+  },
+  {
+    label: "DM Forms",
+    description: "Inspections • visits",
+    href: "/pocket-manager5/forms",
+    icon: NotebookPen,
+  },
+  {
+    label: "Daily Log",
+    description: "Cars • cash • variances",
+    href: "/pocket-manager5/features/daily-log",
+    icon: FileText,
+  },
+  {
+    label: "Pulse Check 5",
+    description: "District KPIs",
+    href: "/pulse-check5",
+    icon: TrendingUp,
   },
 ];
 
@@ -156,6 +196,13 @@ const SECTION_ACCENTS: Record<
 
 const integerFormatter = new Intl.NumberFormat("en-US");
 
+const formatDate = (value?: string | Date | null | undefined) => {
+  if (!value) return "—";
+  const date = typeof value === "string" ? new Date(value) : value;
+  if (!date || Number.isNaN((date as Date).getTime())) return "—";
+  return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" }).format(date as Date);
+};
+
 const formatFeatureLabel = (slug: string) =>
   slug
     .split("-")
@@ -163,6 +210,15 @@ const formatFeatureLabel = (slug: string) =>
     .join(" ");
 
 const buildFeatureHref = (slug: string) => `/pocket-manager5/features/${slug}`;
+
+const formatScopeLabel = (scope?: string | null) => {
+  if (!scope) return "Shop";
+  const normalized = scope.toLowerCase();
+  if (normalized === "dm" || normalized === "district") return "District";
+  if (normalized === "rd" || normalized === "region") return "Regional";
+  if (normalized === "division") return "Division";
+  return scope.charAt(0).toUpperCase() + scope.slice(1).toLowerCase();
+};
 
 type SectionCardProps = {
   title: string;
@@ -297,14 +353,32 @@ function useShopHrefAppender(): ShopHrefAppender {
   );
 }
 
-function QuickActionsRail() {
-  const appendShopHref = useShopHrefAppender();
+type QuickActionsRailProps = {
+  appendShopHref: ShopHrefAppender;
+};
+
+function QuickActionsRail({ appendShopHref }: QuickActionsRailProps) {
   return (
-    <div className="grid gap-4 md:grid-cols-3">
-      {QUICK_ACTIONS.map((action) => (
-        <QuickActionLink key={action.label} {...action} href={appendShopHref(action.href) ?? action.href} />
-      ))}
-    </div>
+    <section className="rounded-3xl border border-slate-900/80 bg-slate-950/80 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.45)]">
+      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Command deck</p>
+          <p className="text-lg font-semibold text-white">One-tap jump points for busy routes</p>
+        </div>
+        <Link
+          href={appendShopHref("/pocket-manager5/forms") ?? "/pocket-manager5/forms"}
+          className="inline-flex items-center gap-2 text-sm text-emerald-200 transition hover:text-white"
+        >
+          Forms & exports
+          <ArrowUpRight className="h-4 w-4" />
+        </Link>
+      </div>
+      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {QUICK_ACTIONS.map((action) => (
+          <QuickActionLink key={action.label} {...action} href={appendShopHref(action.href) ?? action.href} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -326,6 +400,116 @@ function QuickActionLink({ icon: Icon, label, description, href, accent }: Quick
         <ArrowUpRight className="h-4 w-4 text-slate-600 transition group-hover:text-white" />
       </div>
     </Link>
+  );
+}
+
+type HeroSectionProps = {
+  heroName: string;
+  hierarchy: HierarchySummary | null;
+  hierarchyLoading: boolean;
+  hierarchyError: string | null;
+  loginEmail: string | null;
+  appendShopHref: ShopHrefAppender;
+};
+
+function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, loginEmail, appendShopHref }: HeroSectionProps) {
+  const formatStatValue = (value?: number | null) => (typeof value === "number" ? integerFormatter.format(value) : "—");
+  const heroStats = [
+    { label: "Scope", value: formatScopeLabel(hierarchy?.scope_level) },
+    { label: "District shops", value: formatStatValue(hierarchy?.shops_in_district), caption: "Active units" },
+    { label: "Region coverage", value: formatStatValue(hierarchy?.shops_in_region), caption: "Shops in region" },
+  ];
+
+  return (
+    <header className="rounded-3xl border border-slate-900/70 bg-gradient-to-br from-slate-950 via-slate-950/90 to-slate-900/40 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
+      <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <div className="space-y-5">
+          <div className="flex flex-wrap items-center gap-3">
+            <BrandWordmark brand="pocket" mode="dark" className="text-4xl" />
+            <span className="inline-flex items-center rounded-full border border-slate-800/70 px-3 py-1 text-xs uppercase tracking-[0.2em] text-slate-400">
+              Pocket Manager 5
+            </span>
+          </div>
+          <p className="text-lg leading-relaxed text-slate-200">
+            Rebuilt home base that keeps DMs focused on coverage, cash, and crew health without digging through duplicate
+            cards.
+          </p>
+          <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
+            <RetailPills />
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {HERO_SHORTCUTS.map((shortcut) => (
+              <HeroShortcutPill
+                key={shortcut.label}
+                {...shortcut}
+                href={appendShopHref(shortcut.href) ?? shortcut.href}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-900/70 bg-slate-950/80 p-4">
+            <div className="flex flex-col gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Signed in</p>
+                <p className="text-lg font-semibold text-white">{heroName}</p>
+                {loginEmail ? <p className="text-sm text-slate-400">{loginEmail}</p> : null}
+              </div>
+              <div className="rounded-xl border border-slate-800/70 bg-slate-900/50 p-3">
+                {hierarchyLoading ? (
+                  <p className="text-sm text-slate-400">Loading scope...</p>
+                ) : hierarchyError ? (
+                  <p className="text-sm text-amber-200">{hierarchyError}</p>
+                ) : (
+                  <HierarchyStamp hierarchy={hierarchy} loginEmail={loginEmail} />
+                )}
+              </div>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-3">
+            {heroStats.map((stat) => (
+              <HeroStatCard key={stat.label} {...stat} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+type HeroShortcutPillProps = HeroShortcut & { href: string };
+
+function HeroShortcutPill({ icon: Icon, label, description, href }: HeroShortcutPillProps) {
+  return (
+    <Link
+      href={href}
+      className="group flex flex-1 min-w-[200px] items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-emerald-400/50"
+    >
+      <span className="rounded-2xl border border-slate-800/70 bg-slate-900/80 p-2 text-emerald-200">
+        <Icon className="h-4 w-4" />
+      </span>
+      <div>
+        <p className="text-sm font-semibold text-white">{label}</p>
+        <p className="text-xs text-slate-400">{description}</p>
+      </div>
+      <ArrowUpRight className="ml-auto h-4 w-4 text-slate-600 transition group-hover:text-white" />
+    </Link>
+  );
+}
+
+type HeroStatCardProps = {
+  label: string;
+  value: string;
+  caption?: string;
+};
+
+function HeroStatCard({ label, value, caption }: HeroStatCardProps) {
+  return (
+    <div className="rounded-2xl border border-slate-900/70 bg-slate-950/70 p-3">
+      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
+      {caption ? <p className="text-xs text-slate-400">{caption}</p> : null}
+    </div>
   );
 }
 
@@ -373,6 +557,13 @@ const DM_TOOL_CARDS: DmToolCard[] = [
     accent: "from-emerald-500/60 via-emerald-500/10 to-slate-950/70",
   },
   {
+    title: "Captains Portal",
+    subtitle: "Recognition, inventory, pace captains",
+    href: "/pocket-manager5/dm-tools/captains",
+    icon: Crown,
+    accent: "from-amber-500/60 via-amber-500/10 to-slate-950/70",
+  },
+  {
     title: "DM Schedule",
     subtitle: "District & period planning",
     href: "/pocket-manager5/features/dm-schedule",
@@ -395,6 +586,24 @@ const DM_TOOL_CARDS: DmToolCard[] = [
   },
 ];
 
+const DM_REVIEW_PRESENTERS = [
+  {
+    href: "/pocket-manager5/dm-tools/dm-daily-review",
+    title: "Daily Review Presenter",
+    description: "Quick daily snapshot for stand-ups and morning calls.",
+  },
+  {
+    href: "/pocket-manager5/dm-tools/dm-weekly-review",
+    title: "Weekly Review Presenter",
+    description: "Roll up your week: wins, gaps, and focus for next week.",
+  },
+  {
+    href: "/pocket-manager5/dm-tools/dm-monthly-review",
+    title: "Monthly Review Presenter",
+    description: "Full period recap for RD / leadership reviews.",
+  },
+];
+
 function DmToolsRail() {
   return (
     <SectionCard
@@ -409,6 +618,18 @@ function DmToolsRail() {
       <div className="grid gap-3">
         {DM_TOOL_CARDS.map((tool) => (
           <DmToolBanner key={tool.title} {...tool} />
+        ))}
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3" aria-label="DM review presenters">
+        {DM_REVIEW_PRESENTERS.map((presenter) => (
+          <Link
+            key={presenter.href}
+            href={presenter.href}
+            className="rounded-xl bg-slate-900/80 border border-slate-700 px-4 py-3 text-sm transition hover:border-emerald-500 hover:bg-slate-900"
+          >
+            <div className="font-semibold text-white">{presenter.title}</div>
+            <div className="text-xs text-slate-300">{presenter.description}</div>
+          </Link>
         ))}
       </div>
     </SectionCard>
@@ -1198,7 +1419,7 @@ function PeopleWorkspaceShell({ children }: { children: ReactNode }) {
       title="People Workspace"
       eyebrow="Employee management"
       accent="violet"
-      quickLinks={["employee-management", "training-tracker", "cadence"]}
+      quickLinks={["employee-management", "training-tracker", "employee-scheduling", "employee-profile", "phone-sheet"]}
       actionHref="/pocket-manager5/features/employee-management"
       actionLabel="Open people hub"
       formSlugs={PEOPLE_FORM_SLUGS}
@@ -1206,6 +1427,360 @@ function PeopleWorkspaceShell({ children }: { children: ReactNode }) {
       {children}
     </SectionCard>
   );
+}
+
+const PEOPLE_ACTIONS = [
+  { label: "Open hub", href: "/pocket-manager5/features/employee-management" },
+  { label: "Staff list", href: "/pocket-manager5/features/staff-management" },
+  { label: "Phone sheet", href: "/pocket-manager5/features/phone-sheet" },
+  { label: "Employee profile form", href: "/pocket-manager5/forms/people-employee-profile" },
+];
+
+const TRAINING_COLUMN_LABELS = [
+  "Orientation",
+  "Safety",
+  "Mobil 1",
+  "Big 4",
+  "ARO",
+  "Inspections",
+  "Customer Care",
+  "Leadership",
+  "Ops Readiness",
+  "Certified",
+];
+
+const TRAINING_STATUS_SEQUENCE = ["Not started", "In progress", "Complete"] as const;
+type TrainingSummary = Pick<PeopleFeaturePreview["training"], "completionPct" | "completed" | "inProgress" | "notStarted">;
+type TrainingMatrixRow = {
+  id: string;
+  name: string;
+  dueDate: string | null;
+  tenureMonths: number | null;
+  modules: Record<string, string>;
+};
+
+function PeopleWorkspaceActionRow() {
+  return (
+    <div className="mb-4 flex flex-wrap gap-2" aria-label="People workspace quick actions">
+      {PEOPLE_ACTIONS.map((action) => (
+        <Link
+          key={action.label}
+          href={action.href}
+          className="inline-flex items-center gap-1 rounded-full border border-white/10 bg-slate-900/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-400/40 hover:text-white"
+        >
+          {action.label}
+          <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function TrainingMatrixPanel({ roster, summary }: { roster: StaffPreview[]; summary: TrainingSummary }) {
+  const rows = buildTrainingRows(roster);
+  const hasRoster = rows.length > 0 && !rows[0].id.startsWith("placeholder");
+
+  return (
+    <section className="mt-4 rounded-3xl border border-white/10 bg-gradient-to-br from-[#050b19] via-[#060d1f] to-[#040913] p-5 shadow-[0_25px_70px_rgba(2,6,23,0.7)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.35em] text-violet-200">Training tracker</p>
+          <p className="text-lg font-semibold text-white">Grid view</p>
+          <p className="text-xs text-slate-400">Auto-syncs with Expo training hub</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href="/pocket-manager5/features/employee-training"
+            className="inline-flex items-center gap-1 rounded-full border border-violet-400/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-violet-100 transition hover:bg-white/5"
+          >
+            Open tracker
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+          <button
+            type="button"
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-300/40"
+          >
+            Export CSV
+          </button>
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-4 text-slate-300">
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Completion</p>
+          <p className="text-3xl font-bold text-emerald-200">{summary.completionPct}%</p>
+          <p className="text-xs">{summary.completed} complete • {summary.inProgress} in flight</p>
+        </div>
+        <div>
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Open items</p>
+          <p className="text-lg font-semibold text-white">{summary.notStarted}</p>
+          <p className="text-xs">Waiting to begin</p>
+        </div>
+      </div>
+      <div className="mt-4 overflow-x-auto">
+        <div className="min-w-[960px]">
+          <div
+            className="grid text-[11px] font-semibold uppercase tracking-widest text-slate-400"
+            style={{ gridTemplateColumns: `220px repeat(${TRAINING_COLUMN_LABELS.length}, minmax(110px, 1fr))` }}
+          >
+            <div className="px-3 py-2">Employee</div>
+            {TRAINING_COLUMN_LABELS.map((label) => (
+              <div key={label} className="px-3 py-2 text-center">
+                {label}
+              </div>
+            ))}
+          </div>
+          {rows.map((row) => (
+            <div
+              key={row.id}
+              className="grid border-t border-white/5 text-sm"
+              style={{ gridTemplateColumns: `220px repeat(${TRAINING_COLUMN_LABELS.length}, minmax(110px, 1fr))` }}
+            >
+              <div className="flex items-center justify-between gap-3 px-3 py-3">
+                <div>
+                  <p className="text-sm font-semibold text-white">{row.name}</p>
+                  <p className="text-xs text-slate-400">{formatDueDateLabel(row.dueDate)}</p>
+                </div>
+                <p className="text-[11px] text-slate-500">{row.tenureMonths != null ? `${row.tenureMonths} mo` : "New"}</p>
+              </div>
+              {TRAINING_COLUMN_LABELS.map((label) => {
+                const status = row.modules[label] ?? "--";
+                return (
+                  <div key={`${row.id}-${label}`} className="px-3 py-3">
+                    <span
+                      className={`inline-flex w-full items-center justify-center rounded-full border px-2 py-1 text-[11px] ${trainingStatusClasses(status)}`}
+                    >
+                      {status}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      {!hasRoster && (
+        <p className="mt-3 text-xs text-slate-400">Add employees in Staff Management to replace the placeholder grid.</p>
+      )}
+    </section>
+  );
+}
+
+function buildTrainingRows(roster: StaffPreview[]): TrainingMatrixRow[] {
+  const source = roster.length ? roster.slice(0, 8) : [
+    {
+      id: "placeholder-1",
+      name: "Sample Teammate",
+      role: null,
+      status: null,
+      tenureMonths: 2,
+      hiredAt: new Date().toISOString(),
+    },
+  ];
+
+  return source.map((staff, rowIndex) => {
+    const modules: Record<string, string> = {};
+    TRAINING_COLUMN_LABELS.forEach((label, moduleIndex) => {
+      const statusIndex = (rowIndex + moduleIndex) % TRAINING_STATUS_SEQUENCE.length;
+      modules[label] = TRAINING_STATUS_SEQUENCE[statusIndex];
+    });
+
+    return {
+      id: staff.id ?? `placeholder-${rowIndex}`,
+      name: staff.name ?? `Teammate ${rowIndex + 1}`,
+      dueDate: deriveDueDate(staff.hiredAt, rowIndex),
+      tenureMonths: staff.tenureMonths ?? null,
+      modules,
+    };
+  });
+}
+
+function deriveDueDate(hiredAt: string | null | undefined, offset: number) {
+  const base = hiredAt ? new Date(hiredAt) : new Date();
+  if (Number.isNaN(base.getTime())) {
+    base.setTime(Date.now());
+  }
+  const clone = new Date(base);
+  clone.setDate(clone.getDate() + 14 + offset * 3);
+  return clone.toISOString().split("T")[0];
+}
+
+function formatDueDateLabel(value: string | null) {
+  if (!value) return "Due TBD";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Due TBD";
+  return `Due ${date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`;
+}
+
+function trainingStatusClasses(status: string) {
+  if (status.toLowerCase() === "complete") {
+    return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
+  }
+  if (status.toLowerCase() === "in progress") {
+    return "border-amber-400/40 bg-amber-500/10 text-amber-100";
+  }
+  if (status === "--") {
+    return "border-slate-700/40 bg-slate-900/40 text-slate-400";
+  }
+  return "border-slate-600/40 bg-slate-900/30 text-slate-200";
+}
+
+function SchedulingSnapshotCard({ preview }: { preview: EmployeeSchedulingPreview }) {
+  const totalHours = preview.legacyScheduler.totalHours || preview.simpleScheduler.totalHours;
+  const allowedHours = preview.projections.totalAllowedHours;
+  const variance = Number(totalHours ?? 0) - Number(allowedHours ?? 0);
+  const coverage = preview.simpleScheduler.dailyCoverage.slice(0, 4);
+  const rows = preview.legacyScheduler.rows.slice(0, 4);
+  const varianceTone = variance > 1 ? "border-rose-400/40 bg-rose-500/10 text-rose-100" : variance < -1 ? "border-emerald-400/40 bg-emerald-500/10 text-emerald-100" : "border-amber-400/40 bg-amber-500/10 text-amber-100";
+  const hasData = rows.length > 0 || preview.simpleScheduler.totalHours > 0;
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-[#050b19]/80 p-5 shadow-[0_25px_70px_rgba(2,6,23,0.65)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.35em] text-cyan-200">Scheduling snapshot</p>
+          <p className="text-lg font-semibold text-white">{formatWeekRangeLabel(preview.weekStartISO, preview.weekEndISO)}</p>
+          <p className="text-xs text-slate-400">Allowed {allowedHours.toFixed(1)}h · Scheduled {totalHours.toFixed(1)}h</p>
+        </div>
+        <div className={`rounded-full border px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] ${varianceTone}`}>
+          {variance >= 0 ? "+" : ""}
+          {variance.toFixed(1)}h
+        </div>
+      </div>
+      <div className="mt-4 flex flex-wrap gap-3">
+        {coverage.map((day) => (
+          <div key={day.date} className="min-w-[120px] rounded-2xl border border-white/5 bg-white/5 px-3 py-2">
+            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-400">{formatDayLabel(day.date)}</p>
+            <p className="text-lg font-semibold text-white">{day.hours.toFixed(1)}h</p>
+            <p className="text-[11px] text-slate-400">Goal {(day.allowedHours ?? 0).toFixed(1)}h</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-2">
+        {hasData ? (
+          rows.map((row) => (
+            <div key={row.id} className="flex items-center justify-between rounded-2xl border border-white/5 bg-slate-900/30 px-3 py-2">
+              <div>
+                <p className="text-sm font-semibold text-white">{row.staffName}</p>
+                <p className="text-xs text-slate-400">{row.position ?? "Role TBD"}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-white">{row.totalHours.toFixed(1)}h</p>
+                <p className={`text-[11px] ${row.overtimeHours > 0 ? "text-amber-200" : "text-slate-400"}`}>
+                  OT {row.overtimeHours.toFixed(1)}h
+                </p>
+              </div>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/20 px-3 py-4 text-sm text-slate-400">
+            No schedules saved for this week. Jump into the scheduler to add your first roster.
+          </p>
+        )}
+      </div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Link
+          href="/pocket-manager5/features/employee-scheduling"
+          className="inline-flex items-center gap-1 rounded-full border border-cyan-400/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-cyan-100 transition hover:bg-white/5"
+        >
+          View schedule
+          <ArrowUpRight className="h-3 w-3" />
+        </Link>
+        <Link
+          href="/pocket-manager5/features/employee-scheduling?view=builder"
+          className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-300/40"
+        >
+          Build week
+          <ArrowUpRight className="h-3 w-3" />
+        </Link>
+      </div>
+    </section>
+  );
+}
+
+function formatWeekRangeLabel(startIso?: string | null, endIso?: string | null) {
+  if (!startIso || !endIso) return "This week";
+  const start = new Date(startIso);
+  const end = new Date(endIso);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+    return "This week";
+  }
+  const startLabel = start.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  const endLabel = end.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return `${startLabel} – ${endLabel}`;
+}
+
+function formatDayLabel(isoDate: string) {
+  const date = new Date(isoDate);
+  if (Number.isNaN(date.getTime())) return "--";
+  return date.toLocaleDateString("en-US", { weekday: "short" });
+}
+
+function CoachingLogHighlights({ coaching }: { coaching: CoachingPreview }) {
+  const last14 = coaching.histogram.slice(-14);
+  const maxCount = last14.reduce((max, entry) => Math.max(max, entry.count), 0) || 1;
+  const recent = coaching.recent.slice(0, 3);
+  const monthTotal = coaching.histogram.reduce((sum, entry) => sum + entry.count, 0);
+
+  return (
+    <section className="rounded-3xl border border-white/10 bg-gradient-to-br from-[#071021] via-[#050b18] to-[#03060d] p-5 shadow-[0_25px_70px_rgba(2,6,23,0.65)]">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-[10px] uppercase tracking-[0.35em] text-emerald-200">Coaching log</p>
+          <p className="text-lg font-semibold text-white">{monthTotal} sessions · 30 days</p>
+          <p className="text-xs text-slate-400">Mirrors Expo coaching logbook</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/pocket-manager5/features/coaching-log"
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-400/50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-100 transition hover:bg-white/5"
+          >
+            Open log
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+          <Link
+            href="/pocket-manager5/features/coaching-log?view=new"
+            className="inline-flex items-center gap-1 rounded-full border border-white/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-300/40"
+          >
+            Log session
+            <ArrowUpRight className="h-3 w-3" />
+          </Link>
+        </div>
+      </div>
+      <div className="mt-4 flex h-28 items-end gap-1">
+        {last14.map((entry) => (
+          <div key={entry.date} className="flex-1">
+            <div
+              className="w-full rounded-t-sm bg-emerald-400/70"
+              style={{ height: `${(entry.count / maxCount) * 100}%` }}
+              aria-hidden="true"
+            />
+            <p className="mt-1 text-center text-[10px] text-slate-500">{formatDayLabel(entry.date)}</p>
+          </div>
+        ))}
+      </div>
+      <div className="mt-4 space-y-3">
+        {recent.length ? (
+          recent.map((log) => (
+            <div key={log.id} className="rounded-2xl border border-white/5 bg-slate-900/30 px-3 py-2">
+              <p className="text-sm font-semibold text-white">{log.staffName ?? "Unnamed teammate"}</p>
+              <p className="text-xs text-slate-400">{log.reason ?? "Coaching session"} • {formatShortDate(log.coachedAt)}</p>
+            </div>
+          ))
+        ) : (
+          <p className="rounded-2xl border border-dashed border-slate-700/60 bg-slate-900/20 px-3 py-4 text-sm text-slate-400">
+            No recent coaching sessions logged. Use the buttons above to add your first recap.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function formatShortDate(value?: string | null) {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot }) {
@@ -1330,8 +1905,12 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
 
 function PeopleWorkspaceContent({ shopNumber }: { shopNumber: number | string }) {
   const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
+  const peoplePreview = usePeopleFeaturePreviewSuspense(shopNumber);
+  const schedulingPreview = useEmployeeSchedulingPreviewSuspense(shopNumber);
+
   return (
     <>
+      <PeopleWorkspaceActionRow />
       <ProfileSnapshotPanel snapshot={snapshot} />
       <div className="mt-4 grid gap-4 md:grid-cols-4">
         <MetricStat
@@ -1354,6 +1933,11 @@ function PeopleWorkspaceContent({ shopNumber }: { shopNumber: number | string })
           value={integerFormatter.format(snapshot.development.activePlans)}
           sublabel={`${snapshot.development.completedPlans} done • ${snapshot.development.onHoldPlans} hold`}
         />
+      </div>
+      <TrainingMatrixPanel roster={peoplePreview.roster} summary={peoplePreview.training} />
+      <div className="mt-4 grid gap-4 lg:grid-cols-2">
+        <SchedulingSnapshotCard preview={schedulingPreview} />
+        <CoachingLogHighlights coaching={peoplePreview.coaching} />
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         {PEOPLE_TILE_CONFIG.map((tile) => (
@@ -1944,6 +2528,7 @@ export default function PocketManagerPage() {
     hierarchyError,
     shopMeta,
   } = usePocketHierarchy();
+  const appendShopHref = useShopHrefAppender();
   const heroName = storedShopName ?? (hierarchy?.shop_number ? `Shop ${hierarchy.shop_number}` : "Pocket Manager5");
   const canSeeDmWorkspace = useMemo(() => {
     const scope = hierarchy?.scope_level?.toUpperCase();
@@ -1972,73 +2557,31 @@ export default function PocketManagerPage() {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-10">
-        <header className="rounded-3xl border border-slate-900/80 bg-slate-950/80 p-6 shadow-2xl shadow-black/20">
-          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
-            <div className="space-y-3">
-              <BrandWordmark brand="pocket" mode="dark" className="text-[2.4rem]" />
-              <div className="flex items-center gap-2 text-sm text-slate-400">
-                <Sparkles className="h-4 w-4 text-emerald-200" />
-                <span className="sr-only">Pocket Manager desktop companion</span>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
-                <RetailPills />
-                <Link
-                  href="/"
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-400/50 hover:text-emerald-100"
-                >
-                  Home portal
-                </Link>
-                <Link
-                  href="/pocket-manager5/forms"
-                  className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-500/5 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-emerald-100 transition hover:bg-emerald-500/15"
-                >
-                  DM forms ↗
-                </Link>
-                <Link
-                  href="/pocket-manager5/features/daily-log"
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-400/50 hover:text-emerald-100"
-                >
-                  Open Daily Log
-                </Link>
-                <Link
-                  href="/pulse-check5"
-                  className="inline-flex items-center gap-1 rounded-full border border-slate-700/70 bg-slate-900/70 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:border-emerald-400/50 hover:text-emerald-100"
-                >
-                  Pulse Check 5 ↗
-                </Link>
-              </div>
-            </div>
-            <div className="text-right text-xs text-slate-400">
-              <p className="font-semibold text-slate-100">{heroName}</p>
-              {hierarchyLoading ? (
-                <p>Loading hierarchy…</p>
-              ) : hierarchyError ? (
-                <p className="text-amber-300">{hierarchyError}</p>
-              ) : (
-                <HierarchyStamp hierarchy={hierarchy} loginEmail={loginEmail} />
-              )}
-            </div>
-          </div>
-        </header>
-        <QuickActionsRail />
-        <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+        <HeroSection
+          heroName={heroName}
+          hierarchy={hierarchy}
+          hierarchyLoading={hierarchyLoading}
+          hierarchyError={hierarchyError}
+          loginEmail={loginEmail}
+          appendShopHref={appendShopHref}
+        />
+        <QuickActionsRail appendShopHref={appendShopHref} />
+        <div className="grid gap-6 xl:grid-cols-3">
           <div className="space-y-6">
             <PeopleWorkspaceSection shopNumber={shopMeta?.shop_number} />
-            <ManagersClipboardSection />
+            <SnapshotCardRenderer type="labor" shopNumber={shopMeta?.shop_number} />
           </div>
           <div className="space-y-6">
             <OpsHubSection shopId={shopMeta?.id} />
             <SnapshotCardRenderer type="inventory" shopNumber={shopMeta?.shop_number} />
+            <DailyLogCard />
+          </div>
+          <div className="space-y-6">
+            <ManagersClipboardSection />
+            <SnapshotCardRenderer type="training" shopNumber={shopMeta?.shop_number} />
+            <SnapshotCardRenderer type="admin" shopNumber={shopMeta?.shop_number} />
           </div>
         </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <SnapshotCardRenderer type="labor" shopNumber={shopMeta?.shop_number} />
-          <SnapshotCardRenderer type="training" shopNumber={shopMeta?.shop_number} />
-        </div>
-        <div className="grid gap-6">
-          <SnapshotCardRenderer type="admin" shopNumber={shopMeta?.shop_number} />
-        </div>
-        <DailyLogCard />
         {canSeeDmWorkspace && (
           <section className="space-y-6" aria-label="District manager workspace">
             <DmToolsRail />

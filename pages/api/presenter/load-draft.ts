@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import { createServerSupabaseClient } from "@supabase/auth-helpers-nextjs";
 import { supabaseServer } from "../../../lib/supabaseServer";
+import { createSupabaseRouteClient } from "../../../lib/createSupabaseRouteClient";
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   if (req.method !== "GET") {
@@ -8,7 +8,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const supabaseAuth = createServerSupabaseClient({ req, res });
+    const supabaseAuth = createSupabaseRouteClient(req, res);
     const {
       data: { user },
     } = await supabaseAuth.auth.getUser();

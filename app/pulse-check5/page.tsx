@@ -10,6 +10,16 @@ import { RetailPills } from "@/app/components/RetailPills";
 import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
 import { buildRetailTimestampLabel } from "@/lib/retailTimestamp";
 
+type AlignmentRow = {
+  store: number | string | null;
+  shop_name?: string | null;
+};
+
+type AlignmentQueryResult = {
+  data: AlignmentRow[] | null;
+  error: { code?: string } | null;
+};
+
 const CHECKIN_SIM_TEST_URL =
   "https://okzgxhennmjmvcnnzyur.supabase.co/storage/v1/object/sign/test-data%20Gulf/Checkins%20Test%20Sheet%20Master..xlsx?token=eyJraWQiOiJzdG9yYWdlLXVybC1zaWduaW5nLWtleV9iYmNkZTQ0OC0zMDkxLTRlOTMtYjY4Ni0yMDljYzYyZjEwODAiLCJhbGciOiJIUzI1NiJ9.eyJ1cmwiOiJ0ZXN0LWRhdGEgR3VsZi9DaGVja2lucyBUZXN0IFNoZWV0IE1hc3Rlci4ueGxzeCIsImlhdCI6MTc2NDU2Njg2OCwiZXhwIjoxNzk2MTAyODY4fQ.W7kvJi2M_Y4KrernR0CzNTdkUwRkN7a10JQobCGun2k" as const;
 
@@ -238,7 +248,7 @@ const fetchAlignmentRows = async (
   const selectCols = "store,shop_name";
   const order = { ascending: true } as const;
 
-  const runQuery = async (table: string) => {
+  const runQuery = async (table: string): Promise<AlignmentQueryResult> => {
     try {
       if (op === "eq") {
         const q = supabase.from(table).select(selectCols).eq(column, value).order("store", order);
@@ -250,12 +260,16 @@ const fetchAlignmentRows = async (
       if (limit) (q as unknown as { limit?: (n: number) => unknown }).limit?.(limit);
       return await q;
     } catch (err) {
-      return { data: null, error: err };
+      return {
+        data: null,
+        error: err && typeof err === "object" ? (err as { code?: string }) : { code: undefined },
+      };
     }
   };
 
   let result = await runQuery("company_alignment");
-  if ((result?.error || !result?.data) && result?.error?.code !== "PGRST116") {
+  const errCode = result?.error?.code;
+  if ((result?.error || !result?.data) && errCode !== "PGRST116") {
     // try fallback
     result = await runQuery("shop_alignment");
   }

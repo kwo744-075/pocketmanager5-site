@@ -1,0 +1,112 @@
+begin;
+
+create table if not exists public.inventory_threshold_configs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  alignment_id uuid,
+  scope_label text not null default 'global',
+  counts_per_shop_per_week numeric(6,2) not null default 5,
+  green_compliance numeric(6,4) not null default 0.95,
+  yellow_compliance numeric(6,4) not null default 0.85,
+  metadata jsonb not null default '{}'::jsonb,
+  constraint inventory_threshold_configs_limits_ck check (
+    counts_per_shop_per_week >= 0
+    and green_compliance between 0 and 1
+    and yellow_compliance between 0 and 1
+  )
+);
+
+create unique index if not exists inventory_threshold_alignment_idx
+  on public.inventory_threshold_configs (alignment_id)
+  where alignment_id is not null;
+
+create index if not exists inventory_threshold_scope_idx
+  on public.inventory_threshold_configs (scope_label, created_at desc);
+
+create or replace function public.set_inventory_threshold_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists inventory_threshold_updated_at on public.inventory_threshold_configs;
+create trigger inventory_threshold_updated_at
+before update on public.inventory_threshold_configs
+for each row execute function public.set_inventory_threshold_updated_at();
+
+create or replace view public.inventory_shop_directory_vw as
+select
+  s.id as shop_id,
+  s.shop_number,
+  s.shop_name,
+  s.district_id,
+  d.name as district_name,
+  coalesce(d.code, d.name) as district_code,
+  s.region_id,
+  r.name as region_name,
+  coalesce(r.code, r.name) as region_code
+from public.shops s
+left join public.districts d on d.id = s.district_id
+left join public.regions r on r.id = s.region_id;
+
+create table if not exists public.inventory_runs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  reporting_start date,
+  reporting_end date,
+  data_source text not null default 'Inventory Upload',
+  file_name text,
+  adjust_file_name text,
+  processed_by text,
+  uploader_user_id uuid,
+  uploader_alignment_id uuid,
+  row_count integer not null default 0,
+  total_variance numeric(14,2) not null default 0,
+  threshold_config jsonb not null,
+  filters_json jsonb not null default '{}'::jsonb,
+  shop_statuses_json jsonb not null,
+  district_summaries_json jsonb not null
+);
+
+create index if not exists inventory_runs_created_idx on public.inventory_runs (created_at desc);
+create index if not exists inventory_runs_alignment_idx on public.inventory_runs (uploader_alignment_id, created_at desc);
+create index if not exists inventory_runs_reporting_idx on public.inventory_runs (reporting_start, reporting_end);
+
+create table if not exists public.inventory_export_jobs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  run_id uuid not null references public.inventory_runs(id) on delete cascade,
+  job_type text not null check (job_type in ('summary_csv','shops_csv','pptx')),
+  status text not null default 'queued' check (status in ('queued','processing','ready','failed','expired')),
+  requested_by uuid,
+  requested_email text,
+  download_url text,
+  payload_json jsonb,
+  error_message text,
+  ready_at timestamptz
+);
+
+create index if not exists inventory_export_jobs_run_idx on public.inventory_export_jobs (run_id, job_type, created_at desc);
+create index if not exists inventory_export_jobs_status_idx on public.inventory_export_jobs (status, created_at desc);
+
+create or replace function public.set_inventory_export_job_updated_at()
+returns trigger
+language plpgsql
+as $$
+
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists inventory_export_job_updated_at on public.inventory_export_jobs;
+create trigger inventory_export_job_updated_at
+before update on public.inventory_export_jobs
+for each row execute function public.set_inventory_export_job_updated_at();
+commit;

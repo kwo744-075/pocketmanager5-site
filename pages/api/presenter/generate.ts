@@ -1,6 +1,26 @@
 // pages/api/presenter/generate.ts
 import type { NextApiRequest, NextApiResponse } from "next";
 
+type TableCell = string | number | { text: string; options?: Record<string, unknown> };
+type TableRow = TableCell[];
+
+type PresentationSlide = {
+  background?: { fill: string };
+  addText: (text: string, options: Record<string, unknown>) => void;
+  addTable: (rows: TableRow[], options: Record<string, unknown>) => void;
+};
+
+type Presentation = {
+  author: string;
+  company: string;
+  subject: string;
+  title: string;
+  addSlide: () => PresentationSlide;
+  write: (outputType: "nodebuffer") => Promise<Buffer>;
+};
+
+type PresentationConstructor = new () => Presentation;
+
 type FinancialRow = {
   id: string;
   label: string;
@@ -38,7 +58,7 @@ export default async function handler(
 
   try {
     // 👇 dynamic import so it only loads on the server at runtime
-    const PptxGenJS = (await import("pptxgenjs")).default;
+    const PptxGenJS = (await import("pptxgenjs")).default as unknown as PresentationConstructor;
 
     const data = req.body as PresenterFormData;
 
@@ -102,7 +122,7 @@ export default async function handler(
         color: "111827",
       });
 
-      const rows = [
+      const rows: TableRow[] = [
         [
           { text: "Metric", options: { bold: true } },
           { text: "Budget", options: { bold: true } },
@@ -136,7 +156,7 @@ export default async function handler(
         border: { type: "solid", color: "D1D5DB", pt: 1 },
         fontSize: 12,
         color: "111827",
-        fill: "FFFFFF",
+        fill: { color: "FFFFFF" },
         valign: "middle",
         rowH: 0.35,
         autoPage: true,
@@ -155,7 +175,7 @@ export default async function handler(
         color: "111827",
       });
 
-      const rows = [
+      const rows: TableRow[] = [
         [
           { text: "KPI", options: { bold: true } },
           { text: "Target", options: { bold: true } },
@@ -186,7 +206,7 @@ export default async function handler(
         colW: [3.0, 2.0, 2.0, 2.0],
         border: { type: "solid", color: "D1D5DB", pt: 1 },
         fontSize: 12,
-        fill: "FFFFFF",
+        fill: { color: "FFFFFF" },
         color: "111827",
         rowH: 0.35,
       });
