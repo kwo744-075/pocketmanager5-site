@@ -404,6 +404,7 @@ function DmToolsRail() {
 }
 
 function DmToolBanner({ title, subtitle, href, icon: Icon, accent }: DmToolCard) {
+  const IconComponent = Icon as any;
   return (
     <Link
       href={href}
@@ -633,6 +634,7 @@ const MANAGER_EXTRA_TILES: WorkspaceTileMeta[] = [
 const WorkspaceTile = memo(function WorkspaceTile({ title, subtitle, href, icon: Icon, accent, variant = "default" }: WorkspaceTileMeta) {
   const compact = variant === "compact";
   const showIcon = Boolean(Icon) && !compact;
+  const IconComponent = Icon as any;
   return (
     <Link
       href={href}
@@ -640,8 +642,8 @@ const WorkspaceTile = memo(function WorkspaceTile({ title, subtitle, href, icon:
     >
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accent}`} />
       {showIcon ? (
-        <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-black/30 text-white">
-          <Icon className="h-4 w-4" />
+          <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-black/30 text-white">
+          <IconComponent className="h-4 w-4" />
         </div>
       ) : null}
       <div className={`relative min-w-0 flex-1 ${compact ? "text-center" : ""}`}>
@@ -831,8 +833,8 @@ function buildTrainingRows(roster: StaffPreview[]): TrainingMatrixRow[] {
     });
 
     return {
-      id: staff.id ?? `placeholder-${rowIndex}`,
-      name: staff.name ?? `Teammate ${rowIndex + 1}`,
+      <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+        <IconComponent className="h-5 w-5" />
       dueDate: deriveDueDate(staff.hiredAt, rowIndex),
       tenureMonths: staff.tenureMonths ?? null,
       modules,
