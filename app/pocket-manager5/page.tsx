@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Component, Suspense, memo, useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { Component, Suspense, memo, useCallback, useEffect, useMemo, useState, type ReactNode, type ComponentType } from "react";
 import { BrandWordmark } from "@/app/components/BrandWordmark";
 import { RetailPills } from "@/app/components/RetailPills";
 import {
@@ -427,7 +427,7 @@ type WorkspaceTileMeta = {
   subtitle: string;
   href: string;
   // Use a React component type for icon so it can be used as <Icon /> in JSX
-  icon?: React.ComponentType<any>;
+  icon?: ComponentType<any>;
   accent: string;
   variant?: "default" | "compact";
 };
