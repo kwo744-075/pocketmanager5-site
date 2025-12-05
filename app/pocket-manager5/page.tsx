@@ -833,8 +833,8 @@ function buildTrainingRows(roster: StaffPreview[]): TrainingMatrixRow[] {
     });
 
     return {
-      <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
-        <IconComponent className="h-5 w-5" />
+      id: staff.id,
+      name: staff.name,
       dueDate: deriveDueDate(staff.hiredAt, rowIndex),
       tenureMonths: staff.tenureMonths ?? null,
       modules,
