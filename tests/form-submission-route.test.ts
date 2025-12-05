@@ -102,6 +102,9 @@ test("people-employee-profile maps to shop_staff", async () => {
     staffName: "Jordan Sample",
     phoneNumber: "555-123-4567",
     hireDate: "2024-05-01",
+    dateOfBirth: "1994-03-15",
+    favoriteTreat: "Brownies",
+    celebrationNotes: "Loves handwritten notes",
   };
 
   const plan = await buildSubmissionPlan("people-employee-profile", data, contextBase, null);
@@ -114,6 +117,12 @@ test("people-employee-profile maps to shop_staff", async () => {
   assert.equal(payload.staff_name, "Jordan Sample");
   assert.equal(payload.employee_phone_number, "555-123-4567");
   assert.equal(payload.date_of_hired, "2024-05-01");
+  assert.equal(payload.birth_date, "1994-03-15");
+
+  const celebrationProfile = payload.celebration_profile_json as Record<string, string> | null;
+  assert.ok(celebrationProfile);
+  assert.equal(celebrationProfile?.favoriteTreat, "Brownies");
+  assert.equal(celebrationProfile?.celebrationNotes, "Loves handwritten notes");
 });
 
 test("people-employee-profile enforces name", async () => {

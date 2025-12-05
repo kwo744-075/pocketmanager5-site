@@ -2,8 +2,9 @@ import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
 import { getServerSession } from "@/lib/auth/session";
 import { createInventoryExportJob } from "@/lib/inventoryCaptainServer";
+import type { InventoryExportJobStatus } from "@/lib/inventoryCaptainServer";
 import { InventoryRunNotFoundError, loadInventoryRun } from "../run-utils";
-import type { DistrictInventorySummary } from "@shared/features/inventory-captain/types";
+import type { DistrictInventorySummary } from "@/lib/inventory-captain/types";
 
 const toCsvValue = (value: unknown) => {
   if (value === null || value === undefined) {
@@ -91,7 +92,7 @@ export async function POST(request: Request) {
     const downloadUrl = `data:text/csv;base64,${Buffer.from(csv, "utf8").toString("base64")}`;
 
     let jobId = `summary-${Date.now()}`;
-    let status = "ready" as const;
+    let status: InventoryExportJobStatus = "ready";
     let readyAt = new Date().toISOString();
 
     if (runId) {

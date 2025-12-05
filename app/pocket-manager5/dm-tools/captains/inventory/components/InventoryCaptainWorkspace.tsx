@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } f
 import { motion } from "framer-motion";
 import {
   AlertTriangle,
-  ArrowUpTray,
+  ArrowUp,
   BarChart3,
   CheckCircle2,
   ClipboardList,
@@ -20,11 +20,11 @@ import { useCaptainRoleGate } from "@/hooks/useCaptainRoleGate";
 import {
   DEFAULT_INVENTORY_THRESHOLD_CONFIG,
   INVENTORY_CATEGORY_LABELS,
-} from "@shared/features/inventory-captain/config";
+} from "@/lib/inventory-captain/config";
 import type {
   InventoryShopDirectoryEntry,
   InventoryThresholdRecord,
-} from "@shared/features/inventory-captain/metadata";
+} from "@/lib/inventory-captain/metadata";
 import type {
   DistrictInventorySummary,
   InventoryCategory,
@@ -33,7 +33,7 @@ import type {
   InventoryExportJob,
   ShopDayInventoryStatus,
   CategoryVariance,
-} from "@shared/features/inventory-captain/types";
+} from "@/lib/inventory-captain/types";
 
 const PERIOD_OPTIONS = [
   { label: "This Week", value: "thisWeek" },
@@ -227,7 +227,7 @@ const complianceStatus = (ratio: number, config: InventoryThresholdConfig = DEFA
 const formatVariance = (value: number) => currencyFormatter.format(Math.round(value));
 
 export function InventoryCaptainWorkspace() {
-  const hierarchy = usePocketHierarchy("/pocket-manager5/dm-tools/captains/inventory");
+  const hierarchy = usePocketHierarchy("/pocket-manager5/dm-tools/captains/inventory/adjustments");
   const scopeLevel = hierarchy.hierarchy?.scope_level ?? null;
   const { role, canQueueExports, hydrated } = useCaptainRoleGate({ scopeLevel, loading: hierarchy.hierarchyLoading });
 
@@ -930,7 +930,7 @@ function UploadPanel({
         disabled={processing}
         className="inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-500/10 px-4 py-3 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:opacity-60"
       >
-        {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUpTray className="h-4 w-4" />} Process Inventory Data
+        {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />} Process Inventory Data
       </button>
     </section>
   );
@@ -942,7 +942,7 @@ function UploadCard({ label, description, file, onChange }: { label: string; des
       <p className="text-sm font-semibold text-white">{label}</p>
       <p className="text-xs text-slate-400">{description}</p>
       <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">
-        <ArrowUpTray className="h-3.5 w-3.5" /> {file ? file.name : "Select file"}
+        <ArrowUp className="h-3.5 w-3.5" /> {file ? file.name : "Select file"}
       </div>
       <input type="file" accept=".xlsx,.xls,.csv" className="sr-only" onChange={onChange} />
     </label>
@@ -1016,7 +1016,7 @@ function DashboardPanel({
               onClick={card.action}
               className="mt-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-rose-200"
             >
-              Jump <ArrowUpTray className="h-3.5 w-3.5" />
+              Jump <ArrowUp className="h-3.5 w-3.5" />
             </button>
           ) : null}
         </motion.div>

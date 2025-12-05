@@ -141,7 +141,10 @@ export const buildSampleSchedule = (startDate: Date, weeksInPeriod: number): Sam
     .map((item) => {
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + item.week * 7 + item.weekday);
-      const location = DM_SCHEDULE_LOCATIONS[item.shopId];
+      const location = DM_SCHEDULE_LOCATIONS[item.shopId as StaticScheduleLocationId] ?? {
+        label: `Shop ${String(item.shopId)}`,
+        short: String(item.shopId),
+      };
       return {
         date,
         iso: date.toISOString().split("T")[0],
@@ -168,7 +171,7 @@ export const buildCoverageSummary = (entries: SampleScheduleEntry[]) => {
   } as const;
 
   return DM_COVERAGE_SHOPS.map((shopId) => {
-    const shopMeta = DM_SCHEDULE_LOCATIONS[shopId];
+    const shopMeta = DM_SCHEDULE_LOCATIONS[shopId as StaticScheduleLocationId];
     const count = entries.filter((entry) => entry.shopId === shopId).length;
     const tone = count >= 2 ? "strong" : count === 1 ? "watch" : "gap";
     const toneStyles = coverageStyles[tone];

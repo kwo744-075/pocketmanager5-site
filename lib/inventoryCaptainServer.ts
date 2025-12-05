@@ -1,8 +1,8 @@
 import { supabaseServer } from "@/lib/supabaseServer";
-import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@shared/features/inventory-captain/config";
-import type { InventoryShopDirectoryEntry, InventoryThresholdRecord } from "@shared/features/inventory-captain/metadata";
-import type { InventoryRunFilters } from "@shared/features/inventory-captain/runTypes";
-import type { DistrictInventorySummary, ShopDayInventoryStatus } from "@shared/features/inventory-captain/types";
+import { DEFAULT_INVENTORY_THRESHOLD_CONFIG } from "@/lib/inventory-captain/config";
+import type { InventoryShopDirectoryEntry, InventoryThresholdRecord } from "@/lib/inventory-captain/metadata";
+import type { InventoryRunFilters } from "@/lib/inventory-captain/runTypes";
+import type { DistrictInventorySummary, ShopDayInventoryStatus } from "@/lib/inventory-captain/types";
 
 type ThresholdRow = {
   alignment_id: string | null;

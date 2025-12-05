@@ -370,6 +370,33 @@ export const FORM_REGISTRY: FormConfig[] = [
           },
         ],
       },
+      {
+        title: "Celebration profile (optional)",
+        description:
+          "Optional birthday + celebration cues for future Recognition automations. Fill it out when you have details, otherwise skip it for now.",
+        fields: [
+          {
+            type: "date",
+            name: "dateOfBirth",
+            label: "Date of birth",
+            helpText: "Feeds the Recognition Captain birthdays list after Supabase wiring lands.",
+          },
+          {
+            type: "text",
+            name: "favoriteTreat",
+            label: "Favorite treat",
+            placeholder: "Brownies, Dr Pepper, etc.",
+            helpText: "Optional extra context for celebration planning.",
+          },
+          {
+            type: "textarea",
+            name: "celebrationNotes",
+            label: "Celebration notes",
+            placeholder: "Recognition preferences, family shoutouts, surprise ideas…",
+            helpText: "Recognition Captain will surface this alongside DOB once the pipeline is active.",
+          },
+        ],
+      },
     ],
   },
   {

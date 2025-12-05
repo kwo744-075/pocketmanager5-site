@@ -7,6 +7,7 @@ import {
   DM_RUNNING_PERIOD_WINDOW,
   buildRetailPeriodSequence,
   getRetailPeriodInfo,
+  shortDateFormatter,
   type SampleScheduleEntry,
   type ScheduleLocationId,
 } from "../../components/dmScheduleUtils";
@@ -396,16 +397,6 @@ async function DmScheduleFeaturePage({ feature, docUrl, shopNumber, plannerPrefi
               >
                 Open DM workspace ↗
               </Link>
-              {docUrl && (
-                <Link
-                  href={docUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-slate-500"
-                >
-                  View spec ↗
-                </Link>
-              )}
             </div>
           </div>
           <div className="mt-6 space-y-6">

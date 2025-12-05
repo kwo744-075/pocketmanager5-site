@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseServer } from "@/lib/supabaseServer";
 import { getServerSession } from "@/lib/auth/session";
-import { buildMockRecognitionResponse } from "@shared/features/recognition-captain/mockData";
-import { evaluateRecognitionAwards, buildRecognitionSummary } from "@shared/features/recognition-captain/engine";
-import { parseRecognitionUpload, RecognitionUploadError } from "@shared/features/recognition-captain/parser";
-import { RECOGNITION_AWARD_CONFIG } from "@shared/features/recognition-captain/config";
-import type { RecognitionRuleDraft, RecognitionUploaderContext } from "@shared/features/recognition-captain/types";
+import { buildMockRecognitionResponse } from "@/lib/recognition-captain/mockData";
+import { evaluateRecognitionAwards, buildRecognitionSummary } from "@/lib/recognition-captain/engine";
+import { parseRecognitionUpload, RecognitionUploadError } from "@/lib/recognition-captain/parser";
+import { RECOGNITION_AWARD_CONFIG } from "@/lib/recognition-captain/config";
+import type { RecognitionRuleDraft, RecognitionUploaderContext } from "@/lib/recognition-captain/types";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -53,30 +53,38 @@ export async function POST(request: Request) {
       processedBy: session.user?.email ?? "recognition@take5.local",
     });
 
-    const { data: inserted, error } = await supabaseServer
-      .from("recognition_runs")
-      .insert({
-        reporting_period: summary.reportingPeriod,
-        data_source: summary.dataSource,
-        file_name: file.name ?? null,
-        processed_by: summary.processedBy,
-        uploader_user_id: session.user?.id ?? null,
-        uploader_alignment_id: session.alignment?.activeAlignmentId ?? null,
-        row_count: summary.rowCount,
-        median_car_count: summary.medianCarCount,
-        average_ticket: summary.averageTicket,
-        submission_notes: summary.submissionNotes,
-        summary_json: summary,
-        awards_json: awards,
-        dataset_json: dataset,
-        rule_overrides: buildRuleOverridePayload(ruleOverrides),
-      })
-      .select("id")
-      .single();
+    let runId: string | null = null;
+    try {
+      const { data: inserted, error } = await supabaseServer
+        .from("recognition_runs")
+        .insert({
+          reporting_period: summary.reportingPeriod,
+          data_source: summary.dataSource,
+          file_name: file.name ?? null,
+          processed_by: summary.processedBy,
+          uploader_user_id: session.user?.id ?? null,
+          uploader_alignment_id: session.alignment?.activeAlignmentId ?? null,
+          row_count: summary.rowCount,
+          median_car_count: summary.medianCarCount,
+          average_ticket: summary.averageTicket,
+          submission_notes: summary.submissionNotes,
+          summary_json: summary,
+          awards_json: awards,
+          dataset_json: dataset,
+          rule_overrides: buildRuleOverridePayload(ruleOverrides),
+          manual_awards_json: [],
+          confirmations_json: [],
+          birthdays_json: [],
+        })
+        .select("id")
+        .single();
 
-    if (error) {
-      console.error("Recognition run insert failed", error);
-      throw new Error("Unable to persist recognition run");
+      if (error) {
+        throw error;
+      }
+      runId = inserted?.id ?? null;
+    } catch (insertError) {
+      console.warn("Recognition run insert failed, responding without persistence", insertError);
     }
 
     const uploaderContext: RecognitionUploaderContext = {
@@ -86,7 +94,7 @@ export async function POST(request: Request) {
     };
 
     return NextResponse.json({
-      runId: inserted?.id,
+      runId,
       uploader: uploaderContext,
       summary,
       awards,

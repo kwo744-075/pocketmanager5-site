@@ -16,6 +16,7 @@ import {
   Calculator,
   Camera,
   Crown,
+  ThumbsUp,
   CheckSquare,
   ClipboardCheck,
   FileCheck2,
@@ -62,82 +63,69 @@ type QuickAction = {
   accent: string;
 };
 
-const QUICK_ACTIONS: QuickAction[] = [
-  {
-    label: "Daily Log",
-    description: "Closeout workspace",
-    href: "/pocket-manager5/features/daily-log",
-    icon: FileText,
-    accent: "from-emerald-500/30 via-emerald-500/5 to-transparent",
-  },
-  {
-    label: "DM Schedule",
-    description: "Visit planning + cadence",
-    href: "/pocket-manager5/features/dm-schedule",
-    icon: CalendarDays,
-    accent: "from-cyan-500/30 via-cyan-500/5 to-transparent",
-  },
-  {
-    label: "Mini POS",
-    description: "Checkout shortcuts",
-    href: "/pocket-manager5/features/mini-pos",
-    icon: Calculator,
-    accent: "from-pink-500/30 via-pink-500/5 to-transparent",
-  },
-  {
-    label: "Labor Tracker",
-    description: "Allowed vs used hours",
-    href: "/pocket-manager5/features/labor-tracker",
-    icon: BarChart3,
-    accent: "from-violet-500/30 via-violet-500/5 to-transparent",
-  },
-  {
-    label: "Training Tracker",
-    description: "CTT + cadence",
-    href: "/pocket-manager5/features/training-tracker",
-    icon: GraduationCap,
-    accent: "from-amber-500/30 via-amber-500/5 to-transparent",
-  },
-  {
-    label: "Pulse Check 5",
-    description: "District rollups",
-    href: "/pulse-check5",
-    icon: TrendingUp,
-    accent: "from-sky-500/30 via-sky-500/5 to-transparent",
-  },
-];
-
-type HeroShortcut = {
-  label: string;
+type QuickActionGroup = {
+  id: string;
+  title: string;
   description: string;
-  href: string;
-  icon: LucideIcon;
+  actions: QuickAction[];
 };
 
-const HERO_SHORTCUTS: HeroShortcut[] = [
+const QUICK_ACTION_GROUPS: QuickActionGroup[] = [
   {
-    label: "Home Screen",
-    description: "Pocket Manager hub",
-    href: "/",
-    icon: Building2,
+    id: "launchpads",
+    title: "Launchpads",
+    description: "Open the three hubs managers live in all day.",
+    actions: [
+      {
+        label: "People Workspace",
+        description: "Roster, training, coaching",
+        href: "/pocket-manager5/features/employee-management",
+        icon: UserCog,
+        accent: "from-emerald-500/30 via-emerald-500/5 to-transparent",
+      },
+      {
+        label: "OPS Hub",
+        description: "Inventory, workbook, service kits",
+        href: "/pocket-manager5/features/ops",
+        icon: Boxes,
+        accent: "from-cyan-500/30 via-cyan-500/5 to-transparent",
+      },
+      {
+        label: "Manager's Clipboard",
+        description: "KPIs, cadence, supply",
+        href: "/pocket-manager5/features/managers-clipboard",
+        icon: ClipboardCheck,
+        accent: "from-amber-500/30 via-amber-500/5 to-transparent",
+      },
+    ],
   },
   {
-    label: "DM Forms",
-    description: "Inspections • visits",
-    href: "/pocket-manager5/forms",
-    icon: NotebookPen,
-  },
-  {
-    label: "Daily Log",
-    description: "Cars • cash • variances",
-    href: "/pocket-manager5/features/daily-log",
-    icon: FileText,
-  },
-  {
-    label: "Pulse Check 5",
-    description: "District KPIs",
-    href: "/pulse-check5",
-    icon: TrendingUp,
+    id: "daily-cadence",
+    title: "Daily cadence",
+    description: "High-frequency flows for busy routes.",
+    actions: [
+      {
+        label: "Daily Log",
+        description: "Closeout workspace",
+        href: "/pocket-manager5/features/daily-log",
+        icon: FileText,
+        accent: "from-emerald-500/30 via-emerald-500/5 to-transparent",
+      },
+      {
+        label: "DM Schedule",
+        description: "Visit planning + cadence",
+        href: "/pocket-manager5/features/dm-schedule",
+        icon: CalendarDays,
+        accent: "from-cyan-500/30 via-cyan-500/5 to-transparent",
+      },
+      {
+        label: "Pulse Check 5",
+        description: "District rollups",
+        href: "/pulse-check5",
+        icon: TrendingUp,
+        accent: "from-sky-500/30 via-sky-500/5 to-transparent",
+      },
+    ],
   },
 ];
 
@@ -373,9 +361,31 @@ function QuickActionsRail({ appendShopHref }: QuickActionsRailProps) {
           <ArrowUpRight className="h-4 w-4" />
         </Link>
       </div>
-      <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {QUICK_ACTIONS.map((action) => (
-          <QuickActionLink key={action.label} {...action} href={appendShopHref(action.href) ?? action.href} />
+      <div className="mt-6 grid gap-4 lg:grid-cols-2">
+        {QUICK_ACTION_GROUPS.map((group) => (
+          <div
+            key={group.id}
+            className="rounded-2xl border border-white/5 bg-slate-950/70 p-4 shadow-inner shadow-black/40"
+          >
+            <div className="flex flex-wrap items-baseline justify-between gap-2">
+              <div>
+                <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{group.title}</p>
+                <p className="text-sm text-slate-300">{group.description}</p>
+              </div>
+              <span className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-500">
+                {group.actions.length} tools
+              </span>
+            </div>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {group.actions.map((action) => (
+                <QuickActionLink
+                  key={`${group.id}-${action.label}`}
+                  {...action}
+                  href={appendShopHref(action.href) ?? action.href}
+                />
+              ))}
+            </div>
+          </div>
         ))}
       </div>
     </section>
@@ -413,12 +423,7 @@ type HeroSectionProps = {
 };
 
 function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, loginEmail, appendShopHref }: HeroSectionProps) {
-  const formatStatValue = (value?: number | null) => (typeof value === "number" ? integerFormatter.format(value) : "—");
-  const heroStats = [
-    { label: "Scope", value: formatScopeLabel(hierarchy?.scope_level) },
-    { label: "District shops", value: formatStatValue(hierarchy?.shops_in_district), caption: "Active units" },
-    { label: "Region coverage", value: formatStatValue(hierarchy?.shops_in_region), caption: "Shops in region" },
-  ];
+  const homeShortcutHref = appendShopHref("/") ?? "/";
 
   return (
     <header className="rounded-3xl border border-slate-900/70 bg-gradient-to-br from-slate-950 via-slate-950/90 to-slate-900/40 p-6 shadow-[0_25px_80px_rgba(0,0,0,0.45)]">
@@ -430,22 +435,26 @@ function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, lo
               Pocket Manager 5
             </span>
           </div>
-          <p className="text-lg leading-relaxed text-slate-200">
-            Rebuilt home base that keeps DMs focused on coverage, cash, and crew health without digging through duplicate
-            cards.
-          </p>
-          <div className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
-            <RetailPills />
+          <div className="flex flex-wrap items-stretch gap-3">
+            <div className="flex-1 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
+              <RetailPills />
+            </div>
+            <Link
+              href={homeShortcutHref}
+              className="min-w-[160px] shrink-0 rounded-2xl border border-emerald-400/40 bg-emerald-500/5 px-4 py-3 text-left shadow-inner shadow-emerald-500/10 transition hover:-translate-y-0.5 hover:border-emerald-300/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-300"
+            >
+              <div className="flex items-center gap-3">
+                <span className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 p-2 text-emerald-200">
+                  <ThumbsUp className="h-5 w-5" />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-white">Home Screen</p>
+                  <p className="text-xs text-emerald-100/80">Pocket Manager hub</p>
+                </div>
+              </div>
+            </Link>
           </div>
-          <div className="flex flex-wrap gap-3">
-            {HERO_SHORTCUTS.map((shortcut) => (
-              <HeroShortcutPill
-                key={shortcut.label}
-                {...shortcut}
-                href={appendShopHref(shortcut.href) ?? shortcut.href}
-              />
-            ))}
-          </div>
+          <p className="text-lg leading-relaxed text-slate-200">Brining it all together</p>
         </div>
         <div className="space-y-4">
           <div className="rounded-2xl border border-slate-900/70 bg-slate-950/80 p-4">
@@ -466,50 +475,9 @@ function HeroSection({ heroName, hierarchy, hierarchyLoading, hierarchyError, lo
               </div>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3">
-            {heroStats.map((stat) => (
-              <HeroStatCard key={stat.label} {...stat} />
-            ))}
-          </div>
         </div>
       </div>
     </header>
-  );
-}
-
-type HeroShortcutPillProps = HeroShortcut & { href: string };
-
-function HeroShortcutPill({ icon: Icon, label, description, href }: HeroShortcutPillProps) {
-  return (
-    <Link
-      href={href}
-      className="group flex flex-1 min-w-[200px] items-center gap-3 rounded-2xl border border-slate-800/70 bg-slate-950/70 px-4 py-3 text-left transition hover:-translate-y-0.5 hover:border-emerald-400/50"
-    >
-      <span className="rounded-2xl border border-slate-800/70 bg-slate-900/80 p-2 text-emerald-200">
-        <Icon className="h-4 w-4" />
-      </span>
-      <div>
-        <p className="text-sm font-semibold text-white">{label}</p>
-        <p className="text-xs text-slate-400">{description}</p>
-      </div>
-      <ArrowUpRight className="ml-auto h-4 w-4 text-slate-600 transition group-hover:text-white" />
-    </Link>
-  );
-}
-
-type HeroStatCardProps = {
-  label: string;
-  value: string;
-  caption?: string;
-};
-
-function HeroStatCard({ label, value, caption }: HeroStatCardProps) {
-  return (
-    <div className="rounded-2xl border border-slate-900/70 bg-slate-950/70 p-3">
-      <p className="text-xs uppercase tracking-[0.25em] text-slate-500">{label}</p>
-      <p className="mt-1 text-2xl font-semibold text-white">{value}</p>
-      {caption ? <p className="text-xs text-slate-400">{caption}</p> : null}
-    </div>
   );
 }
 
@@ -1987,7 +1955,7 @@ function OpsHubSection({ shopId }: { shopId: string | null | undefined }) {
       eyebrow="Operations grid"
       accent="emerald"
       actionHref="/pocket-manager5/features/ops"
-      quickLinks={["ops", "inventory", "workbook", "checkbook", "crash-kit", "solinks", "claims", "alerts", "mini-pos"]}
+      quickLinks={["ops", "inventory", "workbook", "checkbook", "crash-kit", "solinks", "claims", "alerts"]}
     >
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">

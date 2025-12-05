@@ -1,9 +1,12 @@
 import { supabaseServer } from "@/lib/supabaseServer";
 import type {
+  CelebrationEntry,
+  ConfirmationRow,
+  ManualAwardEntry,
   RecognitionAwardResult,
   RecognitionDatasetRow,
   RecognitionProcessingSummary,
-} from "@shared/features/recognition-captain/types";
+} from "@/lib/recognition-captain/types";
 
 export class RecognitionRunNotFoundError extends Error {
   constructor(message: string) {
@@ -23,6 +26,9 @@ export type RecognitionRunRecord = {
   summary: RecognitionProcessingSummary;
   awards: RecognitionAwardResult[];
   dataset: RecognitionDatasetRow[];
+  manualAwards: ManualAwardEntry[];
+  confirmations: ConfirmationRow[];
+  birthdays: CelebrationEntry[];
 };
 
 type RecognitionRunRow = {
@@ -36,6 +42,9 @@ type RecognitionRunRow = {
   summary_json: RecognitionProcessingSummary;
   awards_json: RecognitionAwardResult[];
   dataset_json: RecognitionDatasetRow[];
+  manual_awards_json: ManualAwardEntry[] | null;
+  confirmations_json: ConfirmationRow[] | null;
+  birthdays_json: CelebrationEntry[] | null;
 };
 
 export async function loadRecognitionRun(runId?: string | null): Promise<RecognitionRunRecord> {
@@ -46,7 +55,7 @@ export async function loadRecognitionRun(runId?: string | null): Promise<Recogni
   const { data, error } = await supabaseServer
     .from("recognition_runs")
     .select(
-      "id, created_at, reporting_period, data_source, file_name, processed_by, submission_notes, summary_json, awards_json, dataset_json",
+      "id, created_at, reporting_period, data_source, file_name, processed_by, submission_notes, summary_json, awards_json, dataset_json, manual_awards_json, confirmations_json, birthdays_json",
     )
     .eq("id", runId)
     .single();
@@ -68,5 +77,8 @@ export async function loadRecognitionRun(runId?: string | null): Promise<Recogni
     summary: record.summary_json,
     awards: record.awards_json,
     dataset: record.dataset_json,
+    manualAwards: record.manual_awards_json ?? [],
+    confirmations: record.confirmations_json ?? [],
+    birthdays: record.birthdays_json ?? [],
   } satisfies RecognitionRunRecord;
 }

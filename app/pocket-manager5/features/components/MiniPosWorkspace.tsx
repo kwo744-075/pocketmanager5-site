@@ -24,7 +24,7 @@ import {
   createEmptyTechAssignments,
   createEmptyVehicleInfo,
   hydrateMiniPosSession,
-} from "@shared/features/mini-pos/sessionUtils";
+} from "../miniPosSessionUtils";
 import {
   type MiniPosCompletePayload,
   type MiniPosSessionPayload,
@@ -728,12 +728,12 @@ function CapturePanel({
           </div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <TextField label="Customer name" value={customerInfo.name} onChange={(value) => onCustomerChange("name", value)} icon={User} />
-          <TextField label="Phone" value={customerInfo.phone} onChange={(value) => onCustomerChange("phone", value)} icon={Phone} inputMode="tel" />
-          <TextField label="Email" value={customerInfo.email} onChange={(value) => onCustomerChange("email", value)} icon={Mail} inputMode="email" />
-          <TextField label="Driver name" value={customerInfo.driver} onChange={(value) => onCustomerChange("driver", value)} icon={Users} />
-          <TextField label="Fleet / account" value={customerInfo.fleetAccount} onChange={(value) => onCustomerChange("fleetAccount", value)} icon={ClipboardList} />
-          <TextField label="PO / Auth #" value={customerInfo.purchaseOrder} onChange={(value) => onCustomerChange("purchaseOrder", value)} icon={Receipt} />
+          <TextField label="Customer name" value={customerInfo.name ?? ""} onChange={(value) => onCustomerChange("name", value)} icon={User} />
+          <TextField label="Phone" value={customerInfo.phone ?? ""} onChange={(value) => onCustomerChange("phone", value)} icon={Phone} inputMode="tel" />
+          <TextField label="Email" value={customerInfo.email ?? ""} onChange={(value) => onCustomerChange("email", value)} icon={Mail} inputMode="email" />
+          <TextField label="Driver name" value={customerInfo.driver ?? ""} onChange={(value) => onCustomerChange("driver", value)} icon={Users} />
+          <TextField label="Fleet / account" value={customerInfo.fleetAccount ?? ""} onChange={(value) => onCustomerChange("fleetAccount", value)} icon={ClipboardList} />
+          <TextField label="PO / Auth #" value={customerInfo.purchaseOrder ?? ""} onChange={(value) => onCustomerChange("purchaseOrder", value)} icon={Receipt} />
         </div>
       </div>
 
@@ -746,19 +746,19 @@ function CapturePanel({
           </div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <TextField label="VIN" value={vehicleInfo.vin} onChange={(value) => onVehicleChange("vin", value)} icon={ClipboardList} />
-          <TextField label="Year" value={vehicleInfo.year} onChange={(value) => onVehicleChange("year", value)} icon={NotebookPen} inputMode="numeric" />
-          <TextField label="Make" value={vehicleInfo.make} onChange={(value) => onVehicleChange("make", value)} icon={Car} />
-          <TextField label="Model" value={vehicleInfo.model} onChange={(value) => onVehicleChange("model", value)} icon={Car} />
-          <TextField label="Mileage" value={vehicleInfo.mileage} onChange={(value) => onVehicleChange("mileage", value)} icon={Fuel} inputMode="numeric" />
-          <TextField label="License plate" value={vehicleInfo.licensePlate} onChange={(value) => onVehicleChange("licensePlate", value)} icon={ClipboardList} />
-          <TextField label="Unit #" value={vehicleInfo.unitNumber} onChange={(value) => onVehicleChange("unitNumber", value)} icon={ClipboardList} />
-          <TextField label="Oil type" value={vehicleInfo.oilType} onChange={(value) => onVehicleChange("oilType", value)} icon={Fuel} />
+          <TextField label="VIN" value={vehicleInfo.vin ?? ""} onChange={(value) => onVehicleChange("vin", value)} icon={ClipboardList} />
+          <TextField label="Year" value={vehicleInfo.year ?? ""} onChange={(value) => onVehicleChange("year", value)} icon={NotebookPen} inputMode="numeric" />
+          <TextField label="Make" value={vehicleInfo.make ?? ""} onChange={(value) => onVehicleChange("make", value)} icon={Car} />
+          <TextField label="Model" value={vehicleInfo.model ?? ""} onChange={(value) => onVehicleChange("model", value)} icon={Car} />
+          <TextField label="Mileage" value={vehicleInfo.mileage ?? ""} onChange={(value) => onVehicleChange("mileage", value)} icon={Fuel} inputMode="numeric" />
+          <TextField label="License plate" value={vehicleInfo.licensePlate ?? ""} onChange={(value) => onVehicleChange("licensePlate", value)} icon={ClipboardList} />
+          <TextField label="Unit #" value={vehicleInfo.unitNumber ?? ""} onChange={(value) => onVehicleChange("unitNumber", value)} icon={ClipboardList} />
+          <TextField label="Oil type" value={vehicleInfo.oilType ?? ""} onChange={(value) => onVehicleChange("oilType", value)} icon={Fuel} />
         </div>
         <label className="mt-4 block text-sm text-slate-300">
           <span className="text-slate-400">Vehicle notes</span>
           <textarea
-            value={vehicleInfo.notes}
+            value={vehicleInfo.notes ?? ""}
             onChange={(event) => onVehicleChange("notes", event.target.value)}
             rows={3}
             className="mt-1 w-full rounded-2xl border border-slate-800/70 bg-slate-900/60 px-3 py-2 text-sm text-slate-100 focus:border-emerald-400/70 focus:outline-none"
@@ -775,10 +775,10 @@ function CapturePanel({
           </div>
         </div>
         <div className="grid gap-4 md:grid-cols-2">
-          <TextField label="Pit" value={techAssignments.pit} onChange={(value) => onTechChange("pit", value)} icon={Users} />
-          <TextField label="Hood" value={techAssignments.hood} onChange={(value) => onTechChange("hood", value)} icon={Users} />
-          <TextField label="Safety" value={techAssignments.safety} onChange={(value) => onTechChange("safety", value)} icon={Users} />
-          <TextField label="Mod" value={techAssignments.mod} onChange={(value) => onTechChange("mod", value)} icon={Users} />
+              <TextField label="Pit" value={techAssignments.pit ?? ""} onChange={(value) => onTechChange("pit", value)} icon={Users} />
+              <TextField label="Hood" value={techAssignments.hood ?? ""} onChange={(value) => onTechChange("hood", value)} icon={Users} />
+              <TextField label="Safety" value={techAssignments.safety ?? ""} onChange={(value) => onTechChange("safety", value)} icon={Users} />
+              <TextField label="Mod" value={techAssignments.mod ?? ""} onChange={(value) => onTechChange("mod", value)} icon={Users} />
         </div>
         <label className="block text-sm text-slate-300">
           <span className="text-slate-400">Service notes</span>

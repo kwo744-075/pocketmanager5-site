@@ -16,7 +16,10 @@ create table if not exists public.recognition_runs (
   summary_json jsonb not null,
   awards_json jsonb not null,
   dataset_json jsonb not null,
-  rule_overrides jsonb
+  rule_overrides jsonb,
+  manual_awards_json jsonb,
+  confirmations_json jsonb,
+  birthdays_json jsonb
 );
 
 create index if not exists recognition_runs_period_idx on public.recognition_runs (reporting_period);

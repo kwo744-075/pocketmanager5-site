@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { NextResponse } from "next/server";
-import { formatRecognitionMetricValue } from "@shared/features/recognition-captain/config";
+import { formatRecognitionMetricValue } from "@/lib/recognition-captain/config";
+import type { ConfirmationRow, ManualAwardEntry } from "@/lib/recognition-captain/types";
 import { loadRecognitionRun, RecognitionRunNotFoundError, type RecognitionRunRecord } from "../run-utils";
 
 export const dynamic = "force-dynamic";
@@ -8,6 +9,8 @@ export const runtime = "nodejs";
 
 type PptxExportRequest = {
   runId?: string | null;
+  manualAwards?: ManualAwardEntry[];
+  confirmations?: ConfirmationRow[];
 };
 
 type TableCell = string | number | { text: string; options?: Record<string, unknown> };
@@ -34,7 +37,9 @@ export async function POST(request: Request) {
   try {
     const body = await readRequestBody<PptxExportRequest>(request);
     const run = await loadRecognitionRun(body.runId);
-    const buffer = await buildRecognitionDeck(run);
+    const manualAwards = body.manualAwards ?? run.manualAwards ?? [];
+    const confirmations = body.confirmations ?? run.confirmations ?? [];
+    const buffer = await buildRecognitionDeck(run, manualAwards, confirmations);
     const downloadUrl = `data:application/vnd.openxmlformats-officedocument.presentationml.presentation;base64,${buffer.toString("base64")}`;
 
     return NextResponse.json({
@@ -64,7 +69,11 @@ async function readRequestBody<T>(request: Request): Promise<T> {
   }
 }
 
-async function buildRecognitionDeck(run: RecognitionRunRecord): Promise<Buffer> {
+async function buildRecognitionDeck(
+  run: RecognitionRunRecord,
+  manualAwards: ManualAwardEntry[],
+  confirmations: ConfirmationRow[],
+): Promise<Buffer> {
   const PptxGenJS = (await import("pptxgenjs")).default as unknown as PresentationConstructor;
   const pptx = new PptxGenJS();
 
@@ -75,6 +84,12 @@ async function buildRecognitionDeck(run: RecognitionRunRecord): Promise<Buffer> 
 
   buildTitleSlide(pptx.addSlide(), run);
   buildSummarySlide(pptx.addSlide(), run);
+  if (manualAwards.length) {
+    buildManualAwardsSlide(pptx.addSlide(), manualAwards);
+  }
+  if (confirmations.length) {
+    buildConfirmationSlide(pptx.addSlide(), confirmations);
+  }
   run.awards.forEach((award) => buildAwardSlide(pptx.addSlide(), award.awardLabel, award.description, award.winners));
 
   return pptx.write("nodebuffer");
@@ -155,6 +170,71 @@ function buildSummarySlide(slide: Slide, run: RecognitionRunRecord) {
       wrap: true,
     },
   );
+}
+
+function buildManualAwardsSlide(slide: Slide, manualAwards: ManualAwardEntry[]) {
+  slide.addText("Manual Awards", {
+    x: 0.5,
+    y: 0.4,
+    fontSize: 24,
+    bold: true,
+    color: "0F172A",
+  });
+
+  const rows: TableRow[] = [["Level", "Award", "Winner", "Shop", "Rationale"]];
+  manualAwards.forEach((entry) => {
+    rows.push([
+      entry.level,
+      entry.title,
+      entry.winnerName,
+      entry.winnerShop ? `#${entry.winnerShop}` : "—",
+      entry.rationale || "—",
+    ]);
+  });
+
+  slide.addTable(rows, {
+    x: 0.5,
+    y: 1.0,
+    w: 9.0,
+    fontSize: 12,
+    border: { type: "solid", color: "E2E8F0", pt: 1 },
+    fill: { color: "FFFFFF" },
+    autoPage: true,
+    autoPageRepeatHeader: true,
+  });
+}
+
+function buildConfirmationSlide(slide: Slide, confirmations: ConfirmationRow[]) {
+  slide.addText("Confirmation Notes", {
+    x: 0.5,
+    y: 0.4,
+    fontSize: 24,
+    bold: true,
+    color: "0F172A",
+  });
+
+  const rows: TableRow[] = [["Award", "Winner", "DM Note", "RD Note"]];
+  confirmations
+    .filter((row) => (row.dmNote?.trim() ?? "") || (row.rdNote?.trim() ?? ""))
+    .forEach((row) => {
+      rows.push([
+        row.awardLabel,
+        `${row.winnerName}${row.shopLabel ? ` (${row.shopLabel})` : ""}`,
+        row.dmNote ?? "",
+        row.rdNote ?? "",
+      ]);
+    });
+
+  slide.addTable(rows, {
+    x: 0.5,
+    y: 1.0,
+    w: 9.0,
+    fontSize: 12,
+    border: { type: "solid", color: "E2E8F0", pt: 1 },
+    fill: { color: "FFFFFF" },
+    autoPage: true,
+    autoPageRepeatHeader: true,
+  });
 }
 
 function buildAwardSlide(slide: Slide, title: string, description: string, winners: RecognitionRunRecord["awards"][number]["winners"]) {
