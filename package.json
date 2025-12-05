@@ -7,7 +7,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/form-submission-route.test.ts tests/form-submission-route-smoke.test.ts tests/dm-review-import-route.test.ts tests/dm-schedule-utils.test.ts"
+    "test": "tsx --test tests/form-submission-route.test.ts tests/form-submission-route-smoke.test.ts tests/dm-review-import-route.test.ts tests/dm-schedule-utils.test.ts",
+    "sim:sheet": "node scripts/rebuild-sim-sheet.cjs",
+    "sim:upload": "tsx scripts/upload-sim-sheet.ts",
+    "sim:sync": "pnpm run sim:sheet && pnpm run sim:upload"
   },
   "dependencies": {
     "@supabase/auth-helpers-nextjs": "^0.15.0",
