@@ -1,19 +1,21 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import Chip from "@/app/components/Chip";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import {
   DM_DAY_NAMES,
   DM_STATUS_DOTS,
   DM_VISIT_BADGES,
+  DM_COVERAGE_SHOPS,
+  DM_SCHEDULE_LOCATIONS,
   buildCoverageSummary,
   buildPeriodGrid,
   buildSampleSchedule,
   buildDueChecklist,
   buildVisitMix,
   DAY_MS,
-  DM_RUNNING_PERIOD_WINDOW,
   groupEntriesByDate,
   getRetailPeriodInfo,
   getPeriodStorageKey,
@@ -25,28 +27,13 @@ import {
 } from "./dmScheduleUtils";
 
 const STORAGE_KEYS = {
-  viewScope: "dmSchedule:viewScope",
   clearedPanels: "dmSchedule:clearedPanels",
   panelOverrides: "dmSchedule:panelOverrides",
-  yearViewYear: "dmSchedule:yearViewYear",
+  rdEmail: "dmSchedule:rdEmail",
 } as const;
 
-const PRINT_SCALE = 0.78;
-const YEAR_VIEW_MIN_YEAR = 2026;
-const YEAR_VIEW_MAX_YEAR = 2030;
+const PRINT_SCALE = 1; // default to 1 page landscape for printing
 const MIN_SCHEDULE_TIMESTAMP = Date.UTC(2026, 0, 1);
-
-type RunningVisitMixEntry = {
-  type: string;
-  count: number;
-  percentage: number;
-};
-
-type RunningVisitMixSummary = {
-  entries: RunningVisitMixEntry[];
-  totalVisits: number;
-  label: string;
-};
 
 type SerializedEntry = Omit<SampleScheduleEntry, "date"> & { date: string };
 
@@ -221,7 +208,6 @@ type PlannerData = {
   weekProgress: number;
   visitCompletionPct: number;
   today: Date;
-  runningVisitMixSummary: RunningVisitMixSummary;
 };
 
 const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: Date): PlannerData => {
@@ -363,78 +349,6 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     return Math.min(100, Math.round((satisfied / required) * 100));
   }, [dueChecklist]);
 
-  const trailingPeriods = useMemo(() => {
-    const periods: RetailPeriodInfo[] = [];
-    let cursor = activePeriodInfo;
-    for (let index = 0; index < DM_RUNNING_PERIOD_WINDOW; index += 1) {
-      periods.push(cursor);
-      const previousAnchor = new Date(cursor.startDate.getTime() - DAY_MS);
-      cursor = getRetailPeriodInfo(previousAnchor);
-    }
-    return periods.reverse();
-  }, [activePeriodInfo]);
-
-  const runningVisitMixSummary = useMemo<RunningVisitMixSummary>(() => {
-    if (!trailingPeriods.length) {
-      return { entries: [], totalVisits: 0, label: "Running 12 periods" };
-    }
-
-    const earliest = trailingPeriods[0];
-    const latest = trailingPeriods[trailingPeriods.length - 1];
-    const rangeLabel = earliest && latest
-      ? `${shortDateFormatter.format(earliest.startDate)} – ${shortDateFormatter.format(latest.endDate)}`
-      : "Running 12 periods";
-
-    const summarizeEntries = (entries: SampleScheduleEntry[]): RunningVisitMixSummary => {
-      const totals: Record<string, number> = {};
-      entries.forEach((entry) => {
-        if (entry.visitType === "Off") return;
-        totals[entry.visitType] = (totals[entry.visitType] ?? 0) + 1;
-      });
-      const totalVisits = Object.values(totals).reduce((sum, count) => sum + count, 0);
-      const topEntries = Object.entries(totals)
-        .map(([type, count]) => ({
-          type,
-          count,
-          percentage: totalVisits ? Math.round((count / totalVisits) * 100) : 0,
-        }))
-        .sort((a, b) => b.percentage - a.percentage)
-        .slice(0, 4);
-
-      return {
-        entries: topEntries,
-        totalVisits,
-        label: rangeLabel,
-      };
-    };
-
-    const startTs = earliest.startDate.getTime();
-    const endTs = latest.endDate.getTime();
-
-    if (historicalEntries?.length) {
-      const scopedEntries = historicalEntries.filter((entry) => {
-        const entryTs = entry.date.getTime();
-        return entryTs >= startTs && entryTs <= endTs;
-      });
-      if (scopedEntries.length) {
-        return summarizeEntries(scopedEntries);
-      }
-    }
-
-    const syntheticEntries: SampleScheduleEntry[] = [];
-    trailingPeriods.forEach((info) => {
-      const isActivePeriod =
-        info.startDate.getTime() === activePeriodInfo.startDate.getTime() &&
-        info.endDate.getTime() === activePeriodInfo.endDate.getTime();
-      const entriesForPeriod = isActivePeriod
-        ? activeEntries
-        : buildSampleSchedule(info.startDate, info.weeksInPeriod);
-      syntheticEntries.push(...entriesForPeriod);
-    });
-
-    return summarizeEntries(syntheticEntries);
-  }, [trailingPeriods, historicalEntries, activeEntries, activePeriodInfo]);
-
   return {
     today,
     activePeriodInfo,
@@ -449,7 +363,6 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     adminBlocks,
     weekProgress,
     visitCompletionPct,
-    runningVisitMixSummary,
   };
 };
 
@@ -473,6 +386,7 @@ export function DmSchedulePlanner({
 }: DmSchedulePlannerProps) {
   const router = useRouter();
   const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
+  const [internalSelectedPanelKey, setInternalSelectedPanelKey] = useState<string | null>(null);
   const [selectedDayDetail, setSelectedDayDetail] = useState<{
     day: PeriodDay;
     entries: SampleScheduleEntry[];
@@ -483,8 +397,8 @@ export function DmSchedulePlanner({
     storageKey: string;
     entries: Record<string, SampleScheduleEntry[]>;
   } | null>(null);
-  const [viewScope, setViewScope] = useState<"dual" | "year">("dual");
   const [printTarget, setPrintTarget] = useState<string | null>(null);
+  const [rdEmail, setRdEmail] = useState<string | null>(null);
   const {
     periodPanels,
     visitMix,
@@ -511,55 +425,6 @@ export function DmSchedulePlanner({
       anchorDate,
     );
 
-  const derivedDefaultYear = useMemo(() => {
-    const fallbackYear = today.getFullYear();
-    const baseYear = activePeriodInfo ? activePeriodInfo.endDate.getFullYear() : fallbackYear;
-    const inferredYear = activePeriodInfo?.period === 12 ? baseYear + 1 : baseYear;
-    const minYear = YEAR_VIEW_MIN_YEAR;
-    return Math.min(YEAR_VIEW_MAX_YEAR, Math.max(minYear, inferredYear));
-  }, [activePeriodInfo, today]);
-
-  const [yearViewYear, setYearViewYear] = useState<number>(() => derivedDefaultYear);
-
-  const clampYearValue = useCallback(
-    (value: number) => {
-      const minYear = YEAR_VIEW_MIN_YEAR;
-      return Math.min(YEAR_VIEW_MAX_YEAR, Math.max(minYear, value));
-    },
-    [],
-  );
-
-  useEffect(() => {
-    let isActive = true;
-    defer(() => {
-      if (!isActive) return;
-      setYearViewYear((previous) => clampYearValue(previous));
-      if (typeof window === "undefined") return;
-      const storedYear = window.localStorage.getItem(STORAGE_KEYS.yearViewYear);
-      if (!storedYear) return;
-      const parsed = Number.parseInt(storedYear, 10);
-      if (Number.isNaN(parsed)) return;
-      setYearViewYear(clampYearValue(parsed));
-    });
-    return () => {
-      isActive = false;
-    };
-  }, [clampYearValue, derivedDefaultYear]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEYS.yearViewYear, yearViewYear.toString());
-  }, [yearViewYear]);
-
-  const yearOptions = useMemo(() => {
-    const startYear = YEAR_VIEW_MIN_YEAR;
-    const options: number[] = [];
-    for (let year = startYear; year <= YEAR_VIEW_MAX_YEAR; year += 1) {
-      options.push(year);
-    }
-    return options;
-  }, []);
-
     useEffect(() => {
       if (!printTarget) {
         return undefined;
@@ -584,11 +449,6 @@ export function DmSchedulePlanner({
     defer(() => {
       if (!isActive) return;
       try {
-        const storedScope = window.localStorage.getItem(STORAGE_KEYS.viewScope);
-        if (storedScope === "dual" || storedScope === "year") {
-          setViewScope(storedScope);
-        }
-
         const storedCleared = window.localStorage.getItem(STORAGE_KEYS.clearedPanels);
         if (storedCleared) {
           const parsedCleared = JSON.parse(storedCleared) as Record<string, boolean>;
@@ -600,6 +460,11 @@ export function DmSchedulePlanner({
           const parsedOverrides = JSON.parse(storedOverrides) as Record<string, Record<string, SerializedEntry[]>>;
           setPanelOverrides(deserializeOverrides(parsedOverrides));
         }
+
+        const storedEmail = window.localStorage.getItem(STORAGE_KEYS.rdEmail);
+        if (storedEmail) {
+          setRdEmail(storedEmail);
+        }
       } catch (error) {
         console.warn("Unable to hydrate DM schedule state", error);
       }
@@ -609,10 +474,17 @@ export function DmSchedulePlanner({
     };
   }, []);
 
+  // Year view mode: 'off' | 'two-month' | 'full-year'
+  const [yearViewMode, setYearViewMode] = useState<"off" | "two-month" | "full-year">("off");
+
   useEffect(() => {
     if (typeof window === "undefined") return;
-    window.localStorage.setItem(STORAGE_KEYS.viewScope, viewScope);
-  }, [viewScope]);
+    if (!rdEmail) {
+      window.localStorage.removeItem(STORAGE_KEYS.rdEmail);
+      return;
+    }
+    window.localStorage.setItem(STORAGE_KEYS.rdEmail, rdEmail);
+  }, [rdEmail]);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -633,11 +505,13 @@ export function DmSchedulePlanner({
 
   const computedFormSlug = entryFormSlug ?? "dm-visit-plan";
   const activeSelectedDate = selectedDate ?? internalSelectedDate;
+  const activeSelectedPanelKey = selectedDate ? null : internalSelectedPanelKey;
 
   const handleDaySelection = useCallback(
-    (day: PeriodDay, entries: SampleScheduleEntry[]) => {
+    (panelKey: string, day: PeriodDay, entries: SampleScheduleEntry[]) => {
       if (!selectedDate) {
         setInternalSelectedDate(day.iso);
+        setInternalSelectedPanelKey(panelKey);
       }
 
       if (onDaySelect) {
@@ -666,6 +540,36 @@ export function DmSchedulePlanner({
 
   const handleAddVisit = useCallback(
     (dayIso: string, shop: string, visitType: string) => {
+      // If a panel is selected, insert locally into overrides to avoid opening the full-page form
+      if (activeSelectedPanelKey) {
+        const panel = periodPanels.find((p) => p.storageKey === activeSelectedPanelKey);
+        if (!panel) return;
+
+        const shopId = shop || shopNumber || "home";
+        const location = (DM_SCHEDULE_LOCATIONS as any)[shopId]?.label ?? `Shop ${String(shopId)}`;
+        const entry: SampleScheduleEntry = {
+          date: new Date(dayIso),
+          iso: dayIso,
+          visitType: visitType || "Standard Visit",
+          shopId: shopId as any,
+          focus: null,
+          status: "planned",
+          locationLabel: location,
+        };
+
+        setPanelOverrides((prev) => {
+          const existing = prev[activeSelectedPanelKey] ?? cloneEntriesMap(panel.entries);
+          const next = { ...existing };
+          next[dayIso] = next[dayIso] ? [...next[dayIso], entry] : [entry];
+          return { ...prev, [activeSelectedPanelKey]: next };
+        });
+        setClearedPanels((prev) => ({ ...prev, [activeSelectedPanelKey]: false }));
+        // close the quick panel UI
+        setSelectedDayDetail(null);
+        return;
+      }
+
+      // fallback to full form navigation
       const params = new URLSearchParams({ date: dayIso });
       if (shop) {
         params.set("shop", shop);
@@ -678,14 +582,14 @@ export function DmSchedulePlanner({
       }
       router.push(`/pocket-manager5/forms/${computedFormSlug}?${params.toString()}`);
     },
-    [router, computedFormSlug, shopNumber],
+    [activeSelectedPanelKey, periodPanels, shopNumber, router, computedFormSlug],
   );
 
   const renderCalendar = useCallback(
     (grid: PeriodDay[][], entryLookup: Record<string, SampleScheduleEntry[]>, panelKey: string) => {
       const MAX_VISIBLE = 3;
       return (
-        <div className="mt-4 rounded-2xl border border-slate-900/30 bg-slate-950/30 p-3 print:border-slate-300 print:bg-white print:text-slate-900">
+        <div className="dm-print-surface mt-4 rounded-2xl border border-slate-900/30 bg-slate-950/30 p-3 print:border-slate-300 print:bg-white print:text-slate-900">
           <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-[0.35em] text-slate-500">
             {DM_DAY_NAMES.map((dayName) => (
               <span key={`${panelKey}-day-${dayName}`} className="text-center">
@@ -700,7 +604,8 @@ export function DmSchedulePlanner({
                   const dayEntries = entryLookup[day.iso] ?? [];
                   const visibleEntries = dayEntries.slice(0, MAX_VISIBLE);
                   const overflow = Math.max(0, dayEntries.length - visibleEntries.length);
-                  const isSelected = activeSelectedDate === day.iso;
+                  const isPanelActive = !activeSelectedPanelKey || activeSelectedPanelKey === panelKey;
+                  const isSelected = isPanelActive && activeSelectedDate === day.iso;
                   const dayLabelTone = day.isToday
                     ? "text-emerald-200"
                     : isSelected
@@ -717,8 +622,8 @@ export function DmSchedulePlanner({
                     <button
                       key={`${panelKey}-${day.iso}`}
                       type="button"
-                      onClick={() => handleDaySelection(day, dayEntries)}
-                      className={`rounded-2xl border px-2 py-2 text-left text-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 print:border-slate-300 print:bg-white print:text-slate-900 ${cardTone}`}
+                      onClick={() => handleDaySelection(panelKey, day, dayEntries)}
+                      className={`dm-calendar-day rounded-2xl border px-2 py-2 text-left text-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 print:border-slate-300 print:bg-white print:text-slate-900 ${cardTone}`}
                     >
                       <div className="flex items-center justify-between text-[11px] font-semibold">
                         <span className={dayLabelTone}>{day.dayNumber}</span>
@@ -729,9 +634,9 @@ export function DmSchedulePlanner({
                       </div>
                       <div className="mt-1 space-y-1">
                         {visibleEntries.map((entry) => (
-                          <div
+                          <Chip
                             key={`${panelKey}-${entry.iso}-${entry.visitType}-${entry.locationLabel}`}
-                            className={`flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none print:border-slate-300 print:bg-white print:text-slate-900 ${
+                            className={`dm-visit-pill flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none print:border-slate-300 print:bg-white print:text-slate-900 ${
                               DM_VISIT_BADGES[entry.visitType] ?? "border-slate-700/60 text-slate-200"
                             }`}
                           >
@@ -744,7 +649,7 @@ export function DmSchedulePlanner({
                               <span className="truncate">{formatShopLabel(entry.locationLabel)}</span>
                               <span className="text-right uppercase text-white/80">{entry.visitType}</span>
                             </div>
-                          </div>
+                          </Chip>
                         ))}
                         {overflow > 0 && <p className="text-[9px] text-slate-500">+{overflow} more</p>}
                         {dayEntries.length === 0 && <p className="text-[9px] text-slate-600">Open</p>}
@@ -758,7 +663,115 @@ export function DmSchedulePlanner({
         </div>
       );
     },
-    [activeSelectedDate, handleDaySelection],
+    [activeSelectedDate, activeSelectedPanelKey, handleDaySelection],
+  );
+
+  const buildPanelEmailPayload = useCallback((...args: any[]) => {
+    const [
+      panel,
+      flattenedEntries,
+      panelCoverage,
+      auditHeadline,
+      periodRangeLabel,
+      entryTypeCounts,
+      panelVisitCount,
+    ] = args as [PlannerPeriodPanel, SampleScheduleEntry[], ReturnType<typeof buildCoverageSummary>, string, string, Record<string, number>, number];
+    const sortedEntries = [...flattenedEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
+    const visitLines = sortedEntries.length
+      ? sortedEntries.map((entry) => {
+          const focusSuffix = entry.focus ? ` – ${entry.focus}` : "";
+          return `${shortDateFormatter.format(entry.date)} · ${entry.visitType} @ ${formatShopLabel(entry.locationLabel)}${focusSuffix}`;
+        })
+      : ["No visits are scheduled yet."];
+
+    const dueLines = panel.dueSummary.map((item) => {
+      const scheduled = entryTypeCounts[item.type] ?? 0;
+      return `${item.type}: ${scheduled}/${item.count}`;
+    });
+
+    const coverageLines = panelCoverage.map((shop) => `${shop.label}: ${shop.count} (${shop.statusLabel})`);
+
+    const bodyLines = [
+      `Period ${panel.info.period} schedule (${periodRangeLabel})`,
+      `Days scheduled: ${panelVisitCount}`,
+      `Required audits planned: ${auditHeadline}`,
+      "",
+      "Due visits",
+      ...(dueLines.length ? dueLines : ["No due visit requirements mapped."]),
+      "",
+      "Coverage",
+      ...(coverageLines.length ? coverageLines : ["No coverage notes available."]),
+      "",
+      "Visit plan",
+      ...visitLines,
+    ];
+
+    return {
+      subject: `Period ${panel.info.period} schedule – Pocket Manager`,
+      body: bodyLines.join("\n"),
+    };
+  }, []);
+
+  const handleConfigureRdEmail = useCallback(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const next = window.prompt("Send schedules to which RD email?", rdEmail ?? "");
+    if (next == null) {
+      return rdEmail;
+    }
+    const trimmed = next.trim();
+    if (!trimmed) {
+      setRdEmail(null);
+      return null;
+    }
+    if (!trimmed.includes("@")) {
+      return rdEmail;
+    }
+    const normalized = trimmed.toLowerCase();
+    setRdEmail(normalized);
+    return normalized;
+  }, [rdEmail]);
+
+  const resolveRdEmail = useCallback(() => {
+    if (rdEmail) {
+      return rdEmail;
+    }
+    return handleConfigureRdEmail();
+  }, [rdEmail, handleConfigureRdEmail]);
+
+  const handleSubmitToRd = useCallback(
+    (
+      panel: PlannerPeriodPanel,
+      flattenedEntries: SampleScheduleEntry[],
+      panelCoverage: ReturnType<typeof buildCoverageSummary>,
+      auditHeadline: string,
+      periodRangeLabel: string,
+      entryTypeCounts: Record<string, number>,
+      panelVisitCount: number,
+    ) => {
+      if (typeof window === "undefined") {
+        return;
+      }
+
+      const recipient = resolveRdEmail();
+      if (!recipient) {
+        return;
+      }
+
+      const { subject, body } = buildPanelEmailPayload(
+        panel,
+        flattenedEntries,
+        panelCoverage,
+        auditHeadline,
+        periodRangeLabel,
+        entryTypeCounts,
+        panelVisitCount,
+      );
+      const mailtoUrl = `mailto:${encodeURIComponent(recipient)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+      window.location.href = mailtoUrl;
+    },
+    [buildPanelEmailPayload, resolveRdEmail],
   );
 
   const handleClearToggle = useCallback(
@@ -792,70 +805,135 @@ export function DmSchedulePlanner({
     [copyBuffer],
   );
 
-  const handlePrintPanel = useCallback((panel: PlannerPeriodPanel) => {
-    setPrintTarget(panel.storageKey);
+  const handlePrintDualView = useCallback(() => {
+    setPrintTarget("dual");
   }, []);
 
-    const yearPanels = useMemo<PlannerPeriodPanel[]>(() => {
-      if (!yearViewYear) return [];
+  const handleSetYearView = useCallback((mode: "off" | "two-month" | "full-year") => {
+    setYearViewMode(mode);
+  }, []);
 
-      const startOfYear = new Date(yearViewYear, 0, 1);
-      let anchorInfo = getRetailPeriodInfo(startOfYear);
-      let guard = 0;
-      while (
-        guard < 24 &&
-        (anchorInfo.period !== 1 || anchorInfo.startDate.getFullYear() < yearViewYear)
-      ) {
-        const nextAnchor = new Date(anchorInfo.endDate.getTime() + DAY_MS);
-        anchorInfo = getRetailPeriodInfo(nextAnchor);
-        guard += 1;
+  const handleAiSchedule = useCallback(
+    (panel: PlannerPeriodPanel) => {
+      if (typeof window === "undefined") return;
+      if (!window.confirm(`Generate AI schedule for Period ${panel.info.period}?`)) return;
+
+      // collect days in the period
+      const allDays = panel.grid.flat();
+
+      // Audits: Tue/Wed/Thu only (no Fri audits)
+      const auditDays = allDays.filter((d) => {
+        const wk = d.date.getDay();
+        return wk === 2 || wk === 3 || wk === 4; // Tue, Wed, Thu
+      });
+
+      // Visits: Tue/Wed/Thu/Fri allowed. Mondays are Admin days; Sat/Sun are off.
+      const visitDays = allDays.filter((d) => {
+        const wk = d.date.getDay();
+        return wk === 2 || wk === 3 || wk === 4 || wk === 5; // Tue, Wed, Thu, Fri
+      });
+
+      if (!visitDays.length) {
+        window.alert("No available days in this period to schedule visits.");
+        return;
       }
 
-      const panels: PlannerPeriodPanel[] = [];
-      let cursorInfo = anchorInfo;
-      for (let idx = 0; idx < 12; idx += 1) {
-        const storageKey = getPeriodStorageKey(cursorInfo);
-        const existingPanel = periodPanels.find(
-          (panel) => panel.storageKey === storageKey,
-        );
+      const shops = DM_COVERAGE_SHOPS.slice();
 
-        if (existingPanel) {
-          panels.push({
-            ...existingPanel,
-            storageKey,
-            role: "year",
-            label: `Period ${cursorInfo.period}`,
-          });
-        } else {
-          const syntheticEntries = buildSampleSchedule(cursorInfo.startDate, cursorInfo.weeksInPeriod);
-          panels.push({
-            storageKey,
-            role: "year",
-            label: `Period ${cursorInfo.period}`,
-            info: cursorInfo,
-            grid: buildPeriodGrid(cursorInfo.startDate, cursorInfo.weeksInPeriod, today),
-            entries: groupEntriesByDate(syntheticEntries),
-            dueSummary: summarizeDueVisits(cursorInfo.period),
-            range: `${shortDateFormatter.format(cursorInfo.startDate)} – ${shortDateFormatter.format(cursorInfo.endDate)}`,
-          });
+      // helper: map iso -> entries
+      const newMap: Record<string, SampleScheduleEntry[]> = {};
+
+      const pushEntry = (day: PeriodDay, shopId: string, visitType: string) => {
+        const location = (DM_SCHEDULE_LOCATIONS as any)[shopId]?.label ?? `Shop ${String(shopId)}`;
+        const entry: SampleScheduleEntry = {
+          date: day.date,
+          iso: day.iso,
+          visitType,
+          shopId: shopId as any,
+          focus: null,
+          status: "planned",
+          locationLabel: location,
+        };
+        newMap[day.iso] = newMap[day.iso] ? [...newMap[day.iso], entry] : [entry];
+      };
+
+      // place Admin on Mondays (home)
+      allDays.forEach((d) => {
+        const wk = d.date.getDay();
+        if (wk === 1) {
+          // Monday
+          pushEntry(d, "home", "Admin");
         }
+      });
 
-        const nextAnchor = new Date(cursorInfo.endDate.getTime() + DAY_MS);
-        cursorInfo = getRetailPeriodInfo(nextAnchor);
+      // determine per-shop required audits/visits
+      const reqs = getVisitRequirementsForPeriod(panel.info.period, DM_COVERAGE_SHOPS.length);
+      // per-shop required count for a type = req.required / shopCount
+      const perShopReq: Record<string, number> = {};
+      reqs.forEach((r) => {
+        perShopReq[r.type] = Math.max(0, Math.round(r.required / Math.max(1, DM_COVERAGE_SHOPS.length)));
+      });
+
+      // index for assigning dates round-robin for audits and visits
+      let auditIndex = 0;
+      const nextAuditDay = () => {
+        const day = auditDays[auditIndex % auditDays.length];
+        auditIndex += 1;
+        return day;
+      };
+
+      let visitIndex = 0;
+      const nextVisitDay = () => {
+        const day = visitDays[visitIndex % visitDays.length];
+        visitIndex += 1;
+        return day;
+      };
+
+      // schedule audits first (only on auditDays)
+      for (const shop of shops) {
+        const auditCount = perShopReq["Quarterly Audit"] ?? 0;
+        for (let i = 0; i < auditCount; i++) {
+          const day = nextAuditDay();
+          pushEntry(day, shop, "Quarterly Audit");
+        }
       }
 
-      return panels;
-    }, [yearViewYear, periodPanels, today]);
+      // then ensure minimum 2 visits per shop (including audits). Visits may land on Fri as well.
+      const visitsByShop: Record<string, number> = {};
+      Object.values(newMap).flat().forEach((e) => {
+        if (e.visitType !== "Off") {
+          visitsByShop[e.shopId] = (visitsByShop[e.shopId] ?? 0) + 1;
+        }
+      });
+
+      for (const shop of shops) {
+        const current = visitsByShop[shop] ?? 0;
+        const needed = Math.max(0, 2 - current);
+        for (let i = 0; i < needed; i++) {
+          const day = nextVisitDay();
+          pushEntry(day, shop, "Standard Visit");
+        }
+      }
+
+      // Build grouped entries (already in newMap)
+      setPanelOverrides((prev) => ({ ...prev, [panel.storageKey]: cloneEntriesMap(newMap) }));
+      setClearedPanels((prev) => ({ ...prev, [panel.storageKey]: false }));
+    },
+    [setPanelOverrides, setClearedPanels],
+  );
 
   const visibleVisitMix = visitMix.filter((mix) => mix.count > 0);
   const printCoverageNotes = coverageSummary.slice(0, 8);
 
-  const panelsToRender = viewScope === "year" ? yearPanels : periodPanels;
+  const nextPeriodAnchor = useMemo(() => {
+    const d = new Date(activePeriodInfo.endDate);
+    d.setDate(d.getDate() + 1);
+    return d;
+  }, [activePeriodInfo.endDate]);
 
-  const VIEW_SCOPE_OPTIONS: { id: "dual" | "year"; label: string }[] = [
-    { id: "dual", label: "2 periods" },
-    { id: "year", label: "Full year" },
-  ];
+  const yearStartAnchor = useMemo(() => new Date(today.getFullYear(), 0, 1), [today]);
+
+  const panelsToRender = periodPanels;
 
   return (
     <Fragment>
@@ -879,48 +957,64 @@ export function DmSchedulePlanner({
             -webkit-print-color-adjust: exact;
             print-color-adjust: exact;
           }
+          .dm-print-surface {
+            background: #fff !important;
+            color: #020617 !important;
+            border-color: #cbd5f5 !important;
+            box-shadow: none !important;
+          }
+          .dm-period-panel {
+            break-inside: avoid;
+            page-break-inside: avoid;
+          }
+          .dm-calendar-day {
+            background: #fff !important;
+            border-color: #cbd5f5 !important;
+          }
+          .dm-calendar-day .dm-visit-pill {
+            background: #fff !important;
+            border-color: #94a3b8 !important;
+            color: #0f172a !important;
+          }
         }
       `}</style>
-      <div className="dm-print-root space-y-5">
-        <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4 print:border-slate-300 print:bg-white print:text-slate-900 print:shadow-none">
-          <div className={`${printTarget ? "print:hidden" : ""} flex flex-wrap items-center justify-between gap-3`}>
-            <div className="flex flex-col gap-1">
-              <div className="flex flex-wrap items-center gap-2 text-[10px] uppercase tracking-[0.3em] text-slate-500">
-                <span>Select year</span>
-                <div className="flex flex-wrap gap-2 text-[12px] tracking-normal">
-                  {yearOptions.map((year) => (
-                    <button
-                      key={`year-option-${year}`}
-                      type="button"
-                      onClick={() => setYearViewYear(year)}
-                      className={`rounded-full border px-3 py-1 text-[12px] font-semibold transition ${
-                        yearViewYear === year
-                          ? "border-emerald-400/60 bg-emerald-400/10 text-emerald-200"
-                          : "border-slate-800/70 text-slate-400 hover:border-slate-500/70"
-                      }`}
-                    >
-                      {year}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              {viewScope !== "year" && (
-                <span className="text-[9px] uppercase tracking-[0.2em] text-slate-600">Switch to full year to view all 12 panels</span>
-              )}
+      <div className="dm-print-root space-y-5 print:bg-white print:text-slate-900">
+        <div className="dm-print-surface rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4 print:border-slate-300 print:bg-white print:text-slate-900 print:shadow-none">
+          <div className={`${printTarget ? "print:hidden" : ""} flex flex-wrap items-center justify-between gap-4`}>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Dual-period workspace</p>
+              <p className="mt-1 text-sm text-slate-300">
+                Current + next period stay unlocked side-by-side. Print exports always include both without the dark background.
+              </p>
             </div>
-            <div className="inline-flex rounded-full border border-slate-800/70 bg-slate-900/50 p-0.5 text-[10px] font-semibold uppercase tracking-[0.25em]">
-              {VIEW_SCOPE_OPTIONS.map((option) => (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setViewScope(option.id)}
-                  className={`rounded-full px-3 py-1 transition ${
-                    viewScope === option.id ? "bg-slate-800 text-emerald-200" : "text-slate-500"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              ))}
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={handlePrintDualView}
+                className="rounded-full border border-emerald-400/60 px-4 py-2 text-[11px] font-semibold uppercase tracking-[0.25em] text-emerald-100 transition hover:border-emerald-300"
+              >
+                Print 2-period view
+              </button>
+                <div className="inline-flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleSetYearView(yearViewMode === "two-month" ? "off" : "two-month")}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+                      yearViewMode === "two-month" ? "border-amber-300 bg-amber-500/10 text-amber-200" : "border-slate-700/70 text-slate-200"
+                    }`}
+                  >
+                    {yearViewMode === "two-month" ? "Two-month: On" : "Two-month"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSetYearView(yearViewMode === "full-year" ? "off" : "full-year")}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+                      yearViewMode === "full-year" ? "border-emerald-300 bg-emerald-500/10 text-emerald-200" : "border-slate-700/70 text-slate-200"
+                    }`}
+                  >
+                    {yearViewMode === "full-year" ? "Full year: On" : "Full year"}
+                  </button>
+                </div>
             </div>
           </div>
 
@@ -1002,9 +1096,56 @@ export function DmSchedulePlanner({
           />
         )}
 
+        {yearViewMode === "two-month" && (
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <DmCoverageTracker
+              scale={1}
+              scheduleEntries={undefined}
+              calendarGrid={undefined}
+              periodInfo={undefined}
+              entriesByDate={undefined}
+              visitMix={visitMix}
+              dueChecklist={dueChecklist}
+              coverageSummary={coverageSummary}
+            />
+            <div>
+              <DmCoverageTracker
+                scale={1}
+                scheduleEntries={undefined}
+                calendarGrid={undefined}
+                periodInfo={undefined}
+                entriesByDate={undefined}
+                visitMix={visitMix}
+                dueChecklist={dueChecklist}
+                coverageSummary={coverageSummary}
+                // show tracker anchored to next period
+                // @ts-ignore - anchorDate intentionally passed into tracker to shift period
+                anchorDate={nextPeriodAnchor}
+              />
+            </div>
+          </div>
+        )}
+
+        {yearViewMode === "full-year" && (
+          <div className="mt-4">
+            <DmCoverageTracker
+              scale={0.95}
+              scheduleEntries={undefined}
+              calendarGrid={undefined}
+              periodInfo={undefined}
+              entriesByDate={undefined}
+              visitMix={visitMix}
+              dueChecklist={dueChecklist}
+              coverageSummary={coverageSummary}
+              // @ts-ignore - anchorDate intentionally passed
+              anchorDate={yearStartAnchor}
+            />
+          </div>
+        )}
+
         <div className="mt-4 space-y-4">
           {panelsToRender.map((panel) => {
-            const hideDuringPrint = Boolean(printTarget && printTarget !== panel.storageKey);
+            const hideDuringPrint = Boolean(printTarget && printTarget !== "dual" && printTarget !== panel.storageKey);
             const isCleared = Boolean(clearedPanels[panel.storageKey]);
             const overrideEntries = panelOverrides[panel.storageKey];
             const entryLookup = isCleared ? {} : overrideEntries ?? panel.entries;
@@ -1026,16 +1167,44 @@ export function DmSchedulePlanner({
             return (
               <div
                 key={panel.storageKey}
-                className={`rounded-2xl border border-white/5 bg-slate-950/60 p-3 md:p-4 print:border-slate-300 print:bg-white print:text-slate-900 ${hideDuringPrint ? "print:hidden" : ""}`}
+                className={`dm-period-panel dm-print-surface rounded-2xl border border-white/5 bg-slate-950/60 p-3 md:p-4 print:border-slate-300 print:bg-white print:text-slate-900 ${hideDuringPrint ? "print:hidden" : ""}`}
               >
                 <div>
                   <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">{panel.label}</p>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-2 text-[10px] font-semibold text-white">
-                      <span className="rounded-full bg-emerald-500/90 px-2.5 py-0.5 tracking-wide">Period {panel.info.period}</span>
-                      <span className="rounded-full border border-cyan-400/70 px-2.5 py-0.5 uppercase tracking-wide text-cyan-200">
-                        Submit to RD
+                      <span className="dm-print-surface rounded-full border border-emerald-300/80 bg-gradient-to-r from-emerald-500/50 via-teal-500/30 to-cyan-500/20 px-6 py-2 text-base font-bold uppercase tracking-[0.45em] text-emerald-50 shadow-lg shadow-emerald-500/30 print:border-slate-400 print:bg-white print:text-slate-900">
+                        Period {panel.info.period}
                       </span>
+                      <div className="flex flex-wrap items-center gap-2 text-[10px]">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            handleSubmitToRd(
+                              panel,
+                              flattenedEntries,
+                              panelCoverage,
+                              auditHeadline,
+                              periodRangeLabel,
+                              entryTypeCounts,
+                              panelVisitCount,
+                            )
+                          }
+                          className="rounded-full border border-cyan-400/70 px-5 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] text-cyan-100 transition hover:border-cyan-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 print:border-slate-400 print:bg-white print:text-slate-900"
+                        >
+                          Submit to RD
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleConfigureRdEmail}
+                          className="text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-400 underline-offset-4 transition hover:text-emerald-200"
+                        >
+                          {rdEmail ? "Update email" : "Set RD email"}
+                        </button>
+                        {rdEmail && (
+                          <span className="text-[10px] font-normal text-slate-400">→ {rdEmail}</span>
+                        )}
+                      </div>
                       <span className="text-[11px] font-normal text-slate-200">
                         {panel.role === "current" ? `Period ending ${periodRangeLabel}` : periodRangeLabel}
                         <span className="ml-3 font-semibold text-white">Days scheduled: {panelVisitCount}</span>
@@ -1044,11 +1213,11 @@ export function DmSchedulePlanner({
                     <div className="flex flex-wrap gap-2 print:hidden">
                       <button
                         type="button"
-                        onClick={() => handlePrintPanel(panel)}
+                        onClick={handlePrintDualView}
                         className="rounded-full border border-slate-700/70 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-slate-200 transition hover:border-amber-300"
-                        aria-label={`Print schedule for period ${panel.info.period}`}
+                        aria-label="Print dual-period schedule"
                       >
-                        Print
+                        Print dual view
                       </button>
                       <button
                         type="button"
@@ -1063,6 +1232,13 @@ export function DmSchedulePlanner({
                       </button>
                       <button
                         type="button"
+                        onClick={() => handleAiSchedule(panel)}
+                        className="rounded-full border border-violet-400/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-violet-200 transition hover:border-violet-300"
+                      >
+                        AI schedule
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => handleClearToggle(panel)}
                         className="rounded-full border border-cyan-400/50 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.25em] text-cyan-200 transition hover:border-cyan-300"
                       >
@@ -1071,7 +1247,7 @@ export function DmSchedulePlanner({
                     </div>
                   </div>
                 </div>
-                <div className="mt-4 rounded-2xl border border-slate-800/60 bg-slate-900/30 p-3 print:border-slate-300 print:bg-white print:text-slate-900">
+                <div className="dm-print-surface mt-4 rounded-2xl border border-slate-800/60 bg-slate-900/30 p-3 print:border-slate-300 print:bg-white print:text-slate-900">
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
                     <div className="flex-1">
                       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1101,7 +1277,7 @@ export function DmSchedulePlanner({
                         ))}
                       </div>
                     </div>
-                    <div className="rounded-2xl border border-slate-800/60 bg-slate-900/40 p-3 text-left text-slate-200 print:border-slate-300 print:bg-white print:text-slate-900 lg:w-64">
+                    <div className="dm-print-surface rounded-2xl border border-slate-800/60 bg-slate-900/40 p-3 text-left text-slate-200 print:border-slate-300 print:bg-white print:text-slate-900 lg:w-64">
                       <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">
                         Required audits scheduled <span className="text-emerald-200">{auditHeadline}</span>
                       </p>
@@ -1148,50 +1324,9 @@ export function DmSchedulePlanner({
   );
 }
 
-export type DmCoverageTrackerProps = PlannerDataInputs & { scale?: number };
+export type DmCoverageTrackerProps = PlannerDataInputs & { scale?: number; anchorDate?: Date };
 
-export type DmVisitMixRunningSummaryProps = PlannerDataInputs & {
-  className?: string;
-  anchorDate?: Date;
-};
-
-export function DmVisitMixRunningSummary({ className, anchorDate, ...plannerInputs }: DmVisitMixRunningSummaryProps) {
-  const { runningVisitMixSummary } = useDmSchedulePlannerData(plannerInputs, anchorDate);
-  const { entries, totalVisits, label } = runningVisitMixSummary;
-
-  return (
-    <div
-      className={`rounded-3xl border border-slate-800/80 bg-slate-950/70 p-4 shadow-2xl shadow-black/30 ${
-        className ?? ""
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <p className="text-[10px] uppercase tracking-[0.3em] text-slate-500">Running 12 periods</p>
-        <span className="text-[10px] text-slate-500">{label}</span>
-      </div>
-      <p className="mt-1 text-[11px] text-slate-400">{totalVisits} visits logged</p>
-      <ul className="mt-3 space-y-2">
-        {entries.map((entry) => (
-          <li key={entry.type}>
-            <div className="flex items-center justify-between text-sm text-slate-100">
-              <span>{entry.type}</span>
-              <span className="font-semibold text-emerald-200">{entry.percentage}%</span>
-            </div>
-            <div className="mt-1 h-1.5 rounded-full bg-slate-800">
-              <div
-                className="h-full rounded-full bg-emerald-400"
-                style={{ width: `${Math.min(100, Math.max(entry.percentage, 4))}%` }}
-              />
-            </div>
-          </li>
-        ))}
-        {!entries.length && <li className="text-xs text-slate-500">No visit mix data yet.</li>}
-      </ul>
-    </div>
-  );
-}
-
-export function DmCoverageTracker({ scale = 1, ...props }: DmCoverageTrackerProps) {
+export function DmCoverageTracker({ scale = 1, anchorDate, ...props }: DmCoverageTrackerProps) {
   const {
     activePeriodInfo,
     coverageSummary,
@@ -1202,7 +1337,7 @@ export function DmCoverageTracker({ scale = 1, ...props }: DmCoverageTrackerProp
     adminBlocks,
     weekProgress,
     visitCompletionPct,
-  } = useDmSchedulePlannerData(props);
+  } = useDmSchedulePlannerData(props, anchorDate);
   const coverageTiles = coverageSummary.slice(0, 12);
 
   const card = (
@@ -1339,6 +1474,7 @@ const VISIT_TYPE_OPTIONS = Object.keys(DM_VISIT_BADGES);
 function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop }: DayVisitQuickPanelProps) {
   const [shopInput, setShopInput] = useState(() => entries[0]?.shopId ?? defaultShop ?? "");
   const [visitTypeInput, setVisitTypeInput] = useState(() => entries[0]?.visitType ?? VISIT_TYPE_OPTIONS[0] ?? "");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -1351,105 +1487,131 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
     (event: FormEvent) => {
       event.preventDefault();
       if (!visitTypeInput) return;
-      onAdd(day.iso, shopInput.trim(), visitTypeInput);
-      onClose();
+      if (isSubmitting) return;
+      setIsSubmitting(true);
+      try {
+        onAdd(day.iso, shopInput.trim(), visitTypeInput);
+      } finally {
+        // close the panel after initiating navigation; the component may unmount during route change
+        onClose();
+      }
     },
     [day.iso, visitTypeInput, shopInput, onAdd, onClose],
   );
 
+  const formattedDate = shortDateFormatter.format(day.date);
+
   return (
-    <div className="print:hidden rounded-3xl border border-slate-800/80 bg-slate-950/70 p-5 shadow-2xl shadow-black/30">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Quick add visit</p>
-          <h3 className="text-2xl font-semibold text-white">{shortDateFormatter.format(day.date)}</h3>
-          <p className="text-xs text-slate-500">Tap an existing visit to open the full form.</p>
-        </div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded-full border border-slate-700 px-3 py-1 text-[11px] uppercase tracking-[0.25em] text-slate-300"
-        >
-          Close
-        </button>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-slate-800/60 bg-slate-900/40 p-3">
-        <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Existing visits</p>
-        {entries.length ? (
-          <ul className="mt-3 space-y-2">
-            {entries.map((entry) => (
-              <li
-                key={`${entry.iso}-${entry.shopId}-${entry.visitType}-${entry.locationLabel}`}
-                className="flex items-center justify-between rounded-xl border border-slate-800/70 bg-slate-950/40 px-3 py-2 text-sm text-slate-100"
-              >
-                <div>
-                  <p className="font-semibold">{entry.visitType}</p>
-                  <p className="text-[12px] text-slate-400">{formatShopLabel(entry.locationLabel)}</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onEdit(entry)}
-                  className="rounded-full border border-cyan-400/60 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-cyan-200"
-                >
-                  Edit
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="mt-2 text-sm text-slate-500">No visits locked yet.</p>
-        )}
-      </div>
-
-      <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-        <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Add another visit</p>
-        <div className="space-y-2">
-          <label className="text-xs text-slate-400" htmlFor="day-inline-shop">
-            Shop number
-          </label>
-          <input
-            id="day-inline-shop"
-            type="text"
-            value={shopInput}
-            onChange={(event) => setShopInput(event.target.value)}
-            placeholder="1501"
-            className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white placeholder:text-slate-600"
-          />
-        </div>
-        <div className="space-y-2">
-          <label className="text-xs text-slate-400" htmlFor="day-inline-visit-type">
-            Visit type
-          </label>
-          <select
-            id="day-inline-visit-type"
-            value={visitTypeInput}
-            onChange={(event) => setVisitTypeInput(event.target.value)}
-            className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-3 py-2 text-sm text-white"
-          >
-            {VISIT_TYPE_OPTIONS.map((type) => (
-              <option key={type} value={type}>
-                {type}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="flex flex-wrap justify-end gap-2 pt-2">
+    <div
+      className="fixed inset-0 z-50 flex items-start justify-center bg-slate-950/70 px-4 py-10 backdrop-blur-sm print:hidden"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className="w-full max-w-xs rounded-3xl border border-slate-800/80 bg-slate-950/90 p-4 text-slate-100 shadow-2xl shadow-black/40"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Quick add visit for ${formattedDate}`}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Quick add visit</p>
+            <h3 className="text-xl font-semibold text-white">{formattedDate}</h3>
+            <p className="text-[11px] text-slate-500">Tap a lock to edit or drop a new one.</p>
+          </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-slate-700 px-4 py-2 text-[12px] font-semibold text-slate-300"
+            className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-[0.25em] text-slate-300"
+            aria-label="Close quick add"
           >
-            Cancel
-          </button>
-          <button
-            type="submit"
-            className="rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-2 text-[12px] font-semibold uppercase tracking-[0.2em] text-emerald-200"
-          >
-            Add visit
+            ✕
           </button>
         </div>
-      </form>
+
+        <div className="mt-3 space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Existing visits</p>
+          <div className="max-h-32 overflow-y-auto rounded-2xl border border-slate-800/70 bg-slate-900/40 p-2">
+            {entries.length ? (
+              <ul className="space-y-2 text-sm">
+                {entries.map((entry) => (
+                  <li
+                    key={`${entry.iso}-${entry.shopId}-${entry.visitType}-${entry.locationLabel}`}
+                    className="flex items-center justify-between gap-2 rounded-xl border border-slate-800/60 bg-slate-950/40 px-2 py-1.5"
+                  >
+                    <div>
+                      <p className="text-xs font-semibold text-white">{entry.visitType}</p>
+                      <p className="text-[11px] text-slate-400">{formatShopLabel(entry.locationLabel)}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onEdit(entry)}
+                      className="rounded-full border border-cyan-400/60 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.2em] text-cyan-200"
+                    >
+                      Edit
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="text-[12px] text-slate-500">No visits locked yet.</p>
+            )}
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Add visit</p>
+          <div className="space-y-1">
+            <label className="text-[11px] text-slate-400" htmlFor="day-inline-shop">
+              Shop number
+            </label>
+            <input
+              id="day-inline-shop"
+              type="text"
+              value={shopInput}
+              onChange={(event) => setShopInput(event.target.value)}
+              placeholder="1501"
+              className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-white placeholder:text-slate-600"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[11px] text-slate-400" htmlFor="day-inline-visit-type">
+              Visit type
+            </label>
+            <select
+              id="day-inline-visit-type"
+              value={visitTypeInput}
+              onChange={(event) => setVisitTypeInput(event.target.value)}
+              className="w-full rounded-2xl border border-slate-800 bg-slate-900 px-3 py-1.5 text-sm text-white"
+            >
+              {VISIT_TYPE_OPTIONS.map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center justify-end gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-[11px] font-semibold text-slate-400 underline-offset-4"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={isSubmitting}
+              className={`rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200 ${
+                isSubmitting ? "opacity-60 cursor-not-allowed" : ""
+              }`}
+            >
+              {isSubmitting ? "Adding…" : "Add visit"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

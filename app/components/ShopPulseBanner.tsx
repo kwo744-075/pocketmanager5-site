@@ -146,7 +146,11 @@ export function ShopPulseBanner({
         </div>
       </div>
       {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-col items-start space-y-1 text-left">
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/60 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-200">
+          <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_4px_rgba(16,185,129,0.2)] animate-pulse" />
+          LIVE KPIs
+        </div>
         <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">KPI summary</p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">

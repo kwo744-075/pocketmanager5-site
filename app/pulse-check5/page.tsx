@@ -7,6 +7,7 @@ import * as XLSX from "xlsx";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
 import { getCachedSummaryForLogin, normalizeLogin, writeHierarchySummaryCache } from "@/lib/hierarchyCache";
 import { RetailPills } from "@/app/components/RetailPills";
+import Chip from "@/app/components/Chip";
 import { ShopPulseBanner, type BannerMetric } from "@/app/components/ShopPulseBanner";
 import { buildRetailTimestampLabel } from "@/lib/retailTimestamp";
 
@@ -150,7 +151,7 @@ type CheckInRow = {
   big4: number | null;
   coolants: number | null;
   diffs: number | null;
-  fuel_filters: number | null;
+  fuel_filters?: number | null;
   donations: number | null;
   mobil1: number | null;
   temperature: Temperature | null;
@@ -851,6 +852,7 @@ export default function PulseCheckPage() {
   const [simStatus, setSimStatus] = useState<string | null>(null);
   const [simProgress, setSimProgress] = useState(0);
   const [simQueueSize, setSimQueueSize] = useState(0);
+  const [showAllTrendRows, setShowAllTrendRows] = useState(false);
   const simControllerRef = useRef<{ cancelled: boolean }>({ cancelled: false });
   const [selectedBreakdownDate, setSelectedBreakdownDate] = useState(() => todayISO());
   const needsLogin = authChecked && !loginEmail;
@@ -1242,7 +1244,7 @@ export default function PulseCheckPage() {
           big4: toInputValue(row.big4),
           coolants: toInputValue(row.coolants),
           diffs: toInputValue(row.diffs),
-          fuelFilters: toInputValue(row.fuel_filters),
+          fuelFilters: toInputValue(row.fuel_filters ?? null),
           donations: toInputValue(row.donations),
           mobil1: toInputValue(row.mobil1),
         },
@@ -1259,12 +1261,15 @@ export default function PulseCheckPage() {
   const loadCheckIns = useCallback(
     async (shopId: string) => {
       setLoadingSlots(true);
-      try {
+      const selectColumnsWithFuelFilters =
+        "time_slot,cars,sales,big4,coolants,diffs,fuel_filters,donations,mobil1,temperature,is_submitted,submitted_at";
+      const legacySelectColumns =
+        "time_slot,cars,sales,big4,coolants,diffs,donations,mobil1,temperature,is_submitted,submitted_at";
+
+      const fetchRows = async (columns: string) => {
         const { data, error } = await pulseSupabase
           .from("check_ins")
-          .select(
-            "time_slot,cars,sales,big4,coolants,diffs,fuel_filters,donations,mobil1,temperature,is_submitted,submitted_at"
-          )
+          .select(columns)
           .eq("shop_id", shopId)
           .eq("check_in_date", todayISO());
 
@@ -1272,7 +1277,35 @@ export default function PulseCheckPage() {
           throw error;
         }
 
-        const rows = (data ?? []) as CheckInRow[];
+        return (data ?? []) as CheckInRow[];
+      };
+
+      const isFuelFilterMissing = (error: unknown) => {
+        if (!error || typeof error !== "object") {
+          return false;
+        }
+        const message =
+          (error as { message?: string }).message ||
+          (error as { details?: string }).details ||
+          (error as { error?: string }).error ||
+          "";
+        return String(message).toLowerCase().includes("fuel_filters");
+      };
+
+      try {
+        let rows: CheckInRow[];
+
+        try {
+          rows = await fetchRows(selectColumnsWithFuelFilters);
+        } catch (err) {
+          if (isFuelFilterMissing(err)) {
+            console.warn("fuel_filters missing in check_ins cache; using legacy columns");
+            rows = await fetchRows(legacySelectColumns);
+          } else {
+            throw err;
+          }
+        }
+
         const hydrated = hydrateSlotsFromRows(rows);
         setSlots(hydrated);
         setSlotSnapshot(cloneSlots(hydrated));
@@ -2006,7 +2039,7 @@ export default function PulseCheckPage() {
     ? `Shop #${resolvedShopNumber}`
     : "";
   const bannerSubtitle = "";
-  const bannerError = hierarchyError || (!shopMeta?.id ? "Resolve your shop to load live totals." : undefined);
+  const bannerError = hierarchyError || undefined;
   const shopIdentifierLocation = shopLocationLabel;
   const formatScopeCount = useCallback((value: number | null | undefined, noun: string) => {
     if (!value || value <= 0) {
@@ -2072,6 +2105,9 @@ export default function PulseCheckPage() {
       };
     });
   }, [scope]);
+  const visibleTrendRows = useMemo(() => {
+    return showAllTrendRows ? trendGridRows : trendGridRows.slice(0, 6);
+  }, [showAllTrendRows, trendGridRows]);
   const bannerMetrics = useMemo<BannerMetric[]>(() => {
     const subtitleRange = "Daily / WTD";
     const formatCount = (value: number) => numberFormatter.format(Math.max(0, Math.round(value ?? 0)));
@@ -2223,6 +2259,42 @@ export default function PulseCheckPage() {
     }
     return `${districtShopCount} shop${districtShopCount === 1 ? "" : "s"}`;
   }, [districtGridLoading, districtGridRows.length, districtRollupCount, districtShopCount, selectedScope?.type]);
+  const scopeTotalsLabel = useMemo(() => {
+    if (!hierarchy) {
+      return null;
+    }
+
+    const parts: string[] = [];
+    const districtPart = formatScopeCount(hierarchy.shops_in_district, "Shop");
+    if (districtPart) {
+      parts.push(`District: ${districtPart}`);
+    }
+
+    const regionPart = [
+      formatScopeCount(hierarchy.districts_in_region, "District"),
+      formatScopeCount(hierarchy.shops_in_region, "Shop"),
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    if (regionPart) {
+      parts.push(`Region: ${regionPart}`);
+    }
+
+    const divisionPart = [
+      formatScopeCount(hierarchy.regions_in_division, "Region"),
+      formatScopeCount(hierarchy.shops_in_division, "Shop"),
+    ]
+      .filter(Boolean)
+      .join(" / ");
+    if (divisionPart) {
+      parts.push(`Division: ${divisionPart}`);
+    }
+
+    return parts.length ? parts.join(" • ") : null;
+  }, [formatScopeCount, hierarchy]);
+  const scopeHelperLabel = useMemo(() => {
+    return [scopeTotalsLabel, scopeCountLabel].filter(Boolean).join(" • ");
+  }, [scopeCountLabel, scopeTotalsLabel]);
 
   useEffect(() => {
     if (activeSlot && slotUnlockedMap[activeSlot]) {
@@ -2387,12 +2459,23 @@ export default function PulseCheckPage() {
       setStatusMessage(null);
 
       try {
-        const { error } = await pulseSupabase
-          .from("check_ins")
-          .upsert(payload, { onConflict: "shop_id,check_in_date,time_slot" });
+        const response = await fetch("/api/pulse-check5/check-ins", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ payload }),
+        });
 
-        if (error) {
-          throw error;
+        if (!response.ok) {
+          let message = "Unable to submit slot.";
+          try {
+            const result = await response.json();
+            if (result?.error && typeof result.error === "string") {
+              message = result.error;
+            }
+          } catch (jsonErr) {
+            console.error("submitSlot response parse error", jsonErr);
+          }
+          throw new Error(message);
         }
 
         const submittedState: SlotState = {
@@ -2418,7 +2501,8 @@ export default function PulseCheckPage() {
         return true;
       } catch (err) {
         console.error("submitSlot error", err);
-        setStatusMessage("Unable to submit slot right now.");
+        const message = err instanceof Error ? err.message : "Unable to submit slot right now.";
+        setStatusMessage(message);
         return false;
       } finally {
         setSubmitting(false);
@@ -2643,43 +2727,22 @@ export default function PulseCheckPage() {
           <div className="space-y-4 order-1 lg:order-1">
             <header className={panelBaseClasses("aurora")}>
               <div className={panelOverlayClasses("aurora")} />
-              <div className="relative space-y-4">
-                <div className="flex flex-col gap-3 md:flex-row md:items-start md:gap-4">
-                  <div className="flex min-w-0 flex-1 flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2">
-                      <div>
-                        <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
-                        <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
-                      </div>
-                      <Link
-                        href="/"
-                        className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400"
-                      >
-                        Home portal
-                      </Link>
+              <div className="relative space-y-3">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                      <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
                     </div>
+                    <RetailPills />
                   </div>
-                  <div className="w-full md:ml-auto md:w-auto md:max-w-sm">
-                    <div className="rounded-2xl border border-white/10 bg-[#050f24]/70 px-3 py-2 text-right text-sm text-slate-200 shadow-[0_16px_38px_rgba(1,6,20,0.6)]">
-                      {shopIdentifierLocation && (
-                        <p className="text-sm font-semibold text-white">{shopIdentifierLocation}</p>
-                      )}
-                      {scopeInventoryLabel && (
-                        <p className="text-[11px] text-slate-300">{scopeInventoryLabel}</p>
-                      )}
-                      {activeShopLabel && (
-                        <p className="text-[11px] text-slate-500">{activeShopLabel}</p>
-                      )}
-                      {!shopIdentifierLocation && !scopeInventoryLabel && !activeShopLabel && bannerTitle && (
-                        <p className="text-sm font-semibold text-white">{bannerTitle}</p>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-900 bg-slate-950/50 px-3 py-2 text-[10px] text-slate-300">
-                  <RetailPills />
                   <div className="ml-auto flex flex-wrap items-center gap-2">
+                    <Link
+                      href="/"
+                      className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400"
+                    >
+                      Home portal
+                    </Link>
                     <Link
                       href="/contests"
                       className="inline-flex items-center rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
@@ -2696,6 +2759,20 @@ export default function PulseCheckPage() {
                   </div>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-300">
+                  {shopIdentifierLocation && (
+                    <span className="text-sm font-semibold text-white">{shopIdentifierLocation}</span>
+                  )}
+                  {scopeInventoryLabel && (
+                    <span className="rounded-full border border-white/10 bg-white/5 px-2 py-0.5 text-[10px] font-semibold text-slate-200">
+                      {scopeInventoryLabel}
+                    </span>
+                  )}
+                  {activeShopLabel && <span className="text-slate-400">{activeShopLabel}</span>}
+                  {!shopIdentifierLocation && !scopeInventoryLabel && !activeShopLabel && bannerTitle && (
+                    <span className="text-sm font-semibold text-white">{bannerTitle}</span>
+                  )}
+                </div>
               </div>
             </header>
 
@@ -2730,7 +2807,7 @@ export default function PulseCheckPage() {
                 <div className="relative space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">District scope KPIs</p>
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Alignment Summary</p>
                       <h3 className="text-lg font-semibold text-white">
                         {selectedScope?.label ?? hierarchy?.district_name ?? "District overview"}
                       </h3>
@@ -2753,7 +2830,7 @@ export default function PulseCheckPage() {
                           </option>
                         ))}
                       </select>
-                      <p className="text-[10px] text-slate-400">{scopeCountLabel}</p>
+                      <p className="text-[10px] text-slate-400">{scopeHelperLabel}</p>
                     </div>
                   </div>
                   {districtGridError && <p className="text-sm text-amber-200">{districtGridError}</p>}
@@ -2877,29 +2954,22 @@ export default function PulseCheckPage() {
                       <div className="grid grid-cols-2 gap-1">
                         {slotChoices.map((slotKey) => {
                           const unlocked = slotUnlockedMap[slotKey];
+                          const isActive = currentSlotKey === slotKey;
                           return (
-                            <button
+                            <Chip
                               key={slotKey}
-                              type="button"
                               onClick={() => {
                                 if (unlocked) {
                                   setActiveSlot(slotKey);
                                 }
                               }}
-                              className={`rounded-full px-2.5 py-1 text-[11px] font-semibold transition ${
-                                currentSlotKey === slotKey
-                                  ? "bg-emerald-500 text-emerald-900"
-                                  : unlocked
-                                  ? "bg-slate-800 text-slate-200 hover:bg-slate-700"
-                                  : "bg-slate-900/60 text-slate-500"
-                              }`}
+                              label={SLOT_DEFINITIONS[slotKey].label}
+                              active={isActive}
+                              tintColor={isActive ? "#10b981" : undefined}
                               disabled={loadingSlots || !unlocked}
-                              title={
-                                unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`
-                              }
-                            >
-                              {SLOT_DEFINITIONS[slotKey].label}
-                            </button>
+                              className={isActive ? "text-white" : unlocked ? "bg-slate-800 text-slate-200 hover:bg-slate-700" : "bg-slate-900/60 text-slate-500"}
+                              title={unlocked ? undefined : `Locked until ${SLOT_UNLOCK_RULES[slotKey]?.label ?? "unlock"}`}
+                            />
                           );
                         })}
                       </div>
@@ -3052,7 +3122,7 @@ export default function PulseCheckPage() {
                         ))}
                       </div>
                       <div className="divide-y divide-white/5">
-                        {trendGridRows.map((row, index) => {
+                        {visibleTrendRows.map((row, index) => {
                           const highlight = index === 0;
                           return (
                             <div
@@ -3076,6 +3146,16 @@ export default function PulseCheckPage() {
                             </div>
                           );
                         })}
+                      </div>
+                      <div className="flex items-center justify-end gap-2 border-t border-white/5 bg-slate-950/40 px-3 py-2 text-[11px] text-slate-300">
+                        <span>{showAllTrendRows ? "Showing 13 weeks" : "Showing latest 6 weeks"}</span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAllTrendRows((prev) => !prev)}
+                          className="rounded-full border border-emerald-400/50 px-3 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/10"
+                        >
+                          {showAllTrendRows ? "Collapse to 6" : "Expand to 13"}
+                        </button>
                       </div>
                     </div>
                   </div>
@@ -3177,17 +3257,14 @@ function SlotForm({
         </span>
         <div className="flex flex-wrap items-center justify-end gap-1">
           {temperatureChips.map((chip) => (
-            <button
+            <Chip
               key={chip.value}
-              type="button"
+              label={chip.label}
               onClick={() => onTemperatureChange(slotKey, chip.value)}
-              className={`rounded-full px-3 py-0.5 font-semibold transition ${chip.accent} ${
-                slotState.temperature === chip.value ? "opacity-100" : "opacity-50 hover:opacity-80"
-              }`}
+              tintColor={chip.colorHex ?? undefined}
+              active={slotState.temperature === chip.value}
               disabled={loading || locked}
-            >
-              {chip.label}
-            </button>
+            />
           ))}
         </div>
       </div>

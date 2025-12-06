@@ -11,6 +11,7 @@ export const DM_VISIT_BADGES: Record<string, string> = {
   "1 on 1": "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100",
   Admin: "border-slate-500/50 bg-slate-500/10 text-slate-100",
   "Project Day": "border-sky-400/40 bg-sky-500/10 text-sky-100",
+  "Full throttle Friday": "border-rose-400/40 bg-rose-500/10 text-rose-100",
   "Discussion Visit": "border-indigo-400/40 bg-indigo-500/10 text-indigo-100",
   Off: "border-slate-700/60 bg-slate-800/50 text-slate-300",
 };

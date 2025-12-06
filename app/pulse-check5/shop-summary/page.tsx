@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Chip from "@/app/components/Chip";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchShopTotals, EMPTY_TOTALS, type PulseTotalsResult } from "@/lib/pulseTotals";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
@@ -216,16 +217,13 @@ export default function ShopPulseSummaryPage() {
 
         <div className="flex gap-2">
           {(["daily", "weekly"] as ViewMode[]).map((mode) => (
-            <button
+            <Chip
               key={mode}
-              type="button"
+              label={mode === "daily" ? "Daily" : "Week to Date"}
               onClick={() => setView(mode)}
-              className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                view === mode ? "bg-emerald-500 text-emerald-900" : "bg-slate-900/60 text-slate-300 hover:bg-slate-800"
-              }`}
-            >
-              {mode === "daily" ? "Daily" : "Week to Date"}
-            </button>
+              active={view === mode}
+              className="flex-1 px-4 py-2 text-sm"
+            />
           ))}
         </div>
 
