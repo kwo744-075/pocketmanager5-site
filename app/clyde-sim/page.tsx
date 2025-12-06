@@ -44,6 +44,129 @@ const MAX_DAYS_PER_RUN = 7;
 // LocalStorage key
 const SAVE_KEY = 'clydeSimSaveV1';
 
+// Daily cadence storage key
+const CADENCE_OVERRIDES_KEY = 'clydeSim_dailyCadenceOverrides_v1';
+
+const DAY_NAMES = [
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+  'Misc/Monthend',
+];
+
+const DEFAULT_DAILY_CADENCE: Record<string, string[]> = {
+  Monday: [
+    'All Shops Open',
+    'Labor Verification',
+    "KPI’s & #'s Communication to Team",
+    'Deposit Verification',
+    'Car Defecit Report',
+    'Corrigo',
+    'WorkVivo',
+    'Workday – check applications',
+    'Zendesk Follow-up',
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Training Reports & Communication',
+    'Inventory Report & Communication',
+    'Validation of Previous Week Supplemental Orders',
+    'Achievers Recognition & Boosting',
+    'Regional Meeting – Goal Setting & AORs',
+    'District Meeting',
+    'People Review & Schedule Interviews for Week',
+    'Update Expense Report',
+  ],
+  Tuesday: [
+    'All Shops Open',
+    'Labor Verification',
+    "KPI’s & #'s Communication to Team",
+    'Deposit Verification',
+    'Car Defecit Report',
+    'Corrigo',
+    'WorkVivo',
+    'Workday – check applications',
+    'Zendesk Follow-up',
+    'Visit Prep',
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Schedule Review & Posting (Before you leave the house/office)',
+    'Fleet Dashboard',
+    'Shop Visits*',
+    'Prep for Tomorrow Claims Call',
+  ],
+  Wednesday: [
+    'All Shops Open',
+    'Labor Verification (OT)',
+    "KPI’s & #'s Communication to Team",
+    'Deposit Verification',
+    'Car Defecit Report',
+    'Corrigo',
+    'WorkVivo',
+    'Workday – check applications',
+    'Zendesk Follow-up',
+    'Visit Prep',
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Claims Call',
+    'NPS Comment Review',
+    'Training Reports & Communication',
+    'Overtime Notes',
+    'Shop Visits*',
+  ],
+  Thursday: [
+    'All Shops Open',
+    'Labor Verification (OT)',
+    "KPI’s & #'s Communication to Team",
+    'Deposit Verification',
+    'Car Defecit Report',
+    'Corrigo',
+    'WorkVivo',
+    'Workday – check applications',
+    'Zendesk Follow-up',
+    'Visit Prep',
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Labor Comments added by Noon',
+    'Training Reports & Communication',
+    'Training Validation – Meet & Greet',
+    'Shop Visits*',
+  ],
+  Friday: [
+    'All Shops Open',
+    'Labor Verification (OT)',
+    "KPI’s & #'s Communication to Team",
+    'Deposit Verification',
+    'Car Defecit Report',
+    'Corrigo',
+    'WorkVivo',
+    'Workday – check applications',
+    'Zendesk Follow-up',
+    'Visit Prep',
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Full Throttle Friday Visits',
+  ],
+  Saturday: [
+    'All Shops Open',
+    'Labor Verification (OT)',
+    "KPI’s & #'s Communication to Team",
+    'Update 5-8 Tracker',
+    'Daily Check-ins 12, 2:30, 5',
+    'Visit Prep if Weekend Visit Day',
+  ],
+  'Misc/Monthend': [
+    'SM 1on1’s',
+    '1on1 w/ RDO',
+    'New Hire Orientation',
+    'ASM Meeting',
+    'Outlier Calls',
+    'Monthend – placeholders x 10',
+  ],
+};
+
 // 3-bay layout
 const BAY_POSITIONS: [number, number, number][] = [
   [-6, 0.01, 9.5],
@@ -530,7 +653,7 @@ function advanceGame(prev: GameState, strategy: Strategy): GameState {
   let satisfaction = prev.satisfaction;
   let reputation = prev.reputation;
   let pendingDecision = prev.pendingDecision;
-  let decisionsThisDay = prev.decisionsThisDay ?? 0;
+  const decisionsThisDay = prev.decisionsThisDay ?? 0;
 
   let currentMinute = prev.currentMinute + GAME_MINUTES_PER_TICK;
   if (currentMinute > CLOSING_MINUTE) currentMinute = CLOSING_MINUTE;
@@ -1243,6 +1366,162 @@ export default function ClydeSimPage() {
   const [selection, setSelection] = useState<Selection>({ type: 'none' });
   const [strategy, setStrategy] = useState<Strategy>('balanced');
 
+  // Daily cadence state (defaults + overrides stored in localStorage)
+  const [cadenceByDay, setCadenceByDay] = useState<Record<string, string[]>>(() => {
+    try {
+      if (typeof window === 'undefined') return DEFAULT_DAILY_CADENCE;
+      const raw = window.localStorage.getItem(CADENCE_OVERRIDES_KEY);
+      if (!raw) return DEFAULT_DAILY_CADENCE;
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') {
+        const merged: Record<string, string[]> = { ...DEFAULT_DAILY_CADENCE };
+        Object.keys(parsed).forEach((k) => {
+          const v = parsed[k];
+          if (Array.isArray(v)) merged[k] = v;
+          else if (typeof v === 'string') merged[k] = v.split('\n').map((s) => s.trim()).filter(Boolean);
+        });
+        return merged;
+      }
+    } catch {
+      // ignore
+    }
+    return DEFAULT_DAILY_CADENCE;
+  });
+  const [cadenceEditMode, setCadenceEditMode] = useState(false);
+  const [cadenceEditText, setCadenceEditText] = useState<string>('');
+
+  // Determine current day name from dayIndex (fall back to Monday)
+  const currentDayName = DAY_NAMES[(game.dayIndex - 1) % DAY_NAMES.length] || 'Monday';
+
+  // Role & cadence loading from server
+  const [canEditCadence, setCanEditCadence] = useState(false);
+  const [loadingCadence, setLoadingCadence] = useState(true);
+
+  // Load session role and cadence templates from server on mount
+  useEffect(() => {
+    let mounted = true;
+    async function load() {
+      try {
+        // fetch session info
+        const sRes = await fetch('/api/session/role');
+        if (!sRes.ok) return;
+        const sJson = await sRes.json();
+        const alignment = sJson?.alignment ?? null;
+
+        // derive role server-side mirror of deriveUserRole
+        const derive = (alignmentArg: unknown) => {
+          if (!alignmentArg || typeof alignmentArg !== 'object') return 'Unknown';
+          const memberships = (alignmentArg as { memberships?: unknown }).memberships;
+          if (!Array.isArray(memberships) || memberships.length === 0) return 'Unknown';
+          const roles = memberships.map((m) => {
+            const roleVal = (m as { role?: unknown }).role;
+            return String(roleVal ?? '').toLowerCase();
+          });
+          if (roles.some((r: string) => r.includes('vp'))) return 'VP';
+          if (roles.some((r: string) => r.includes('rd') || r.includes('regional'))) return 'RD';
+          if (roles.some((r: string) => r.includes('dm') || r.includes('district'))) return 'DM';
+          if (roles.some((r: string) => r.includes('shop') || r.includes('employee') || r.includes('ops'))) return 'Shop';
+          return 'Unknown';
+        };
+
+        const role = derive(alignment);
+        // detect explicit admin-like roles in the membership roles (if present)
+        const memberships = (alignment as any)?.memberships;
+        const rolesLower: string[] = Array.isArray(memberships)
+          ? memberships.map((m: any) => String((m && m.role) ?? '').toLowerCase())
+          : [];
+        const isAdmin = rolesLower.some((r) => r.includes('admin') || r.includes('administrator') || r.includes('super'));
+
+        // only RD, VP, or ADMIN can edit cadence in this UI
+        setCanEditCadence(isAdmin || role === 'RD' || role === 'VP');
+
+        // determine scope (shop if logged-in shop present)
+        const shopStore = typeof window !== 'undefined' ? window.localStorage.getItem('shopStore') : null;
+
+        // fetch cadence templates
+        const q = shopStore ? `?shopId=${encodeURIComponent(shopStore)}` : '';
+        const cRes = await fetch(`/api/cadence/templates${q}`);
+        if (!cRes.ok) {
+          setCadenceByDay(DEFAULT_DAILY_CADENCE);
+          setLoadingCadence(false);
+          return;
+        }
+        const cJson = await cRes.json();
+        const data = cJson?.data ?? {};
+        // merge: defaults with server overrides
+        const merged: Record<string, string[]> = { ...DEFAULT_DAILY_CADENCE };
+        Object.keys(data).forEach((k) => {
+          const v = data[k];
+          if (Array.isArray(v)) merged[k] = v;
+          else if (typeof v === 'string') merged[k] = v.split('\n').map((s) => s.trim()).filter(Boolean);
+        });
+        if (mounted) setCadenceByDay(merged);
+      } catch (err) {
+        console.error('Failed to load session or cadence', err);
+        setCadenceByDay(DEFAULT_DAILY_CADENCE);
+      } finally {
+        if (mounted) setLoadingCadence(false);
+      }
+    }
+    load();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  function saveCadenceForCurrentDay() {
+    const lines = cadenceEditText.split('\n').map((s) => s.trim()).filter(Boolean);
+    const next = { ...cadenceByDay, [currentDayName]: lines };
+    setCadenceByDay(next);
+    // persist to server if possible
+    (async () => {
+      try {
+        const shopStore = typeof window !== 'undefined' ? window.localStorage.getItem('shopStore') : null;
+        const scope = shopStore ? 'shop' : 'company';
+        const scopeId = shopStore ?? null;
+        await fetch('/api/cadence/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope, scopeId, day: currentDayName, tasks: lines }),
+        });
+      } catch {
+        // fallback to localStorage for offline/dev
+        try {
+          window.localStorage.setItem(CADENCE_OVERRIDES_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      }
+    })();
+    setCadenceEditMode(false);
+  }
+
+  function resetCadenceForCurrentDay() {
+    const next = { ...cadenceByDay };
+    next[currentDayName] = DEFAULT_DAILY_CADENCE[currentDayName] ?? [];
+    setCadenceByDay(next);
+    // try to persist reset to server (overwrite with default tasks)
+    (async () => {
+      try {
+        const shopStore = typeof window !== 'undefined' ? window.localStorage.getItem('shopStore') : null;
+        const scope = shopStore ? 'shop' : 'company';
+        const scopeId = shopStore ?? null;
+        await fetch('/api/cadence/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ scope, scopeId, day: currentDayName, tasks: next[currentDayName] }),
+        });
+      } catch {
+        try {
+          window.localStorage.setItem(CADENCE_OVERRIDES_KEY, JSON.stringify(next));
+        } catch {
+          // ignore
+        }
+      }
+    })();
+    setCadenceEditMode(false);
+  }
+
   const upgrades = defaultUpgrades(game.upgrades);
   const dailyGoal = game.dailyGoal;
   const dailyEvent = game.dailyEvent;
@@ -1814,6 +2093,130 @@ export default function ClydeSimPage() {
               <div>{dailyEvent.description}</div>
             </div>
           )}
+
+          {/* Daily Workflow Cadence (always visible; editable for RD/VP/ADMIN) */}
+          <div
+            style={{
+              marginTop: 10,
+              paddingTop: 6,
+              borderTop: '1px solid #1f2933',
+              fontSize: 12,
+              color: '#d1d5db',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                marginBottom: 6,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>
+                Daily Workflow Cadence — {currentDayName}
+              </div>
+              {canEditCadence && !cadenceEditMode && (
+                <button
+                  onClick={() => {
+                    const lines = cadenceByDay[currentDayName] ?? DEFAULT_DAILY_CADENCE[currentDayName] ?? [];
+                    setCadenceEditText(lines.join('\n'));
+                    setCadenceEditMode(true);
+                  }}
+                  style={{
+                    padding: '4px 8px',
+                    fontSize: 12,
+                    borderRadius: 6,
+                    border: '1px solid #334155',
+                    background: '#0f172a',
+                    color: '#f9fafb',
+                    cursor: 'pointer',
+                  }}
+                >
+                  Edit
+                </button>
+              )}
+            </div>
+
+            {!cadenceEditMode ? (
+              <div style={{ fontSize: 12, color: '#e5e7eb' }}>
+                {(cadenceByDay[currentDayName] || DEFAULT_DAILY_CADENCE[currentDayName] || []).map((task, idx) => (
+                  <div key={idx} style={{ marginBottom: 6 }}>
+                    • {task}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <textarea
+                  value={cadenceEditText}
+                  onChange={(e) => setCadenceEditText(e.target.value)}
+                  style={{
+                    width: '100%',
+                    minHeight: 120,
+                    background: '#020617',
+                    color: '#f9fafb',
+                    border: '1px solid #334155',
+                    padding: 8,
+                    borderRadius: 6,
+                    fontSize: 13,
+                  }}
+                />
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button
+                    onClick={() => {
+                      // cancel edits
+                      const lines = cadenceByDay[currentDayName] ?? DEFAULT_DAILY_CADENCE[currentDayName] ?? [];
+                      setCadenceEditText(lines.join('\n'));
+                      setCadenceEditMode(false);
+                    }}
+                    style={{
+                      padding: '6px 10px',
+                      background: '#374151',
+                      border: 'none',
+                      borderRadius: 6,
+                      color: '#f9fafb',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={resetCadenceForCurrentDay}
+                    style={{
+                      padding: '6px 10px',
+                      background: '#b91c1c',
+                      border: 'none',
+                      borderRadius: 6,
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                    }}
+                  >
+                    Reset to Default
+                  </button>
+
+                  <button
+                    onClick={saveCadenceForCurrentDay}
+                    style={{
+                      padding: '6px 12px',
+                      background: '#16a34a',
+                      border: 'none',
+                      borderRadius: 6,
+                      color: '#fff',
+                      cursor: 'pointer',
+                      fontSize: 12,
+                      fontWeight: 600,
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           <div
             style={{

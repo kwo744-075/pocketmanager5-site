@@ -634,10 +634,10 @@ export const FORM_REGISTRY: FormConfig[] = [
   },
 ];
 
-export const FORM_LOOKUP: Record<AllFormSlug, FormConfig> = FORM_REGISTRY.reduce((acc, form) => {
+export const FORM_LOOKUP: Record<FormSlug, FormConfig> = FORM_REGISTRY.reduce((acc, form) => {
   acc[form.slug] = form;
   return acc;
-}, {} as Record<AllFormSlug, FormConfig>);
+}, {} as Record<FormSlug, FormConfig>);
 
 export const DM_FORM_SLUGS: FormSlug[] = [
   "dm-visit-plan",

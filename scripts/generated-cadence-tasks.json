@@ -1,0 +1,63 @@
+{
+  "file": "GC Region Labor 12.06.25.xlsx",
+  "sheets": [
+    {
+      "name": "Sunday",
+      "headers": [],
+      "rowCount": 71
+    },
+    {
+      "name": "Monday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "Tuesday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "Wednesday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "Thursday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "Friday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "Saturday",
+      "headers": [],
+      "rowCount": 70
+    },
+    {
+      "name": "WTD",
+      "headers": [
+        null,
+        "Sunday",
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Thursday",
+        "Friday",
+        "Saturday",
+        "WTD Variances",
+        "WTD Actual",
+        "Adj Allow",
+        "Adj WTD Variance",
+        null,
+        "PTO Days",
+        "Vacant Shops",
+        "Total Hours",
+        "Full Adj Hours End of Week"
+      ],
+      "rowCount": 69
+    }
+  ]
+}

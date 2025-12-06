@@ -78,10 +78,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Insert with conflict ignore so we never overwrite an existing submission
+    // Upsert with onConflict keys so we never overwrite an already submitted slot
     const { data: inserted, error } = await supabaseAdmin
       .from("check_ins")
-      .insert(payload, { onConflict: "shop_id,check_in_date,time_slot", ignoreDuplicates: true })
+      .upsert([payload], { onConflict: "shop_id,check_in_date,time_slot" })
       .select("time_slot");
 
     if (error) {

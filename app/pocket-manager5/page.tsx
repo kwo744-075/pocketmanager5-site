@@ -346,6 +346,13 @@ const DM_TOOL_CARDS: DmToolCard[] = [
     accent: "from-violet-500/60 via-violet-500/10 to-slate-950/70",
   },
   {
+    title: "Daily Labor Portal",
+    subtitle: "Quick weekly hours entry",
+    href: "/pocket-manager5/features/daily-labor",
+    icon: Calculator,
+    accent: "from-amber-500/60 via-amber-500/10 to-slate-950/70",
+  },
+  {
     title: "DM Shop Visit",
     subtitle: "Inspection + scoring",
     href: "/pocket-manager5/features/dm-logbook",

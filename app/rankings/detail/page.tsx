@@ -103,27 +103,39 @@ export default function RankingsDetailPage() {
 
     const run = async () => {
       try {
-        const { data, error } = await supabase
-          .from("hierarchy_summary_vw")
-          .select("scope_level")
-          .eq("login", normalized)
-          .maybeSingle();
+        let resolvedScope: string | null = null;
+        try {
+          const resp = await fetch("/api/hierarchy/summary");
+          if (resp.ok) {
+            const body = await resp.json();
+            resolvedScope = (body?.data?.scope_level as string | null) ?? null;
+          } else {
+            console.error("Rankings detail API status", resp.status);
+          }
+        } catch (apiErr) {
+          console.error("Rankings detail API error", apiErr);
+        }
 
-        if (!cancelled) {
+        if (!resolvedScope) {
+          const { data, error } = await supabase
+            .from("hierarchy_summary_vw")
+            .select("scope_level")
+            .eq("login", normalized)
+            .maybeSingle();
           if (error) {
             console.error("Rankings detail hierarchy error", error);
           } else {
-            setScopeLevel((data as HierarchySummary | null)?.scope_level ?? cachedSummary?.scope_level ?? null);
+            resolvedScope = (data as HierarchySummary | null)?.scope_level ?? null;
           }
         }
+
+        if (!cancelled) {
+          setScopeLevel(resolvedScope ?? cachedSummary?.scope_level ?? null);
+        }
       } catch (err) {
-        if (!cancelled) {
-          console.error("Rankings detail hierarchy exception", err);
-        }
+        if (!cancelled) console.error("Rankings detail hierarchy exception", err);
       } finally {
-        if (!cancelled) {
-          setLoadingScope(false);
-        }
+        if (!cancelled) setLoadingScope(false);
       }
     };
 

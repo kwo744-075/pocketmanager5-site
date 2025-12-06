@@ -11,11 +11,77 @@ export default function DepositVerificationPage() {
   const [expectedAmount, setExpectedAmount] = useState<number | "">("");
   const [notes, setNotes] = useState("");
   const [files, setFiles] = useState<FileList | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  function handleSubmit(e: React.FormEvent) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    console.log("Deposit submit (mock):", { date, shop, bankVisit, depositAmount, expectedAmount, notes, files });
-    alert("Deposit entry submitted (mock)");
+    setMessage(null);
+    if (!shop) {
+      setMessage("Please enter a shop name or ID.");
+      return;
+    }
+    if (!files || files.length === 0) {
+      setMessage("Please attach at least one deposit slip photo.");
+      return;
+    }
+
+      setLoading(true);
+      try {
+      // First upload files to server proxy which will store them with admin privileges
+      const fd = new FormData();
+      for (let i = 0; i < files.length; i++) {
+        fd.append('files', files[i]);
+      }
+
+      const uploadRes = await fetch('/api/cadence/uploads', { method: 'POST', body: fd });
+      const uploadJson = await uploadRes.json().catch(() => ({}));
+      if (!uploadRes.ok) {
+        console.error('Upload proxy failed', uploadJson);
+        setMessage(uploadJson?.error ?? 'Upload failed');
+        setLoading(false);
+        return;
+      }
+
+      // uploadJson.uploaded will be an array of objects { path, signedUrl, expiresAt }
+      // or legacy public URL strings. Keep the returned shape to persist server-side.
+      const uploadedUrls = Array.isArray(uploadJson?.uploaded) ? uploadJson.uploaded : [];
+
+      const payload = {
+        date,
+        shopId: shop,
+        bankVisitVerified: !!bankVisit,
+        depositAmount: depositAmount === "" ? null : Number(depositAmount),
+        expectedAmount: expectedAmount === "" ? null : Number(expectedAmount),
+        cashOverShort: Number((Number(depositAmount || 0) - Number(expectedAmount || 0)).toFixed(2)),
+        notes,
+        files: uploadedUrls,
+      } as any;
+
+      const res = await fetch(`/api/cadence/deposits`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+        credentials: "same-origin",
+      });
+
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        console.error("Deposit submit failed", json);
+        setMessage(json?.error ?? "Failed to submit deposit entry");
+      } else {
+        setMessage("Deposit entry submitted");
+        setFiles(null);
+        setDepositAmount("");
+        setExpectedAmount("");
+        setNotes("");
+      }
+    } catch (err) {
+      console.error(err);
+      setMessage("Network error submitting deposit entry");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -75,9 +141,12 @@ export default function DepositVerificationPage() {
               </label>
             </div>
 
-            <div className="flex gap-2">
-              <button className="rounded-md bg-emerald-600 px-4 py-2 text-sm font-semibold">Submit Deposit Verification</button>
-              <Link href="/pocket-manager5/features/cadence" className="rounded-md border border-slate-700 px-4 py-2 text-sm">Cancel / Back to Cadence</Link>
+            <div className="flex flex-col gap-2">
+              <div className="flex gap-2">
+                <button disabled={loading} className={`rounded-md px-4 py-2 text-sm font-semibold ${loading ? 'bg-slate-700/40' : 'bg-emerald-600'}`}> {loading ? 'Submitting…' : 'Submit Deposit Verification'}</button>
+                <Link href="/pocket-manager5/features/cadence" className="rounded-md border border-slate-700 px-4 py-2 text-sm">Cancel / Back to Cadence</Link>
+              </div>
+              {message ? <div className="text-sm text-slate-300">{message}</div> : null}
             </div>
           </form>
         </div>

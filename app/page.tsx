@@ -224,37 +224,49 @@ export default function Home() {
 
     const run = async () => {
       try {
-        const { data, error } = await supabase
-          .from("hierarchy_summary_vw")
-          .select("*")
-          .eq("login", normalized)
-          .maybeSingle();
-
-        if (cancelled) {
-          return;
+        // Prefer server API which reads normalized tables; fall back to the legacy view
+        let resolved: HierarchySummary | null = null;
+        try {
+          const resp = await fetch("/api/hierarchy/summary");
+          if (resp.ok) {
+            const body = await resp.json();
+            resolved = (body?.data ?? null) as HierarchySummary | null;
+          } else {
+            console.error("Home hierarchy API status", resp.status);
+          }
+        } catch (apiErr) {
+          console.error("Home hierarchy API error", apiErr);
         }
 
-        if (error) {
-          console.error("Home hierarchy_summary_vw error", error);
-          if (!getCachedSummaryForLogin(normalized)) {
+        if (!resolved) {
+          // fallback to legacy view
+          const { data, error } = await supabase
+            .from("hierarchy_summary_vw")
+            .select("*")
+            .eq("login", normalized)
+            .maybeSingle();
+
+          if (error) {
+            console.error("Home hierarchy_summary_vw error", error);
+          } else {
+            resolved = (data as HierarchySummary | null) ?? null;
+          }
+        }
+
+        if (cancelled) return;
+
+        if (resolved) {
+          setHierarchy(resolved);
+          setHierarchyError(null);
+          writeHierarchySummaryCache(resolved);
+        } else {
+          const fallback = getCachedSummaryForLogin(normalized);
+          if (fallback) {
+            setHierarchy((fallback as HierarchySummary) ?? null);
+            setHierarchyError(null);
+          } else {
             setHierarchy(null);
             setHierarchyError("Unable to load your hierarchy scope.");
-          }
-        } else {
-          const resolved = (data as HierarchySummary | null) ?? null;
-          if (resolved) {
-            setHierarchy(resolved);
-            setHierarchyError(null);
-            writeHierarchySummaryCache(resolved);
-          } else {
-            const fallback = getCachedSummaryForLogin(normalized);
-            if (fallback) {
-              setHierarchy((fallback as HierarchySummary) ?? null);
-              setHierarchyError(null);
-            } else {
-              setHierarchy(null);
-              setHierarchyError("Unable to load your hierarchy scope.");
-            }
           }
         }
       } catch (err) {
@@ -266,9 +278,7 @@ export default function Home() {
           }
         }
       } finally {
-        if (!cancelled) {
-          setHierarchyLoading(false);
-        }
+        if (!cancelled) setHierarchyLoading(false);
       }
     };
     run();

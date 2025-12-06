@@ -866,52 +866,133 @@ export function DmSchedulePlanner({
         }
       });
 
+
       // determine per-shop required audits/visits
       const reqs = getVisitRequirementsForPeriod(panel.info.period, DM_COVERAGE_SHOPS.length);
-      // per-shop required count for a type = req.required / shopCount
       const perShopReq: Record<string, number> = {};
       reqs.forEach((r) => {
-        perShopReq[r.type] = Math.max(0, Math.round(r.required / Math.max(1, DM_COVERAGE_SHOPS.length)));
+        // r.required is total for all shops; convert to per-shop (round up where needed)
+        perShopReq[r.type] = Math.max(0, Math.ceil(r.required / Math.max(1, DM_COVERAGE_SHOPS.length)));
       });
 
-      // index for assigning dates round-robin for audits and visits
-      let auditIndex = 0;
-      const nextAuditDay = () => {
-        const day = auditDays[auditIndex % auditDays.length];
-        auditIndex += 1;
-        return day;
+      // build first-two-weeks and last-two-weeks windows
+      const periodStart = panel.info.startDate;
+      const periodEnd = panel.info.endDate;
+      const startWindowEnd = new Date(periodStart.getTime());
+      startWindowEnd.setDate(periodStart.getDate() + Math.min(13, Math.max(0, Math.floor((panel.info.weeksInPeriod || 4) * 7 - 1))));
+      const endWindowStart = new Date(periodEnd.getTime());
+      endWindowStart.setDate(periodEnd.getDate() - Math.min(13, Math.max(0, Math.floor((panel.info.weeksInPeriod || 4) * 7 - 1))));
+
+      const firstWindowDays = visitDays.filter((d) => d.date.getTime() <= startWindowEnd.getTime());
+      const lastWindowDays = visitDays.filter((d) => d.date.getTime() >= endWindowStart.getTime());
+      const firstAuditDays = auditDays.filter((d) => d.date.getTime() <= startWindowEnd.getTime());
+
+      // helper to pick a day from a candidate list trying to achieve spacing constraints
+      const pickBestDay = (
+        candidates: PeriodDay[],
+        avoidDates: Date[] = [],
+        preferWithin?: { start?: Date; end?: Date },
+      ) => {
+        if (!candidates.length) return null;
+        // prefer days that satisfy spacing >=10 days from all avoidDates and fall within preferWithin if provided
+        const ideal = candidates.filter((c) => {
+          if (preferWithin) {
+            if (preferWithin.start && c.date.getTime() < preferWithin.start.getTime()) return false;
+            if (preferWithin.end && c.date.getTime() > preferWithin.end.getTime()) return false;
+          }
+          for (const ad of avoidDates) {
+            const diffDays = Math.abs((c.date.getTime() - ad.getTime()) / DAY_MS);
+            if (diffDays < 10) return false;
+          }
+          return true;
+        });
+        if (ideal.length) return ideal[0];
+
+        // fallback: pick candidate with max min-distance to avoidDates
+        let best: PeriodDay | null = null;
+        let bestMin = -1;
+        for (const c of candidates) {
+          const minDist = avoidDates.length
+            ? Math.min(...avoidDates.map((ad) => Math.abs((c.date.getTime() - ad.getTime()) / DAY_MS)))
+            : Infinity;
+          if (minDist > bestMin) {
+            bestMin = minDist;
+            best = c;
+          }
+        }
+        return best;
       };
 
-      let visitIndex = 0;
-      const nextVisitDay = () => {
-        const day = visitDays[visitIndex % visitDays.length];
-        visitIndex += 1;
-        return day;
-      };
-
-      // schedule audits first (only on auditDays)
+      // schedule per the period rules
+      // for each shop, place required items in windows with spacing 10-14 days where possible
       for (const shop of shops) {
-        const auditCount = perShopReq["Quarterly Audit"] ?? 0;
-        for (let i = 0; i < auditCount; i++) {
-          const day = nextAuditDay();
-          pushEntry(day, shop, "Quarterly Audit");
-        }
-      }
+        const shopReqs: Record<string, number> = {};
+        Object.keys(perShopReq).forEach((k) => (shopReqs[k] = perShopReq[k] ?? 0));
 
-      // then ensure minimum 2 visits per shop (including audits). Visits may land on Fri as well.
-      const visitsByShop: Record<string, number> = {};
-      Object.values(newMap).flat().forEach((e) => {
-        if (e.visitType !== "Off") {
-          visitsByShop[e.shopId] = (visitsByShop[e.shopId] ?? 0) + 1;
-        }
-      });
+        // helper to get already scheduled dates for this shop
+        const scheduledDatesForShop = () =>
+          Object.values(newMap)
+            .flat()
+            .filter((e) => e.shopId === shop && e.visitType !== "Off")
+            .map((e) => e.date)
+            .sort((a, b) => a.getTime() - b.getTime());
 
-      for (const shop of shops) {
-        const current = visitsByShop[shop] ?? 0;
-        const needed = Math.max(0, 2 - current);
-        for (let i = 0; i < needed; i++) {
-          const day = nextVisitDay();
-          pushEntry(day, shop, "Standard Visit");
+        // incorporate historical entries (from props) to avoid too-close visits across periods
+        const historicalDatesForShop = ((): Date[] => {
+          try {
+            const hist = (historicalEntriesProp ?? [])
+              .filter((e) => e.shopId === shop && e.visitType !== "Off")
+              .map((e) => e.date)
+              .sort((a, b) => a.getTime() - b.getTime());
+            return hist;
+          } catch (err) {
+            return [] as Date[];
+          }
+        })();
+
+        // If Plan To Win required, prefer first window (prefer week 1 then week2)
+        if ((shopReqs["Plan To Win"] ?? 0) > 0) {
+          const prefer = { start: periodStart, end: (() => { const d = new Date(periodStart); d.setDate(d.getDate() + 6); return d; })() };
+          let day = pickBestDay(firstWindowDays.filter((d) => firstWindowDays.includes(d)), [...scheduledDatesForShop(), ...historicalDatesForShop], prefer);
+          if (!day) day = pickBestDay(firstWindowDays, [...scheduledDatesForShop(), ...historicalDatesForShop]);
+          if (day) pushEntry(day, shop, "Plan To Win");
+        }
+
+        // If Quarterly Audit required, schedule in first window audit days
+        if ((shopReqs["Quarterly Audit"] ?? 0) > 0) {
+          let day = pickBestDay(firstAuditDays, [...scheduledDatesForShop(), ...historicalDatesForShop], { start: periodStart, end: startWindowEnd });
+          if (!day) day = pickBestDay(auditDays, [...scheduledDatesForShop(), ...historicalDatesForShop]);
+          if (day) pushEntry(day, shop, "Quarterly Audit");
+        }
+
+        // Standard Visit handling: could be 1 or 2 per shop depending on period
+        const standardCount = shopReqs["Standard Visit"] ?? 0;
+        if (standardCount === 1) {
+          // If there is an audit or PTW also scheduled, place Standard in last two weeks
+          const avoid = [...scheduledDatesForShop(), ...historicalDatesForShop];
+          let day = pickBestDay(lastWindowDays, avoid);
+          if (!day) day = pickBestDay(visitDays, avoid);
+          if (day) pushEntry(day, shop, "Standard Visit");
+        } else if (standardCount >= 2) {
+          // aim to space two visits 10-14 days apart: first in first window, second in last window
+          const avoid = [...scheduledDatesForShop(), ...historicalDatesForShop];
+          let firstDay = pickBestDay(firstWindowDays, avoid);
+          if (!firstDay) firstDay = pickBestDay(visitDays, []);
+          if (firstDay) {
+            pushEntry(firstDay, shop, "Standard Visit");
+            // second pick should be 10-14 days after firstDay
+            const desiredMin = new Date(firstDay.date.getTime());
+            desiredMin.setDate(desiredMin.getDate() + 10);
+            const desiredMax = new Date(firstDay.date.getTime());
+            desiredMax.setDate(desiredMax.getDate() + 14);
+            const secondCandidates = lastWindowDays.filter((d) => d.date.getTime() >= desiredMin.getTime() && d.date.getTime() <= desiredMax.getTime());
+            // include historical dates in avoidance for second pick as well
+            const avoidSecond = [firstDay.date, ...historicalDatesForShop];
+            let secondDay = pickBestDay(secondCandidates, avoidSecond);
+            if (!secondDay) secondDay = pickBestDay(lastWindowDays, avoidSecond);
+            if (!secondDay) secondDay = pickBestDay(visitDays.filter((d) => d.date.getTime() > firstDay.date.getTime()), avoidSecond);
+            if (secondDay) pushEntry(secondDay, shop, "Standard Visit");
+          }
         }
       }
 
@@ -1476,12 +1557,12 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
   const [visitTypeInput, setVisitTypeInput] = useState(() => entries[0]?.visitType ?? VISIT_TYPE_OPTIONS[0] ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  /* eslint-disable react-hooks/set-state-in-effect */
+   
   useEffect(() => {
     setShopInput(entries[0]?.shopId ?? defaultShop ?? "");
     setVisitTypeInput(entries[0]?.visitType ?? VISIT_TYPE_OPTIONS[0] ?? "");
   }, [entries, defaultShop]);
-  /* eslint-enable react-hooks/set-state-in-effect */
+   
 
   const handleSubmit = useCallback(
     (event: FormEvent) => {

@@ -10,6 +10,7 @@ type Props = {
   tintColor?: string;
   className?: string;
   disabled?: boolean;
+  title?: string;
 };
 
 export default function Chip({
@@ -20,6 +21,7 @@ export default function Chip({
   tintColor,
   className = "",
   disabled = false,
+  title,
 }: Props) {
   const accent = tintColor ?? "#06b6d4"; // teal-400 fallback
   const textColor = active ? "#ffffff" : "#e6edf3"; // white vs light slate
@@ -34,6 +36,7 @@ export default function Chip({
       type="button"
       onClick={onClick}
       disabled={disabled}
+      title={title}
       aria-pressed={active}
       className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-sm font-semibold transition-shadow disabled:opacity-50 ${borderStyle} ${className}`}
       style={style}

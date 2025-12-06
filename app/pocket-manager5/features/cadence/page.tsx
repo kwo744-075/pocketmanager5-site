@@ -1,4 +1,4 @@
-import { CadenceWorkflow } from "@/components/features/cadence-workflow";
+import { CadenceWorkflow } from "@/app/components/features/cadence-workflow";
 
 export const metadata = {
   title: "Cadence — Pocket Manager",
