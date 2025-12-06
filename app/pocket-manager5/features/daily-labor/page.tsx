@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"] as const;
 
@@ -83,6 +83,57 @@ export default function DailyLaborLanding() {
     Friday: 146.53,
     Saturday: 171.8,
   };
+
+  // Compliance table component (inline) — computes OT% per district and region totals
+  type DistrictCompliance = {
+    name: string;
+    checked: boolean;
+    totalHrs: number | '';
+    otHrs: number | '';
+  };
+
+  function ComplianceTable() {
+    const initial: DistrictCompliance[] = ['Baton Rouge North','Baton Rouge South','Gulf Coast North','Lafayette','Gulf Coast West','NOLA North','NOLA South'].map((n) => ({ name: n, checked: false, totalHrs: '', otHrs: '' }));
+    const [items, setItems] = useState<DistrictCompliance[]>(initial);
+
+    const setChecked = (idx: number, v: boolean) => setItems(s => s.map((it, i) => i === idx ? { ...it, checked: v } : it));
+    const setTotal = (idx: number, v: string) => setItems(s => s.map((it, i) => i === idx ? { ...it, totalHrs: v === '' ? '' : Number(v) } : it));
+    const setOT = (idx: number, v: string) => setItems(s => s.map((it, i) => i === idx ? { ...it, otHrs: v === '' ? '' : Number(v) } : it));
+
+    const totals = useMemo(() => {
+      let totalH = 0;
+      let totalOT = 0;
+      for (const it of items) {
+        if (typeof it.totalHrs === 'number') totalH += it.totalHrs;
+        if (typeof it.otHrs === 'number') totalOT += it.otHrs;
+      }
+      const otPct = totalH > 0 ? (totalOT / totalH) * 100 : 0;
+      return { totalH, totalOT, otPct };
+    }, [items]);
+
+    return (
+      <div>
+        <div className="grid gap-2">
+          {items.map((it, idx) => (
+            <div key={it.name} className="flex items-center gap-2 text-sm">
+              <input type="checkbox" checked={it.checked} onChange={(e) => setChecked(idx, e.target.checked)} />
+              <div className="flex-1">{it.name}</div>
+              <input value={it.totalHrs === '' ? '' : String(it.totalHrs)} onChange={(e) => setTotal(idx, e.target.value)} placeholder="Total Hrs" className="w-24 rounded-md bg-slate-800/40 p-1 text-white" />
+              <input value={it.otHrs === '' ? '' : String(it.otHrs)} onChange={(e) => setOT(idx, e.target.value)} placeholder="OT Hrs" className="w-20 rounded-md bg-slate-800/40 p-1 text-white" />
+              <div className="w-20 text-right">{typeof it.totalHrs === 'number' && it.totalHrs > 0 && typeof it.otHrs === 'number' ? `${((it.otHrs / it.totalHrs) * 100).toFixed(1)}%` : '--'}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="mt-3 border-t pt-2 text-sm">
+          <div className="flex justify-between"><div className="font-medium">Region Totals</div><div></div></div>
+          <div className="flex justify-between mt-1"><div>Total Hours</div><div>{totals.totalH.toFixed(2)}</div></div>
+          <div className="flex justify-between mt-1"><div>Total OT</div><div>{totals.totalOT.toFixed(2)}</div></div>
+          <div className="flex justify-between mt-1"><div>OT %</div><div>{totals.otPct.toFixed(2)}%</div></div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
@@ -180,20 +231,10 @@ export default function DailyLaborLanding() {
 
         <div className="md:col-span-1 space-y-4">
           <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
-            <h3 className="text-lg font-medium">Captains — Scheduled Compliance (placeholder)</h3>
-            <p className="text-sm text-slate-400">Per-district scheduled compliance checks and totals. This is a placeholder; we will expand with OT calc and per-district checkmarks.</p>
+            <h3 className="text-lg font-medium">Captains — Scheduled Compliance</h3>
+            <p className="text-sm text-slate-400">Per-district scheduled compliance checks and totals. Enter Total Hours and OT Hours and OT% will be calculated.</p>
             <div className="mt-3">
-              <div className="grid grid-cols-1 gap-2">
-                {['Baton Rouge North','Baton Rouge South','Gulf Coast North','Lafayette','Gulf Coast West','NOLA North','NOLA South'].map((d) => (
-                  <label key={d} className="flex items-center gap-2 text-sm">
-                    <input type="checkbox" />
-                    <span className="flex-1">{d}</span>
-                    <input type="number" placeholder="Total Hrs" className="w-24 rounded-md bg-slate-800/40 p-1 text-white" />
-                    <input type="number" placeholder="OT Hrs" className="w-20 rounded-md bg-slate-800/40 p-1 text-white" />
-                  </label>
-                ))}
-              </div>
-              <div className="mt-3 text-sm text-slate-400">OT% will be auto-calculated client-side in the next iteration.</div>
+              <ComplianceTable />
             </div>
           </div>
 
