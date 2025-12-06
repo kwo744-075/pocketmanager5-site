@@ -121,24 +121,23 @@ export function usePocketHierarchy(redirectPath = "/pocket-manager5"): UsePocket
 
     const run = async () => {
       try {
-        const { data, error } = await supabase
-          .from("hierarchy_summary_vw")
-          .select("*")
-          .eq("login", normalized)
-          .maybeSingle();
+        // Prefer the new server API which uses normalized tables; fall back to cached summary
+        const resp = await fetch("/api/hierarchy/summary");
+        if (cancelled) return;
 
-        if (cancelled) {
-          return;
-        }
-
-        if (error) {
-          console.error("usePocketHierarchy hierarchy_summary_vw error", error);
-          if (!getCachedSummaryForLogin(normalized)) {
+        if (!resp.ok) {
+          console.error("usePocketHierarchy /api/hierarchy/summary status", resp.status);
+          const fallback = getCachedSummaryForLogin(normalized);
+          if (fallback) {
+            setHierarchy((fallback as HierarchySummary) ?? null);
+            setHierarchyError(null);
+          } else {
             setHierarchy(null);
             setHierarchyError("Unable to load your hierarchy scope.");
           }
         } else {
-          const resolved = (data as HierarchySummary | null) ?? null;
+          const body = await resp.json();
+          const resolved = (body?.data ?? null) as HierarchySummary | null;
           if (resolved) {
             setHierarchy(resolved);
             setHierarchyError(null);
@@ -157,7 +156,11 @@ export function usePocketHierarchy(redirectPath = "/pocket-manager5"): UsePocket
       } catch (err) {
         if (!cancelled) {
           console.error("usePocketHierarchy hierarchy fetch error", err);
-          if (!getCachedSummaryForLogin(normalized)) {
+          const fallback = getCachedSummaryForLogin(normalized);
+          if (fallback) {
+            setHierarchy((fallback as HierarchySummary) ?? null);
+            setHierarchyError(null);
+          } else {
             setHierarchy(null);
             setHierarchyError("Unable to load your hierarchy scope.");
           }

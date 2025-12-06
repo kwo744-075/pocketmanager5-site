@@ -473,10 +473,10 @@ const EMPTY_TOTALS: Totals = {
   mobil1: 0,
 };
 
-const temperatureChips: { value: Temperature; label: string; accent: string }[] = [
-  { value: "green", label: "Green", accent: "bg-emerald-400/20 text-emerald-200" },
-  { value: "yellow", label: "Yellow", accent: "bg-amber-400/20 text-amber-200" },
-  { value: "red", label: "Red", accent: "bg-rose-500/20 text-rose-200" },
+const temperatureChips: { value: Temperature; label: string; accent: string; colorHex?: string }[] = [
+  { value: "green", label: "Green", accent: "bg-emerald-400/20 text-emerald-200", colorHex: "#10b981" },
+  { value: "yellow", label: "Yellow", accent: "bg-amber-400/20 text-amber-200", colorHex: "#f59e0b" },
+  { value: "red", label: "Red", accent: "bg-rose-500/20 text-rose-200", colorHex: "#ef4444" },
 ];
 
 const slotOrder = Object.keys(SLOT_DEFINITIONS) as TimeSlotKey[];
@@ -1013,15 +1013,15 @@ export default function PulseCheckPage() {
     setLoadingHierarchy(true);
     setHierarchyError(null);
 
-    const normalized = normalizeLogin(loginEmail);
-    if (!normalized) {
+    const normalizedLogin = normalizeLogin(loginEmail);
+    if (!normalizedLogin) {
       setHierarchy(null);
       setHierarchyError("Unable to load hierarchy. Please try again.");
       setLoadingHierarchy(false);
       return;
     }
 
-    const cachedSummary = getCachedSummaryForLogin(normalized);
+    const cachedSummary = getCachedSummaryForLogin(normalizedLogin);
     if (cachedSummary) {
       setHierarchy((cachedSummary as HierarchyRow) ?? null);
       setHierarchyError(null);
@@ -1032,21 +1032,21 @@ export default function PulseCheckPage() {
         const { data, error } = await supabase
           .from("hierarchy_summary_vw")
           .select("*")
-          .eq("login", normalized)
+          .eq("login", normalizedLogin)
           .maybeSingle();
 
         if (cancelled) {
           return;
         }
 
-        if (error) {
+          if (error) {
           console.error("hierarchy_summary_vw error", error);
-          if (!getCachedSummaryForLogin(normalized)) {
+          if (!getCachedSummaryForLogin(normalizedLogin)) {
             setHierarchyError("Unable to load hierarchy. Please try again.");
             setHierarchy(null);
           }
         } else if (!data) {
-          const fallback = getCachedSummaryForLogin(normalized);
+          const fallback = getCachedSummaryForLogin(normalizedLogin);
           if (fallback) {
             setHierarchy((fallback as HierarchyRow) ?? null);
             setHierarchyError(null);
@@ -1062,7 +1062,7 @@ export default function PulseCheckPage() {
       } catch (err) {
         if (!cancelled) {
           console.error("Pulse Check hierarchy error", err);
-          if (!getCachedSummaryForLogin(normalized)) {
+          if (!getCachedSummaryForLogin(normalizedLogin)) {
             setHierarchyError("Unexpected error loading hierarchy.");
             setHierarchy(null);
           }
@@ -1277,7 +1277,7 @@ export default function PulseCheckPage() {
           throw error;
         }
 
-        return (data ?? []) as CheckInRow[];
+        return (data ?? []) as unknown as CheckInRow[];
       };
 
       const isFuelFilterMissing = (error: unknown) => {
@@ -1511,56 +1511,67 @@ export default function PulseCheckPage() {
 
     let cancelled = false;
 
-    const loadScope = async () => {
-      const runDistrictScope = async ({
-        districtId,
-        districtLabel,
-        alignmentName,
-      }: {
-        districtId?: string | null;
-        districtLabel: string;
-        alignmentName?: string | null;
-      }) => {
-        type DistrictShop = { id: string; shop_name: string | null; shop_number: number | null };
-        let shopsInDistrict: DistrictShop[] = [];
-        let hierarchyShopCount = districtId && districtId === shopMeta?.district_id ? hierarchy?.shops_in_district ?? null : null;
-        const normalizedAlignmentName = alignmentName?.trim() ?? "";
-
-        if (districtId) {
-          const { data: shopList, error: shopError } = await pulseSupabase
-            .from("shops")
-            .select("id,shop_name,shop_number")
-            .eq("district_id", districtId)
-            .order("shop_number", { ascending: true });
-
-          if (shopError) {
-            throw shopError;
+    const fetchHierarchy = async () => {
+      try {
+        let resolved: HierarchyRow | null = null;
+        try {
+          const resp = await fetch("/api/hierarchy/summary");
+          if (resp.ok) {
+            const body = await resp.json();
+            resolved = body?.data ?? null;
+          } else {
+            console.error("Pulse Check hierarchy API status", resp.status);
           }
-
-          shopsInDistrict = (shopList ?? []) as DistrictShop[];
+        } catch (apiErr) {
+          console.error("Pulse Check hierarchy API error", apiErr);
         }
 
-        if (!shopsInDistrict.length && normalizedAlignmentName) {
+        if (!resolved) {
+          const { data, error } = await supabase
+            .from("hierarchy_summary_vw")
+            .select("*")
+            .eq("login", normalizeLogin(loginEmail))
+            .maybeSingle();
+
+          if (error) {
+            console.error("hierarchy_summary_vw error", error);
+          } else {
+            resolved = (data as HierarchyRow | null) ?? null;
+          }
+        }
+
+        if (cancelled) return;
+
+        if (!resolved) {
+          const fallback = getCachedSummaryForLogin(normalizeLogin(loginEmail));
+          if (fallback) {
+            setHierarchy((fallback as HierarchyRow) ?? null);
+            setHierarchyError(null);
+          } else {
+            setHierarchyError("No hierarchy record was found for this login email.");
+            setHierarchy(null);
+          }
+        } else {
+          setHierarchy(resolved);
+          setHierarchyError(null);
+          writeHierarchySummaryCache(resolved);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Pulse Check hierarchy error", err);
+          setHierarchyError("Unable to load hierarchy. Please try again.");
+          setHierarchy(null);
+        }
+      } finally {
+        if (!cancelled) setLoadingHierarchy(false);
+      }
+    };
+
+          async function loadScope() {
           try {
-            const result = await fetchAlignmentRows("district", "ilike", `${normalizedAlignmentName}%`);
-            const alignmentRows = result?.data ?? null;
-            const alignmentError = result?.error ?? null;
-
-            if (alignmentError) {
-              throw alignmentError;
-            }
-
-            const mappedAlignment = (alignmentRows ?? []).map((row, index) => {
-              const numericStore = typeof row.store === "number" ? row.store : Number(row.store);
-              const storeNumber = Number.isFinite(numericStore) ? Number(numericStore) : null;
-              return {
-                shop_number: storeNumber,
-                shop_name: row.shop_name ?? null,
-                fallbackId: `alignment-${storeNumber ?? index + 1}`,
-              };
-            });
-
-            const alignmentNumbers = mappedAlignment
+          const mappedAlignment: { shop_number?: number | null; shop_name?: string; fallbackId?: string }[] =
+            Array.isArray((selectedScope as any)?.alignment) ? (selectedScope as any).alignment : [];
+          const alignmentNumbers = mappedAlignment
               .map((entry) => entry.shop_number)
               .filter((value): value is number => typeof value === "number");
 
@@ -1607,7 +1618,6 @@ export default function PulseCheckPage() {
           } catch (alignmentErr) {
             console.error("Alignment fallback error", alignmentErr);
           }
-        }
 
         const realShopIds = shopsInDistrict
           .map((shop) => shop.id)
@@ -1764,7 +1774,8 @@ export default function PulseCheckPage() {
               : null,
           );
         }
-      };
+      
+      }
 
       const runRegionScope = async (regionId: string, regionLabel: string) => {
         const districtIds = regionDistricts.map((district) => district.id).filter((id): id is string => Boolean(id));
@@ -1895,40 +1906,41 @@ export default function PulseCheckPage() {
       setDistrictGridLoading(true);
       setDistrictGridError(null);
 
-      try {
-        if (selectedScope.type === "region" && selectedScope.regionId) {
-          await runRegionScope(selectedScope.regionId, selectedScope.label);
-        } else if (selectedScope.type === "district") {
-          await runDistrictScope({
-            districtId: selectedScope.districtId,
-            districtLabel: selectedScope.label,
-            alignmentName: selectedScope.alignmentDistrictName ?? hierarchy?.district_name ?? null,
-          });
+      (async () => {
+        try {
+          if (selectedScope.type === "region" && selectedScope.regionId) {
+            await runRegionScope(selectedScope.regionId, selectedScope.label);
+          } else if (selectedScope.type === "district") {
+            await runDistrictScope({
+              districtId: selectedScope.districtId,
+              districtLabel: selectedScope.label,
+              alignmentName: selectedScope.alignmentDistrictName ?? hierarchy?.district_name ?? null,
+            });
+          }
+        } catch (err) {
+          console.error("district scope load error", err);
+          if (!cancelled) {
+            setDistrictGridRows([
+              {
+                id: `${selectedScope.type}-placeholder`,
+                label:
+                  selectedScope.label ||
+                  (selectedScope.type === "region"
+                    ? hierarchy?.region_name ?? "Region overview"
+                    : hierarchy?.district_name ?? "District overview"),
+                descriptor: "Unable to load scope KPIs right now.",
+                kind: selectedScope.type === "region" ? "region" : "district",
+                metrics: buildPlaceholderGridMetrics(),
+              },
+            ]);
+            setDistrictGridError("Unable to load scope KPIs right now.");
+          }
+        } finally {
+          if (!cancelled) {
+            setDistrictGridLoading(false);
+          }
         }
-      } catch (err) {
-        console.error("district scope load error", err);
-        if (!cancelled) {
-          setDistrictGridRows([
-            {
-              id: `${selectedScope.type}-placeholder`,
-              label:
-                selectedScope.label ||
-                (selectedScope.type === "region"
-                  ? hierarchy?.region_name ?? "Region overview"
-                  : hierarchy?.district_name ?? "District overview"),
-              descriptor: "Unable to load scope KPIs right now.",
-              kind: selectedScope.type === "region" ? "region" : "district",
-              metrics: buildPlaceholderGridMetrics(),
-            },
-          ]);
-          setDistrictGridError("Unable to load scope KPIs right now.");
-        }
-      } finally {
-        if (!cancelled) {
-          setDistrictGridLoading(false);
-        }
-      }
-    };
+      })();
 
     loadScope();
 

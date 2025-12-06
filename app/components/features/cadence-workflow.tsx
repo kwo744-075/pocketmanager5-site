@@ -1,7 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import DailyWorkflowSidebar from "./DailyWorkflowSidebar";
+import GENERATED_CADENCE_TASKS from "./generated-cadence-tasks";
+import DmListPanel from "./DmListPanel";
 
 type Kpi = { id: string; label: string; value: string };
 
@@ -27,40 +31,9 @@ const KPI_MOCK: Kpi[] = [
   { id: "k8", label: "Open Items", value: "6" },
 ];
 
-const DM_LIST_MOCK: DmListItem[] = [
-  {
-    id: "d1",
-    createdAt: new Date().toISOString(),
-    shopName: "Northside Grill",
-    shopNumber: "101",
-    category: "Ops",
-    message: "Need new fryer filters",
-    priority: "Normal",
-    status: "Open",
-  },
-  {
-    id: "d2",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
-    shopName: "Sunset Diner",
-    shopNumber: "212",
-    category: "Inventory",
-    message: "Short on napkins and sanitizer",
-    priority: "High",
-    status: "In Progress",
-  },
-  {
-    id: "d3",
-    createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-    shopName: "Riverfront Cafe",
-    shopNumber: "055",
-    category: "People",
-    message: "Requesting additional training modules",
-    priority: "Low",
-    status: "Completed",
-  },
-];
+// client-side DM list will be fetched from the cadence API
 
-const DAYS: Array<"Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday"> = [
+export const DAYS: Array<"Sunday" | "Monday" | "Tuesday" | "Wednesday" | "Thursday" | "Friday" | "Saturday"> = [
   "Sunday",
   "Monday",
   "Tuesday",
@@ -79,54 +52,348 @@ type CadenceTask = {
   external?: boolean;
 };
 
-const CADENCE_TASKS: Record<string, CadenceTask[]> = {
+export const CADENCE_TASKS: Record<string, CadenceTask[]> = {
   Monday: [
-    { id: "t1", label: "Labor Verification", category: "core", linkHref: "/pocket-manager5/features/labor", linkLabel: "Open Labor Sheet" },
-    { id: "t2", label: "Deposit Verification", category: "core", linkHref: "/pocket-manager5/features/deposit-verification", linkLabel: "Verify Deposits" },
-    { id: "t3", label: "Inventory Captain Check", category: "visit", linkHref: "/pocket-manager5/features/inventory-captain", linkLabel: "Inventory Captain" },
-    { id: "t4", label: "WorkVivo Check-in", category: "admin", linkHref: "https://drivenbrands.workvivo.com/", linkLabel: "Open Workvivo", external: true },
+    { id: "m01", label: "All Shops Open", category: "core" },
+    { id: "m02", label: "Labor Verification", category: "core", linkHref: "/pocket-manager5/features/labor", linkLabel: "Open Labor Sheet" },
+    { id: "m03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "m04", label: "Deposit Verification", category: "core", linkHref: "/pocket-manager5/features/deposit-verification", linkLabel: "Verify Deposits" },
+    { id: "m05", label: "Car Defecit Report", category: "admin" },
+    { id: "m06", label: "Corrigo", category: "admin" },
+    { id: "m07", label: "WorkVivo", category: "admin", linkHref: "https://drivenbrands.workvivo.com/", linkLabel: "Open Workvivo", external: true },
+    { id: "m08", label: "Workday – check applications", category: "admin" },
+    { id: "m09", label: "Zendesk Follow-up", category: "admin" },
+    { id: "m10", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "m11", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "m12", label: "Training Reports & Communication", category: "people" },
+    { id: "m13", label: "Inventory Report & Communication", category: "admin" },
+    { id: "m14", label: "Validation of Previous Week Supplemental Orders", category: "admin" },
+    { id: "m15", label: "Achievers Recognition & Boosting", category: "people" },
+    { id: "m16", label: "Regional Meeting – Goal Setting & AORs", category: "admin" },
+    { id: "m17", label: "District Meeting", category: "admin" },
+    { id: "m18", label: "People Review & Schedule Interviews for Week", category: "people" },
+    { id: "m19", label: "Update Expense Report", category: "admin" },
   ],
   Tuesday: [
-    { id: "t5", label: "Claims / Repairs Check", category: "admin", linkHref: "/pocket-manager5/features/claims", linkLabel: "Claims Portal" },
+    { id: "t01", label: "All Shops Open", category: "core" },
+    { id: "t02", label: "Labor Verification", category: "core" },
+    { id: "t03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "t04", label: "Deposit Verification", category: "core" },
+    { id: "t05", label: "Car Defecit Report", category: "admin" },
+    { id: "t06", label: "Corrigo", category: "admin" },
+    { id: "t07", label: "WorkVivo", category: "admin" },
+    { id: "t08", label: "Workday – check applications", category: "admin" },
+    { id: "t09", label: "Zendesk Follow-up", category: "admin" },
+    { id: "t10", label: "Visit Prep", category: "visit" },
+    { id: "t11", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "t12", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "t13", label: "Schedule Review & Posting (Before you leave the house/office)", category: "admin" },
+    { id: "t14", label: "Fleet Dashboard", category: "admin" },
+    { id: "t15", label: "Shop Visits*", category: "visit" },
+    { id: "t16", label: "Prep for Tomorrow Claims Call", category: "admin" },
   ],
-  // Default for other days
+  Wednesday: [
+    { id: "w01", label: "All Shops Open", category: "core" },
+    { id: "w02", label: "Labor Verification (OT)", category: "core" },
+    { id: "w03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "w04", label: "Deposit Verification", category: "core" },
+    { id: "w05", label: "Car Defecit Report", category: "admin" },
+    { id: "w06", label: "Corrigo", category: "admin" },
+    { id: "w07", label: "WorkVivo", category: "admin" },
+    { id: "w08", label: "Workday – check applications", category: "admin" },
+    { id: "w09", label: "Zendesk Follow-up", category: "admin" },
+    { id: "w10", label: "Visit Prep", category: "visit" },
+    { id: "w11", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "w12", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "w13", label: "Claims Call", category: "admin" },
+    { id: "w14", label: "NPS Comment Review", category: "admin" },
+    { id: "w15", label: "Training Reports & Communication", category: "people" },
+    { id: "w16", label: "Overtime Notes", category: "admin" },
+    { id: "w17", label: "Shop Visits*", category: "visit" },
+  ],
+  Thursday: [
+    { id: "th01", label: "All Shops Open", category: "core" },
+    { id: "th02", label: "Labor Verification (OT)", category: "core" },
+    { id: "th03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "th04", label: "Deposit Verification", category: "core" },
+    { id: "th05", label: "Car Defecit Report", category: "admin" },
+    { id: "th06", label: "Corrigo", category: "admin" },
+    { id: "th07", label: "WorkVivo", category: "admin" },
+    { id: "th08", label: "Workday – check applications", category: "admin" },
+    { id: "th09", label: "Zendesk Follow-up", category: "admin" },
+    { id: "th10", label: "Visit Prep", category: "visit" },
+    { id: "th11", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "th12", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "th13", label: "Labor Comments added by Noon", category: "admin" },
+    { id: "th14", label: "Training Reports & Communication", category: "people" },
+    { id: "th15", label: "Training Validation – Meet & Greet", category: "people" },
+    { id: "th16", label: "Shop Visits*", category: "visit" },
+  ],
+  Friday: [
+    { id: "f01", label: "All Shops Open", category: "core" },
+    { id: "f02", label: "Labor Verification (OT)", category: "core" },
+    { id: "f03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "f04", label: "Deposit Verification", category: "core" },
+    { id: "f05", label: "Car Defecit Report", category: "admin" },
+    { id: "f06", label: "Corrigo", category: "admin" },
+    { id: "f07", label: "WorkVivo", category: "admin" },
+    { id: "f08", label: "Workday – check applications", category: "admin" },
+    { id: "f09", label: "Zendesk Follow-up", category: "admin" },
+    { id: "f10", label: "Visit Prep", category: "visit" },
+    { id: "f11", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "f12", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "f13", label: "Full Throttle Friday Visits", category: "visit" },
+  ],
+  Saturday: [
+    { id: "s01", label: "All Shops Open", category: "core" },
+    { id: "s02", label: "Labor Verification (OT)", category: "core" },
+    { id: "s03", label: "KPI’s & #’s Communication to Team", category: "core" },
+    { id: "s04", label: "Update 5-8 Tracker", category: "admin" },
+    { id: "s05", label: "Daily Check-ins 12, 2:30, 5", category: "core" },
+    { id: "s06", label: "Visit Prep if Weekend Visit Day", category: "visit" },
+  ],
   Sunday: [],
-  Wednesday: [],
-  Thursday: [],
-  Friday: [],
-  Saturday: [],
 };
 
 export function CadenceWorkflow() {
   const [dmFilter, setDmFilter] = useState<"All" | "Open" | "Completed">("All");
   const [tab, setTab] = useState<"daily" | "wtd">("daily");
   const [activeDay, setActiveDay] = useState<typeof DAYS[number]>("Monday");
+  const router = useRouter();
 
-  const dmItems = useMemo(() => {
-    if (dmFilter === "All") return DM_LIST_MOCK;
-    if (dmFilter === "Open") return DM_LIST_MOCK.filter((d) => d.status === "Open");
-    return DM_LIST_MOCK.filter((d) => d.status === "Completed");
-  }, [dmFilter]);
+  const [dmItems, setDmItems] = useState<DmListItem[]>([]);
+  const [loadingDm, setLoadingDm] = useState(false);
+  const [dmError, setDmError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 50;
+  const POLL_INTERVAL_MS = 30000; // 30s
+  const [statusMessage, setStatusMessage] = useState<string | null>(null);
+
+  // Fetch DM list with loading/error handling. Refetch when filter/page changes.
+  async function fetchDmList(signal?: AbortSignal) {
+    setLoadingDm(true);
+    setDmError(null);
+    try {
+      // Request a single page from the server using limit/offset
+      const offset = (page - 1) * PAGE_SIZE;
+      const res = await fetch(`/api/cadence/dm-list?limit=${PAGE_SIZE}&offset=${offset}`, { credentials: "same-origin", signal });
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}));
+        throw new Error(j?.error ?? `Fetch failed (${res.status})`);
+      }
+      const json = await res.json();
+      const raw: unknown[] = Array.isArray(json?.data) ? json.data : (Array.isArray(json) ? json : []);
+
+      // Normalize incoming rows to the DmListItem shape used by the UI
+      const normalized: DmListItem[] = raw.map((r) => {
+        const rec = (r as Record<string, unknown>) || {};
+        const idVal = rec['id'] ?? rec['_id'] ?? Math.random().toString(36).slice(2, 9);
+        const createdAtVal = rec['created_at'] ?? rec['createdAt'] ?? new Date().toISOString();
+        const shopNameVal = rec['shop_name'] ?? rec['shopName'] ?? rec['shop'] ?? 'Shop';
+        const shopNumberVal = rec['shop_id'] ?? rec['shopId'] ?? rec['shopNumber'] ?? '-';
+        const messageVal = rec['message'] ?? rec['msg'] ?? '';
+        const categoryVal = (rec['category'] as DmListItem['category']) ?? 'Other';
+        const priorityVal = (rec['priority'] as DmListItem['priority']) ?? 'Normal';
+        const statusRaw = rec['status'] ?? rec['state'] ?? 'pending';
+        const statusVal = String(statusRaw).toLowerCase().includes('comp') ? 'Completed' : 'Open';
+
+        return {
+          id: String(idVal),
+          createdAt: String(createdAtVal),
+          shopName: String(shopNameVal),
+          shopNumber: String(shopNumberVal),
+          message: String(messageVal),
+          category: categoryVal,
+          priority: priorityVal,
+          status: statusVal as DmListItem['status'],
+        } as DmListItem;
+      });
+
+      // apply client-side filter
+      const filtered = normalized.filter((it) => {
+        if (dmFilter === "All") return true;
+        if (dmFilter === "Open") return it.status === "Open";
+        return it.status === "Completed";
+      });
+
+      // server already paginated; use filtered results directly
+      setDmItems(filtered);
+    } catch (err: any) {
+      if (err.name === "AbortError") return;
+      console.error("Failed to load DM list", err);
+      setDmError(err?.message ?? "Failed to load DM list");
+    } finally {
+      setLoadingDm(false);
+    }
+  }
+
+  // initial load + when filter/page changes
+  useEffect(() => {
+    const ctrl = new AbortController();
+    fetchDmList(ctrl.signal);
+    return () => ctrl.abort();
+  }, [dmFilter, page]);
+
+  // polling for freshness
+  useEffect(() => {
+    const id = setInterval(() => {
+      fetchDmList();
+    }, POLL_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [dmFilter, page]);
+
+  const [selectedItem, setSelectedItem] = useState<DmListItem | null>(null);
+  const [resolutionType, setResolutionType] = useState<"complete" | "called_in" | "ordered">("complete");
+
+  // Prefer canonical in-code cadence tasks over generated placeholders so DMs see live defaults
+  const TASKS = { ...GENERATED_CADENCE_TASKS, ...CADENCE_TASKS };
+
+  // tasksByDay: prefer DB-provided templates; fall back to compiled TASKS
+  const [tasksByDay, setTasksByDay] = useState<Record<string, CadenceTask[]>>(() => {
+    const init: Record<string, CadenceTask[]> = {};
+    Object.keys(TASKS).forEach((d) => {
+      init[d] = (TASKS as Record<string, CadenceTask[]>)[d] ?? [];
+    });
+    return init;
+  });
+
+  // permission to edit templates (RD / VP / ADMIN only)
+  const [canEditCadence, setCanEditCadence] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState<string>('');
+
+  useEffect(() => {
+    let mounted = true;
+    (async () => {
+      try {
+        const sRes = await fetch('/api/session/role');
+        if (!sRes.ok) return;
+        const sJson = await sRes.json();
+        const alignment = sJson?.alignment ?? null;
+        const memberships = alignment?.memberships ?? [];
+        const rolesLower: string[] = Array.isArray(memberships)
+          ? memberships.map((m: any) => String((m && m.role) ?? '').toLowerCase())
+          : [];
+        const isAdmin = rolesLower.some((r) => r.includes('admin') || r.includes('administrator') || r.includes('super'));
+        const isVP = rolesLower.some((r) => r.includes('vp'));
+        const isRD = rolesLower.some((r) => r.includes('rd') || r.includes('regional'));
+        if (mounted) setCanEditCadence(isAdmin || isVP || isRD);
+      } catch (err) {
+        // ignore
+      }
+    })();
+    return () => { mounted = false; };
+  }, []);
+
+  // Fetch cadence templates from server and merge (server overrides defaults)
+  useEffect(() => {
+    let mounted = true;
+    async function loadTemplates() {
+      try {
+        const res = await fetch('/api/cadence/templates');
+        if (!res.ok) return;
+        const json = await res.json();
+        const map: Record<string, string[]> = json?.data ?? {};
+        const converted: Record<string, CadenceTask[]> = { ...tasksByDay };
+        Object.entries(map).forEach(([day, arr]) => {
+          if (!Array.isArray(arr)) return;
+          converted[day] = arr.map((label, i) => ({ id: `db-${day}-${i}`, label }));
+        });
+        if (mounted) setTasksByDay(converted);
+      } catch (err) {
+        // ignore, keep defaults
+      }
+    }
+    loadTemplates();
+    return () => { mounted = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const visibleDmItems = useMemo(() => {
+    if (dmFilter === "All") return dmItems;
+    if (dmFilter === "Open") return dmItems.filter((d) => d.status === "Open");
+    return dmItems.filter((d) => d.status === "Completed");
+  }, [dmFilter, dmItems]);
+
+  async function markItemComplete(id: string, resolution: string) {
+    // optimistic update: remove locally first
+    const prevItems = dmItems;
+    setDmItems((items) => items.filter((i) => String(i.id) !== String(id)));
+    setSelectedItem(null);
+    try {
+      const res = await fetch(`/api/cadence/dm-list?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "completed", resolutionType: resolution }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+      // re-sync from server
+      await fetchDmList();
+      setStatusMessage("Item marked complete");
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch (err) {
+      console.error("Failed to mark complete", err);
+      // rollback
+      setDmItems(prevItems);
+      setDmError("Failed to update item");
+      setStatusMessage("Failed to mark item complete");
+      setTimeout(() => setStatusMessage(null), 4000);
+    }
+  }
+
+  async function setItemPending(id: string, resolution?: string) {
+    // optimistic: set item status locally, then call server
+    const prevItems = dmItems;
+    setDmItems((items) => items.map((i) => (String(i.id) === String(id) ? { ...i, status: "Open" } : i)));
+    setSelectedItem(null);
+    try {
+      const res = await fetch(`/api/cadence/dm-list?id=${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "pending", resolutionType: resolution }),
+      });
+      if (!res.ok) throw new Error("Update failed");
+      await fetchDmList();
+      setStatusMessage("Item set to pending");
+      setTimeout(() => setStatusMessage(null), 4000);
+    } catch (err) {
+      console.error("Failed to set pending", err);
+      setDmItems(prevItems);
+      setDmError("Failed to update item");
+      setStatusMessage("Failed to update item");
+      setTimeout(() => setStatusMessage(null), 4000);
+    }
+  }
 
   return (
     <section>
-      {/* Top: Overview + KPI grid */}
+      <div className="mb-4">
+        <button
+          type="button"
+          onClick={() => router.back()}
+          className="inline-flex items-center gap-2 rounded-md border border-slate-700 px-3 py-1 text-sm text-slate-200 hover:bg-slate-800/40"
+        >
+          ← Back
+        </button>
+      </div>
+
+      {/* Top: Overview + KPI grid (wrapped in a shaded container so content is left-aligned) */}
       <div className="grid gap-4 md:grid-cols-2">
-        <div>
+        <div className="md:col-span-1 rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
           <h2 className="text-lg font-semibold text-white">Cadence Overview</h2>
           <p className="text-sm text-slate-300">Daily + weekly task templates with auto-tracking for DM compliance.</p>
 
           <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
             {KPI_MOCK.map((k) => (
-              <div key={k.id} className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+              <div key={k.id} className="rounded-lg border border-slate-800/40 bg-slate-900/40 p-4">
                 <div className="text-sm text-slate-400">{k.label}</div>
                 <div className="mt-2 text-2xl font-bold text-white">{k.value}</div>
               </div>
             ))}
           </div>
 
-          {/* Today's deposit & cash summary */}
-          <div className="mt-8 rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
+          {/* Today's deposit & cash summary (still inside shaded container) */}
+          <div className="mt-8 rounded-lg border border-slate-800/40 bg-slate-900/40 p-4">
             <div className="flex items-start justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-white">Today's Deposit & Cash Summary</h3>
@@ -146,17 +413,17 @@ export function CadenceWorkflow() {
                 </thead>
                 <tbody className="mt-2">
                   <tr className="border-t border-slate-800/40">
-                    <td className="py-2">Northside Grill</td>
+                    <td className="py-2">Alignment Shop 18</td>
                     <td className="text-center">✅</td>
                     <td className="text-right">+$12.00</td>
                   </tr>
                   <tr className="border-t border-slate-800/40">
-                    <td className="py-2">Sunset Diner</td>
+                    <td className="py-2">Alignment Shop 447</td>
                     <td className="text-center">❌</td>
                     <td className="text-right">-$4.50</td>
                   </tr>
                   <tr className="border-t border-slate-800/40">
-                    <td className="py-2">Riverfront Cafe</td>
+                    <td className="py-2">Alignment Shop 448</td>
                     <td className="text-center">✅</td>
                     <td className="text-right">+$29.50</td>
                   </tr>
@@ -166,132 +433,115 @@ export function CadenceWorkflow() {
           </div>
         </div>
 
-        {/* Right column: DM List Inbox */}
-        <div>
+        {/* Right column: compact stack for DM List + Daily Workflow (top-aligned, fills half page) */}
+        <div className="md:col-span-1 flex flex-col gap-4">
+          <DmListPanel
+            items={dmItems}
+            filter={dmFilter}
+            setFilter={(f) => {
+              setDmFilter(f);
+              setPage(1);
+            }}
+            loading={loadingDm}
+            error={dmError}
+            onSelect={(it) => setSelectedItem(it)}
+            onRefresh={() => fetchDmList()}
+            page={page}
+            setPage={(n) => setPage(n)}
+          />
+
           <div className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-lg font-semibold text-white">DM List – Incoming Requests</h3>
-                <p className="text-sm text-slate-300">Quick asks submitted by shops from Pocket Manager 5.</p>
+                <div className="text-sm font-semibold text-white">Daily Workflow</div>
+                <div className="text-xs text-slate-400">Quick checklist for the selected day</div>
               </div>
-              <div className="flex items-center gap-2">
-                <button className={`rounded-full px-3 py-1 text-sm ${dmFilter === 'All' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`} onClick={() => setDmFilter('All')}>All</button>
-                <button className={`rounded-full px-3 py-1 text-sm ${dmFilter === 'Open' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`} onClick={() => setDmFilter('Open')}>Open</button>
-                <button className={`rounded-full px-3 py-1 text-sm ${dmFilter === 'Completed' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`} onClick={() => setDmFilter('Completed')}>Completed</button>
-              </div>
-            </div>
-
-            <div className="mt-4 max-h-64 overflow-auto">
-              <ul className="space-y-3">
-                {dmItems.map((item) => (
-                  <li key={item.id} className="rounded-md border border-slate-800/50 bg-slate-950/30 p-3">
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm font-semibold text-white">{item.shopName} <span className="text-xs text-slate-400">#{item.shopNumber}</span></div>
-                        <div className="text-xs text-slate-300">{new Date(item.createdAt).toLocaleString()}</div>
-                        <div className="mt-2 text-sm text-slate-200">{item.message}</div>
-                      </div>
-                      <div className="flex flex-col items-end">
-                        <div className="text-xs text-slate-400">{item.category}</div>
-                        <div className={`mt-2 rounded-full px-2 py-1 text-xs ${item.priority === 'High' ? 'bg-rose-600/40' : 'bg-slate-800/30'}`}>{item.priority}</div>
-                        <div className="mt-2 text-xs text-slate-300">{item.status}</div>
-                      </div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs: Daily vs WTD */}
-      <div className="mt-8">
-        <div className="flex items-center gap-2">
-          <button onClick={() => setTab('daily')} className={`px-3 py-1 rounded-md ${tab === 'daily' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>Daily Workflow</button>
-          <button onClick={() => setTab('wtd')} className={`px-3 py-1 rounded-md ${tab === 'wtd' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>WTD Summary</button>
-        </div>
-
-        {tab === 'daily' ? (
-          <div className="mt-4 rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
-            <div className="mb-3 flex gap-2 overflow-auto">
-              {DAYS.map((d) => (
-                <button key={d} onClick={() => setActiveDay(d)} className={`px-3 py-1 rounded-md ${activeDay === d ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>{d}</button>
-              ))}
-            </div>
-
-            <div>
-              <h4 className="text-sm font-semibold text-white">{activeDay} Tasks</h4>
-              <div className="mt-3 space-y-2">
-                {(CADENCE_TASKS[activeDay] ?? []).map((task) => (
-                  <div key={task.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-800/40 bg-slate-950/30 p-2">
-                    <div className="flex items-center gap-3">
-                      <input type="checkbox" className="h-4 w-4" />
-                      <div>
-                        <div className="text-sm text-white">{task.label}</div>
-                        {task.category ? <div className="text-xs text-slate-400">{task.category}</div> : null}
-                      </div>
-                    </div>
-                    <div>
-                      {task.linkHref ? (
-                        task.external ? (
-                          <a href={task.linkHref} target="_blank" rel="noreferrer" className="text-sm text-emerald-300 hover:underline">{task.linkLabel}</a>
-                        ) : (
-                          <Link href={task.linkHref} className="text-sm text-emerald-300 hover:underline">{task.linkLabel}</Link>
-                        )
-                      ) : null}
-                    </div>
-                  </div>
-                ))}
-
-                <div className="mt-4">
-                  <h5 className="text-sm font-semibold text-white">Visit Standards</h5>
-                  <ul className="mt-2 list-disc pl-5 text-sm text-slate-300">
-                    <li>Brand Standards Walk</li>
-                    <li>KPI board review</li>
-                    <li>Team greet & quick coaching</li>
-                  </ul>
+              {canEditCadence && (
+                <div className="flex items-center gap-2">
+                  {!editing ? (
+                    <button onClick={() => {
+                      const lines = (tasksByDay[activeDay] ?? []).map((t) => t.label).join('\n');
+                      setEditText(lines);
+                      setEditing(true);
+                    }} className="px-2 py-1 rounded-md text-xs bg-emerald-600/30">Edit Templates</button>
+                  ) : (
+                    <>
+                      <button onClick={() => setEditing(false)} className="px-2 py-1 rounded-md text-xs bg-slate-700/40">Cancel</button>
+                      <button onClick={async () => {
+                        const lines = editText.split('\n').map((s) => s.trim()).filter(Boolean);
+                        const next = { ...tasksByDay, [activeDay]: lines.map((l, i) => ({ id: `db-${activeDay}-${i}`, label: l })) };
+                        setTasksByDay(next);
+                        try {
+                          await fetch('/api/cadence/templates', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ scope: 'company', scopeId: null, day: activeDay, tasks: lines }),
+                          });
+                        } catch (err) {
+                          // ignore
+                        }
+                        setEditing(false);
+                      }} className="px-2 py-1 rounded-md text-xs bg-emerald-600/60">Save</button>
+                    </>
+                  )}
                 </div>
-              </div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-4 rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
-            <h3 className="text-lg font-semibold text-white">WTD Summary (Mock)</h3>
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="rounded-md border border-slate-800/40 p-3">Labor Verifications WTD<br /><span className="text-xl font-bold">52 / 52 shops</span></div>
-              <div className="rounded-md border border-slate-800/40 p-3">Deposits Verified WTD<br /><span className="text-xl font-bold">312 / 312</span></div>
-              <div className="rounded-md border border-slate-800/40 p-3">Total Cash Over/Short<br /><span className="text-xl font-bold">-$128</span></div>
-              <div className="rounded-md border border-slate-800/40 p-3">Open DM List Items<br /><span className="text-xl font-bold">9</span></div>
+              )}
             </div>
 
-            <div className="mt-6 overflow-auto">
-              <table className="w-full text-sm">
-                <thead className="text-slate-400">
-                  <tr>
-                    <th className="text-left">Shop</th>
-                    <th>Days Labor Verified</th>
-                    <th>Days Deposit Verified</th>
-                    <th className="text-right">Cash +/-</th>
-                    <th className="text-right">Open DM Items</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr className="border-t border-slate-800/40">
-                    <td className="py-2">Northside Grill</td>
-                    <td className="text-center">7</td>
-                    <td className="text-center">7</td>
-                    <td className="text-right">+$12.00</td>
-                    <td className="text-right">1</td>
-                  </tr>
-                </tbody>
-              </table>
+            {editing ? (
+              <div>
+                <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[120px] bg-slate-900 text-white p-2 rounded-md border border-slate-800" />
+                <div className="mt-2 text-xs text-slate-400">One task per line. Save will persist company-scoped template.</div>
+              </div>
+            ) : (
+              <DailyWorkflowSidebar activeDay={activeDay} setActiveDay={setActiveDay} tasks={tasksByDay} />
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Modal for updating a DM list item */}
+      {selectedItem ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-lg rounded-md bg-slate-900 p-6">
+            <h3 className="text-lg font-semibold text-white">Update Request</h3>
+            <div className="mt-3 text-sm text-slate-300">
+              <div><strong>Shop:</strong> {selectedItem?.shopName ?? selectedItem?.shopNumber ?? '—'}</div>
+              <div className="mt-2"><strong>Message:</strong> {selectedItem?.message}</div>
+              <div className="mt-2 text-xs text-slate-400">Created: {new Date(selectedItem?.createdAt ?? Date.now()).toLocaleString()}</div>
+            </div>
+
+            <div className="mt-4">
+              <div className="text-sm text-slate-300">Resolution Type</div>
+              <div className="mt-2 flex gap-2">
+                <label className={`px-3 py-1 rounded-md ${resolutionType === 'complete' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>
+                  <input className="mr-2" type="radio" name="resolution" checked={resolutionType === 'complete'} onChange={() => setResolutionType('complete')} /> Complete
+                </label>
+                <label className={`px-3 py-1 rounded-md ${resolutionType === 'called_in' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>
+                  <input className="mr-2" type="radio" name="resolution" checked={resolutionType === 'called_in'} onChange={() => setResolutionType('called_in')} /> Called in
+                </label>
+                <label className={`px-3 py-1 rounded-md ${resolutionType === 'ordered' ? 'bg-emerald-600/40' : 'bg-slate-800/30'}`}>
+                  <input className="mr-2" type="radio" name="resolution" checked={resolutionType === 'ordered'} onChange={() => setResolutionType('ordered')} /> Ordered
+                </label>
+              </div>
+            </div>
+
+            <div className="mt-6 flex justify-end gap-2">
+              <button onClick={() => setSelectedItem(null)} className="rounded-md border border-slate-700 px-4 py-2 text-sm">Cancel</button>
+              <button onClick={() => selectedItem && setItemPending(selectedItem.id, resolutionType)} className="rounded-md bg-yellow-600 px-4 py-2 text-sm">Pending</button>
+              <button onClick={() => selectedItem && markItemComplete(selectedItem.id, resolutionType)} className="rounded-md bg-emerald-600 px-4 py-2 text-sm">Mark as Complete</button>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      ) : null}
+
+      {/* Status message (simple transient toast substitute) */}
+      {statusMessage ? (
+        <div className="fixed right-6 top-24 z-50 rounded-md bg-slate-800/80 px-4 py-2 text-sm text-white">{statusMessage}</div>
+      ) : null}
     </section>
   );
 }
 
 export default CadenceWorkflow;
+

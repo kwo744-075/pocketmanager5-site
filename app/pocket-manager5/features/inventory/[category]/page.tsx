@@ -2,9 +2,9 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getServerSession } from "@/lib/auth/session";
 import { resolvePermittedShopNumber } from "@/lib/auth/alignment";
-import { FEATURE_LOOKUP, getDocUrl } from "../../featureRegistry";
+import { FEATURE_LOOKUP, getDocUrl } from "../../../featureRegistry";
 import { fetchInventoryCategoryItems } from "@/lib/inventoryPreview";
-import { InventoryCategoryTable } from "../components/InventoryCategoryTable";
+import { InventoryCategoryTable } from "../../components/InventoryCategoryTable";
 
 interface CategoryPageProps {
   params: Promise<{ category: string }>;
