@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import type { ReactNode } from "react";
 import { fetchDmSchedulePreview, fetchEmployeeSchedulingPreview, fetchPeopleFeaturePreview, type EmployeeSchedulingPreview, type PeopleFeaturePreview } from "@/lib/peopleFeatureData";
-import { DmSchedulePlanner, DmVisitMixRunningSummary } from "../../components/DmSchedulePlanner";
+import { DmSchedulePlanner } from "../../components/DmSchedulePlanner";
 import {
   DM_RUNNING_PERIOD_WINDOW,
   buildRetailPeriodSequence,
@@ -12,6 +12,9 @@ import {
   type ScheduleLocationId,
 } from "../../components/dmScheduleUtils";
 import { MiniPosWorkspace } from "../components/MiniPosWorkspace";
+import { EmployeeSchedulingWorkspace } from "../components/EmployeeSchedulingWorkspace";
+import { InventoryWorkspace } from "../components/InventoryWorkspace";
+import { fetchInventoryPreview } from "@/lib/inventoryPreview";
 import { FEATURE_LOOKUP, FEATURE_REGISTRY, getDocUrl, type FeatureMeta, type FeatureSlug } from "../../featureRegistry";
 import { FORM_REGISTRY, type FormConfig } from "../../forms/formRegistry";
 import { getServerSession, type ServerSession } from "@/lib/auth/session";
@@ -84,7 +87,7 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
     // dmPreview intentionally fetched for potential future use, but not required by the page component.
     const plannerPrefill = await loadDmSchedulePlannerPrefill(session, shopNumber ?? null);
     await fetchDmSchedulePreview(shopNumber);
-    return <DmScheduleFeaturePage feature={feature} docUrl={docUrl} shopNumber={shopNumber} plannerPrefill={plannerPrefill} />;
+    return <DmScheduleFeaturePage feature={feature} shopNumber={shopNumber} plannerPrefill={plannerPrefill} />;
   }
 
   if (feature.slug === "mini-pos") {
@@ -94,10 +97,6 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
   if (feature.slug === "employee-management") {
     return (
       <EmployeeManagementFeaturePage
-        feature={feature}
-        docUrl={docUrl}
-        relatedForms={relatedForms}
-        shopNumber={shopNumber}
         preview={peoplePreview ?? (await fetchPeopleFeaturePreview(shopNumber))}
       />
     );
@@ -106,12 +105,25 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
   if (feature.slug === "employee-scheduling") {
     const schedulingPreview = await fetchEmployeeSchedulingPreview(shopNumber);
     return (
-      <EmployeeSchedulingFeaturePage
+      <EmployeeSchedulingWorkspace
         feature={feature}
         docUrl={docUrl}
         relatedForms={relatedForms}
         shopNumber={shopNumber}
         preview={schedulingPreview}
+      />
+    );
+  }
+
+  if (feature.slug === "inventory") {
+    const inventoryPreview = await fetchInventoryPreview(shopNumber);
+    return (
+      <InventoryWorkspace
+        feature={feature}
+        docUrl={docUrl}
+        relatedForms={relatedForms}
+        shopNumber={shopNumber}
+        preview={inventoryPreview}
       />
     );
   }
@@ -209,7 +221,6 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
 
 type DmScheduleFeaturePageProps = {
   feature: FeatureMeta;
-  docUrl?: string;
   shopNumber: string | null;
   plannerPrefill: PlannerPrefill | null;
 };
@@ -350,7 +361,7 @@ async function loadDmSchedulePlannerPrefill(
   }
 }
 
-async function DmScheduleFeaturePage({ feature, docUrl, shopNumber, plannerPrefill }: DmScheduleFeaturePageProps) {
+async function DmScheduleFeaturePage({ feature, shopNumber, plannerPrefill }: DmScheduleFeaturePageProps) {
   const liveWorkspaceHref = appendShopQuery("/pocket-manager5/features/dm-schedule", shopNumber);
   const sharedPlannerInputs = plannerPrefill
     ? {
@@ -369,18 +380,13 @@ async function DmScheduleFeaturePage({ feature, docUrl, shopNumber, plannerPrefi
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
 
-        <div className="mt-6 flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-2">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">District schedule</p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
-              <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-                {feature.status}
-              </span>
-            </div>
-          </div>
-          <div className="w-full min-w-[280px] flex-1 sm:max-w-md">
-            <DmVisitMixRunningSummary {...(sharedPlannerInputs ?? {})} />
+        <div className="mt-6 space-y-2">
+          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">District schedule</p>
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
+            <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+              {feature.status}
+            </span>
           </div>
         </div>
 
@@ -415,6 +421,7 @@ type MiniPosFeaturePageProps = {
 };
 
 function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
+  const isMiniPos = feature.slug === "mini-pos";
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-12 space-y-8">
@@ -430,50 +437,77 @@ function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
             <div className="flex-1">
               <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Checkout lane</p>
               <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
-              <p className="mt-3 text-lg text-slate-300">{feature.summary}</p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {feature.tags.map((tag) => (
-                  <span key={tag} className="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-300">
-                    {tag}
+              {!isMiniPos && (
+                <>
+                  <p className="mt-3 text-lg text-slate-300">{feature.summary}</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {feature.tags.map((tag) => (
+                      <span key={tag} className="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-300">
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+            {!isMiniPos && (
+              <span className="rounded-full border border-slate-800/60 px-4 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
+                {feature.status}
+              </span>
+            )}
+          </div>
+          {isMiniPos ? (
+            <div className="mt-6 rounded-3xl border border-cyan-400/40 bg-cyan-500/5 p-6">
+              <p className="text-[11px] uppercase tracking-[0.3em] text-cyan-200">Service Que</p>
+              <p className="mt-3 text-sm text-cyan-50">
+                Route service tickets straight from the lane into your active queue, stage work by bay, and broadcast
+                status back to the lobby without leaving Mini POS.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs text-cyan-100/80">
+                {[
+                  "Lane dispatch",
+                  "Bay monitor",
+                  "Customer updates",
+                ].map((chip) => (
+                  <span key={chip} className="rounded-full border border-cyan-400/40 bg-cyan-500/10 px-3 py-1">
+                    {chip}
                   </span>
                 ))}
               </div>
             </div>
-            <span className="rounded-full border border-slate-800/60 px-4 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-              {feature.status}
-            </span>
-          </div>
-          <div className="mt-6 grid gap-6 md:grid-cols-2">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
-              <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
-              {docUrl ? (
-                <Link
-                  href={docUrl}
-                  className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-200 underline-offset-4 hover:text-emerald-100 hover:underline"
-                  target="_blank"
-                  rel="noreferrer noopener"
-                >
-                  View spec ↗
-                </Link>
-              ) : (
-                <p className="mt-2 text-sm text-slate-400">Parity with native Mini POS implementation.</p>
-              )}
-            </div>
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Forms & exports</p>
-              <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
-                {feature.forms?.map((form) => (
-                  <span key={form} className="rounded-full border border-slate-800/60 px-3 py-1">
-                    {form}
-                  </span>
-                )) || <span className="text-slate-500">Documented in workspace.</span>}
+          ) : (
+            <div className="mt-6 grid gap-6 md:grid-cols-2">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
+                <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
+                {docUrl ? (
+                  <Link
+                    href={docUrl}
+                    className="mt-2 inline-flex items-center gap-2 text-sm text-emerald-200 underline-offset-4 hover:text-emerald-100 hover:underline"
+                    target="_blank"
+                    rel="noreferrer noopener"
+                  >
+                    View spec ↗
+                  </Link>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-400">Parity with native Mini POS implementation.</p>
+                )}
+              </div>
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Forms & exports</p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-slate-300">
+                  {feature.forms?.map((form) => (
+                    <span key={form} className="rounded-full border border-slate-800/60 px-3 py-1">
+                      {form}
+                    </span>
+                  )) || <span className="text-slate-500">Documented in workspace.</span>}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </section>
 
         <MiniPosWorkspace />
@@ -483,10 +517,6 @@ function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
 }
 
 type EmployeeManagementFeaturePageProps = {
-  feature: FeatureMeta;
-  docUrl?: string;
-  relatedForms: FormConfig[];
-  shopNumber: string | null;
   preview: PeopleFeaturePreview;
 };
 
@@ -535,27 +565,6 @@ const EMPLOYEE_SHORTCUTS = [
   },
 ] as const;
 
-const TRAINING_TRACKS = [
-  {
-    name: "New hire onboarding",
-    progress: 100,
-    caption: "Complete",
-    tone: "emerald",
-  },
-  {
-    name: "Service certification ladder",
-    progress: 72,
-    caption: "2 modules due Jul 12",
-    tone: "cyan",
-  },
-  {
-    name: "Leadership path",
-    progress: 45,
-    caption: "Coach review scheduled Aug 1",
-    tone: "amber",
-  },
-];
-
 function buildNativeCodeLink(route: string) {
   const normalized = route.replace(/^\//, "");
   return `${NATIVE_CODE_BASE}/app/${normalized}.tsx`;
@@ -592,18 +601,14 @@ function LiveStat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function EmployeeManagementFeaturePage({ feature, docUrl, relatedForms, shopNumber, preview }: EmployeeManagementFeaturePageProps) {
+function EmployeeManagementFeaturePage({ preview }: EmployeeManagementFeaturePageProps) {
   const roster = preview.roster.slice(0, 6);
-  const meetings = preview.meetings.slice(0, 3);
-  const coachingLogs = preview.coaching.recent.slice(0, 3);
-  const termed = preview.termed.slice(0, 3);
   const avgTenureMonths = roster.length
     ? Math.round(
         roster.reduce((sum, teammate) => sum + (teammate.tenureMonths ?? 0), 0) / roster.length
       )
     : null;
   const highlight = roster[0];
-  const liveDataReady = Boolean(shopNumber) && preview.hasData;
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
@@ -615,186 +620,7 @@ function EmployeeManagementFeaturePage({ feature, docUrl, relatedForms, shopNumb
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
 
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-8 shadow-2xl shadow-black/30">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">People systems</p>
-          <div className="mt-2 flex flex-wrap items-start gap-3">
-            <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
-            <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-              {feature.status}
-            </span>
-          </div>
-          <p className="mt-4 text-lg text-slate-300">{feature.summary}</p>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
-              <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
-              {docUrl ? (
-                <Link
-                  href={docUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-emerald-200 underline-offset-4 transition hover:text-emerald-100 hover:underline"
-                >
-                  View spec ↗
-                </Link>
-              ) : (
-                <p className="mt-2 text-sm text-slate-400">Refer to the mobile implementation notes.</p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Forms & flows</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {relatedForms.length > 0 ? (
-                  relatedForms.map((form) => {
-                    const formHref = appendShopQuery(`/pocket-manager5/forms/${form.slug}`, shopNumber);
-                    return (
-                      <Link
-                        key={form.slug}
-                        href={formHref}
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-800/70 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400/60"
-                      >
-                        {form.title} ↗
-                      </Link>
-                    );
-                  })
-                ) : (
-                  <span className="text-sm text-slate-400">Documented in mobile view.</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-2">
-            {feature.tags.map((tag) => (
-              <span key={tag} className="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-300">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Live Supabase data</p>
-              <h2 className="mt-1 text-2xl font-semibold text-white">People snapshot for shop {shopNumber ?? "(select a shop)"}</h2>
-              <p className="mt-2 text-sm text-slate-300">
-                Pulls straight from <code className="font-mono text-xs text-emerald-200">shop_staff</code>, <code className="font-mono text-xs text-emerald-200">employee_training</code>, <code className="font-mono text-xs text-emerald-200">employee_meetings</code>, <code className="font-mono text-xs text-emerald-200">coaching_logs</code>, and <code className="font-mono text-xs text-emerald-200">termed_employees</code> so the web view mirrors the Expo app.
-              </p>
-            </div>
-            {!shopNumber && <span className="text-sm font-semibold text-amber-300">Choose a shop from Pocket Manager to hydrate this section.</span>}
-            {shopNumber && !preview.hasData && <span className="text-sm font-semibold text-slate-400">No records yet — add roster & meetings from mobile to populate.</span>}
-          </div>
-          {liveDataReady ? (
-            <div className="mt-6 grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Active roster ({preview.roster.length})</p>
-                  {roster.length ? (
-                    <div className="mt-3 divide-y divide-slate-800/60">
-                      {roster.map((teammate) => (
-                        <div key={teammate.id} className="flex flex-wrap items-center justify-between gap-2 py-2 text-sm">
-                          <div>
-                            <p className="font-semibold text-white">{teammate.name}</p>
-                            <p className="text-slate-400">{teammate.role ?? "Role pending"}</p>
-                          </div>
-                          <div className="text-right text-xs text-slate-400">
-                            <p>{teammate.status ?? "Active"}</p>
-                            <p>{formatTenureLabel(teammate.tenureMonths)}</p>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-400">Roster empty. Add staff in the mobile app to see them here.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Training pipeline</p>
-                  <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                    <LiveStat label="Completed" value={preview.training.completed} />
-                    <LiveStat label="In progress" value={preview.training.inProgress} />
-                    <LiveStat label="Not started" value={preview.training.notStarted} />
-                  </div>
-                  <div className="mt-4 h-2 rounded-full bg-slate-800">
-                    <div className="h-full rounded-full bg-emerald-400" style={{ width: `${preview.training.completionPct}%` }} />
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">{preview.training.completionPct}% of tracked CTT items completed.</p>
-                  {preview.training.inProgressList.length > 0 && (
-                    <ul className="mt-3 space-y-2 text-sm text-slate-300">
-                      {preview.training.inProgressList.map((item) => (
-                        <li key={item.id} className="rounded-xl border border-slate-800/60 px-3 py-2">
-                          <p className="font-semibold text-white">{item.name}</p>
-                          <p className="text-xs text-slate-400">{item.status ?? "in_progress"} · Updated {formatDateLabel(item.updatedAt)}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-4">
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Meetings</p>
-                  {meetings.length ? (
-                    <ul className="mt-3 space-y-2">
-                      {meetings.map((meeting) => (
-                        <li key={meeting.id} className="rounded-xl border border-slate-800/60 px-3 py-2 text-sm">
-                          <p className="font-semibold text-white">{meeting.meetingType ?? "Meeting"}</p>
-                          <p className="text-slate-400">{formatDateLabel(meeting.meetingDate)} · {meeting.meetingTime ?? "--"}</p>
-                          <p className="text-xs text-slate-500">{meeting.attendeesCount} attendees</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-400">No meetings logged yet.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Coaching log (last 30 days)</p>
-                  {coachingLogs.length ? (
-                    <ul className="mt-3 space-y-2 text-sm">
-                      {coachingLogs.map((log) => (
-                        <li key={log.id} className="rounded-xl border border-slate-800/60 px-3 py-2">
-                          <p className="font-semibold text-white">{log.staffName ?? "Unnamed"}</p>
-                          <p className="text-xs text-slate-400">{formatDateLabel(log.coachedAt)} · {log.reason ?? "Coaching"}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-400">No 1:1s captured in the last month.</p>
-                  )}
-                </div>
-
-                <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Termed teammates</p>
-                  {termed.length ? (
-                    <ul className="mt-3 space-y-2 text-sm">
-                      {termed.map((entry) => (
-                        <li key={entry.id} className="rounded-xl border border-slate-800/60 px-3 py-2">
-                          <p className="font-semibold text-white">{entry.name ?? "Unnamed"}</p>
-                          <p className="text-xs text-slate-400">{formatDateLabel(entry.termedAt)} · {entry.reason ?? "N/A"}</p>
-                          <p className="text-xs text-slate-500">Rehire: {entry.rehireStatus ?? "unknown"}</p>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="mt-3 text-sm text-slate-400">No termed teammates recorded.</p>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <p className="mt-6 text-sm text-slate-400">Connect a shop and seed at least one teammate in the mobile experience to preview live roster data on the web.</p>
-          )}
-        </section>
-
+        
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <div className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
             <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Employee profile snapshot</p>
@@ -858,35 +684,6 @@ function EmployeeManagementFeaturePage({ feature, docUrl, relatedForms, shopNumb
               <p className="font-semibold">Internal use only</p>
               <p className="text-amber-200/90">People data stays on-device. No payroll exports are triggered from this workspace.</p>
             </div>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Training & development</p>
-              <h2 className="mt-1 text-2xl font-semibold text-white">Pipeline view</h2>
-              <p className="mt-2 text-sm text-slate-300">
-                Mirrors the employee training detail route with the same progress math, AsyncStorage-backed drafts, and Supabase sync.
-              </p>
-            </div>
-          </div>
-          <div className="mt-5 space-y-3">
-            {TRAINING_TRACKS.map((track) => (
-              <div key={track.name} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-300">
-                  <p className="font-semibold text-white">{track.name}</p>
-                  <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{track.caption}</span>
-                </div>
-                <div className="mt-3 h-2 rounded-full bg-slate-800">
-                  <div
-                    className={`h-full rounded-full ${track.tone === "emerald" ? "bg-emerald-400" : track.tone === "cyan" ? "bg-cyan-400" : "bg-amber-400"}`}
-                    style={{ width: `${track.progress}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">{track.progress}% complete</p>
-              </div>
-            ))}
           </div>
         </section>
 
@@ -1122,199 +919,5 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
   );
 }
 
-type EmployeeSchedulingFeaturePageProps = {
-  feature: FeatureMeta;
-  docUrl?: string;
-  relatedForms: FormConfig[];
-  shopNumber: string | null;
-  preview: EmployeeSchedulingPreview;
-};
-
-function EmployeeSchedulingFeaturePage({ feature, docUrl, relatedForms, shopNumber, preview }: EmployeeSchedulingFeaturePageProps) {
-  const weekLabel = `${shortDateFormatter.format(new Date(preview.weekStartISO))} – ${shortDateFormatter.format(new Date(preview.weekEndISO))}`;
-  const deltaHours = Math.round((preview.simpleScheduler.totalHours - preview.projections.totalAllowedHours) * 10) / 10;
-  const deltaTone = deltaHours > 0 ? "text-amber-300" : "text-emerald-300";
-  const dailyCoverage = preview.simpleScheduler.dailyCoverage;
-  const topEmployees = preview.simpleScheduler.employees;
-  const legacyRows = preview.legacyScheduler.rows;
-  const simpleSchedulerReady = preview.simpleScheduler.totalShifts > 0;
-  const legacyReady = legacyRows.length > 0;
-
-  return (
-    <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-5xl px-4 py-12 space-y-10">
-        <Link
-          href="/pocket-manager5"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
-        >
-          <span aria-hidden>↩</span> Back to Pocket Manager5
-        </Link>
-
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-900/70 p-8 shadow-2xl shadow-black/30">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-400">Scheduling</p>
-          <div className="mt-2 flex flex-wrap items-start gap-3">
-            <h1 className="text-4xl font-semibold text-white">{feature.title}</h1>
-            <span className="rounded-full border border-slate-800/60 px-3 py-1 text-xs font-semibold uppercase tracking-[0.25em] text-slate-300">
-              {feature.status}
-            </span>
-          </div>
-          <p className="mt-4 text-lg text-slate-300">{feature.summary}</p>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
-              <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
-            </div>
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
-              {docUrl ? (
-                <Link
-                  href={docUrl}
-                  target="_blank"
-                  rel="noreferrer noopener"
-                  className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-emerald-200 underline-offset-4 transition hover:text-emerald-100 hover:underline"
-                >
-                  View spec ↗
-                </Link>
-              ) : (
-                <p className="mt-2 text-sm text-slate-400">Refer to the mobile implementation notes.</p>
-              )}
-            </div>
-            <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Forms & flows</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {relatedForms.length > 0 ? (
-                  relatedForms.map((form) => {
-                    const formHref = appendShopQuery(`/pocket-manager5/forms/${form.slug}`, shopNumber);
-                    return (
-                      <Link
-                        key={form.slug}
-                        href={formHref}
-                        className="inline-flex items-center gap-1 rounded-full border border-slate-800/70 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400/60"
-                      >
-                        {form.title} ↗
-                      </Link>
-                    );
-                  })
-                ) : (
-                  <span className="text-sm text-slate-400">Documented in mobile view.</span>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-6 flex flex-wrap gap-2">
-            {feature.tags.map((tag) => (
-              <span key={tag} className="rounded-full border border-slate-800/60 px-3 py-1 text-xs text-slate-300">
-                {tag}
-              </span>
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Shared scheduling model</p>
-              <h2 className="mt-1 text-2xl font-semibold text-white">Week {weekLabel} · Shop {shopNumber ?? "(select a shop)"}</h2>
-              <p className="mt-2 text-sm text-slate-300">
-                Web + Expo now use the same <code className="font-mono text-xs text-emerald-200">employee_shifts</code> rows with projections from <code className="font-mono text-xs text-emerald-200">weekly_projections</code>. Legacy exports stay wired to <code className="font-mono text-xs text-emerald-200">employee_schedules</code> until DMs migrate fully.
-              </p>
-            </div>
-            {!shopNumber && <span className="text-sm font-semibold text-amber-300">Select a shop to hydrate live shifts.</span>}
-          </div>
-          <div className="mt-6 grid gap-4 sm:grid-cols-4">
-            <LiveStat label="Total shifts" value={preview.simpleScheduler.totalShifts} />
-            <LiveStat label="Scheduled hours" value={Number(preview.simpleScheduler.totalHours.toFixed(1))} />
-            <LiveStat label="Allowed hours" value={Number(preview.projections.totalAllowedHours.toFixed(1))} />
-            <div className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-3 text-center">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Delta</p>
-              <p className={`mt-1 text-2xl font-semibold ${deltaTone}`}>{deltaHours.toFixed(1)}h</p>
-            </div>
-          </div>
-          {simpleSchedulerReady ? (
-            <div className="mt-6 overflow-x-auto">
-              <table className="w-full text-left text-sm text-slate-300">
-                <thead>
-                  <tr className="text-xs uppercase tracking-[0.2em] text-slate-500">
-                    <th className="pb-2 pr-4">Day</th>
-                    <th className="pb-2 pr-4">Scheduled hrs</th>
-                    <th className="pb-2 pr-4">Allowed hrs</th>
-                    <th className="pb-2">Shift count</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {dailyCoverage.map((day) => (
-                    <tr key={day.date} className="border-t border-slate-900/60">
-                      <td className="py-2 pr-4">{day.date}</td>
-                      <td className="py-2 pr-4">{day.hours.toFixed(1)}</td>
-                      <td className="py-2 pr-4">{(day.allowedHours ?? 0).toFixed(1)}</td>
-                      <td className="py-2">{day.shiftCount}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="mt-6 text-sm text-slate-400">No shifts scheduled for this week yet.</p>
-          )}
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Top teammates</p>
-            {topEmployees.length ? (
-              <ul className="mt-4 space-y-3">
-                {topEmployees.map((employee) => (
-                  <li key={employee.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                    <p className="text-base font-semibold text-white">{employee.name}</p>
-                    <p className="text-xs text-slate-400">{employee.role ?? "--"}</p>
-                    <p className="mt-1 text-sm text-slate-300">{employee.hours.toFixed(1)}h · {employee.shifts} shifts</p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-4 text-sm text-slate-400">Add shifts to see coverage by teammate.</p>
-            )}
-          </div>
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Legacy schedule export</p>
-            {legacyReady ? (
-              <ul className="mt-4 space-y-3 text-sm text-slate-300">
-                {legacyRows.map((row) => (
-                  <li key={row.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-4">
-                    <p className="font-semibold text-white">{row.staffName}</p>
-                    <p className="text-xs text-slate-400">{row.position ?? "--"}</p>
-                    <p className="mt-1">{row.totalHours.toFixed(1)}h · OT {row.overtimeHours.toFixed(1)}h</p>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="mt-4 text-sm text-slate-400">
-                <code className="font-mono text-xs text-slate-300">employee_schedules</code> has no rows for this week yet.
-              </p>
-            )}
-            <p className="mt-4 text-xs text-slate-500">
-              Legacy template stays wired for DM exports. When the district retires it, remove the Supabase rows to keep things tidy.
-            </p>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-slate-800/80 bg-slate-950/70 p-6">
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Implementation callouts</p>
-          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-300">
-                <li>
-              <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Live district data</p>
-              <h2 className="text-2xl font-semibold text-white">Supabase schedule + logbook</h2>
-              <p className="text-sm text-slate-300">
-                Pulled straight from <code className="font-mono text-xs text-emerald-200">dm_schedule</code> and <code className="font-mono text-xs text-emerald-200">dm_logbook</code> for shop {shopNumber ?? "?"}. Keep the same tables as the Expo planner so both touchpoints stay in lockstep.
-              </p>
-            </li>
-          </ul>
-        </section>
-      </div>
-    </main>
-  );
-}
 
 // FormLinkCard removed — was unused in this file.

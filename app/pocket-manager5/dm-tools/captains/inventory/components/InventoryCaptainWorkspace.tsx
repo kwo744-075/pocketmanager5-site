@@ -15,6 +15,7 @@ import {
   Search,
   X,
 } from "lucide-react";
+import Chip from "@/app/components/Chip";
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
 import { useCaptainRoleGate } from "@/hooks/useCaptainRoleGate";
 import {
@@ -620,19 +621,12 @@ export function InventoryCaptainWorkspace() {
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900/60 px-6 py-4">
           <div className="flex gap-2">
             {(["shops", "districts"] as const).map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => setActiveTab(tab)}
-                className={`relative rounded-full px-5 py-2 text-sm font-semibold tracking-wide transition ${
-                  activeTab === tab ? "text-white" : "text-slate-400"
-                }`}
-              >
+              <Chip key={tab} onClick={() => setActiveTab(tab)} className="relative px-5 py-2 text-sm font-semibold tracking-wide" active={activeTab === tab}>
                 {tab === "shops" ? "Shop Status" : "District Summary"}
                 {activeTab === tab ? (
                   <motion.span layoutId="inventory-tab" className="absolute inset-0 rounded-full bg-slate-800/80" />
                 ) : null}
-              </button>
+              </Chip>
             ))}
           </div>
           {activeTab === "shops" ? (
@@ -646,15 +640,15 @@ export function InventoryCaptainWorkspace() {
                   className="rounded-full border border-slate-800 bg-slate-900/70 py-2 pl-10 pr-4 text-sm text-slate-100 focus:border-emerald-400/60 focus:outline-none"
                 />
               </div>
-              <button
-                type="button"
+              <Chip
                 onClick={() => setShowOnlyMissing((prev) => !prev)}
-                className={`inline-flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] transition ${
+                className={`inline-flex items-center gap-2 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] ${
                   showOnlyMissing ? "border-rose-400/60 text-rose-200" : "border-slate-800 text-slate-400"
                 }`}
+                active={showOnlyMissing}
               >
                 <Filter className="h-3.5 w-3.5" /> Missing
-              </button>
+              </Chip>
             </div>
           ) : null}
         </div>

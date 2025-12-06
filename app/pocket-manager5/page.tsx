@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Component, Suspense, memo, useCallback, useEffect, useMemo, useState, type ReactNode, type ComponentType } from "react";
 import { BrandWordmark } from "@/app/components/BrandWordmark";
 import { RetailPills } from "@/app/components/RetailPills";
+import AccordionBanner from "@/app/components/AccordionBanner";
 import {
   AlarmClock,
   ArrowUpRight,

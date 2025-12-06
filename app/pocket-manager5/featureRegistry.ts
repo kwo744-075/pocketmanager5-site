@@ -99,6 +99,17 @@ export const FEATURE_REGISTRY = [
     status: "live",
   },
   {
+    slug: "employee-scheduling",
+    title: "Employee Scheduling",
+    summary: "Week grid with projections, coverage alerts, and copy/paste tooling shared with the Expo app.",
+    platformRoute: "/(tabs)/(home)/employee-scheduling",
+    docPath: "docs/EMPLOYEE_SCHEDULING_FIXES.md",
+    forms: ["Schedule Template", "Labor Plan"],
+    keyHooks: ["supabase.from('employee_shifts')", "supabase.from('weekly_projections')"],
+    tags: ["people", "scheduling"],
+    status: "live",
+  },
+  {
     slug: "labor-tracker",
     title: "Labor Tracker",
     summary: "Allowed vs used hours, staff to par %, and weekly variance alerts.",

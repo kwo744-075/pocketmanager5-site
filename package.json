@@ -13,6 +13,8 @@
     "sim:sync": "pnpm run sim:sheet && pnpm run sim:upload"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.2",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/auth-helpers-react": "^0.15.0",
     "@supabase/supabase-js": "^2.84.0",
@@ -24,6 +26,7 @@
     "pptxgenjs": "^4.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "three": "^0.181.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
