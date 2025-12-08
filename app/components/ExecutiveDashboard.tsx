@@ -119,6 +119,11 @@ const liveKpiTiles: DashboardTile[] = [
   { label: "Diffs", value: "0 / 0%" },
   { label: "Fuel Filters", value: "0" },
   { label: "Mobil1 (Promo)", value: "0" },
+  // Insert additional NPS-related banner tiles between the controllables row and donations
+  { label: "NPS", subtitle: "Guest Score", value: "0%" },
+  { label: "NPS Manager Visit", subtitle: "Visits", value: "0" },
+  { label: "NPS Water", subtitle: "Quality", value: "0%" },
+  { label: "Email Collection", subtitle: "Opt-ins", value: "0" },
   { label: "Donations", value: "$0" },
   { label: "Turned Cars", subtitle: "# / $", value: "0 / $0" },
   { label: "Zero Shops", subtitle: "# / %", value: "0 / 0%" },
@@ -142,6 +147,13 @@ export function ExecutiveDashboard() {
           </div>
           <div className="grid gap-1.5">
             {adminRowThree.map((tile) => (
+              <KpiTile key={tile.label} {...tile} />
+            ))}
+          </div>
+        </DashboardSectionCard>
+        <DashboardSectionCard title="Admin / Ops">
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+            {adminOpsTiles.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
