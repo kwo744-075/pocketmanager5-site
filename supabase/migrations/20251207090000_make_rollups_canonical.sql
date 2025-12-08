@@ -208,19 +208,43 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 5) Ensure triggers exist and run when a check-in is submitted (daily and WTD include today's submitted slots)
-DROP TRIGGER IF EXISTS trigger_update_shop_daily_totals ON check_ins;
-CREATE TRIGGER trigger_update_shop_daily_totals
-  AFTER INSERT OR UPDATE ON check_ins
-  FOR EACH ROW
-  WHEN (NEW.is_submitted = true)
-  EXECUTE FUNCTION update_shop_daily_totals();
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT 1 FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name = 'check_ins'
+  ) THEN
+    -- daily totals trigger
+    IF EXISTS (
+      SELECT 1 FROM pg_trigger t
+      JOIN pg_class c ON t.tgrelid = c.oid
+      WHERE c.relname = 'check_ins' AND t.tgname = 'trigger_update_shop_daily_totals'
+    ) THEN
+      PERFORM pg_trigger_drop('trigger_update_shop_daily_totals'::regprocedure);
+    END IF;
 
-DROP TRIGGER IF EXISTS trigger_update_shop_wtd_totals ON check_ins;
-CREATE TRIGGER trigger_update_shop_wtd_totals
-  AFTER INSERT OR UPDATE ON check_ins
-  FOR EACH ROW
-  WHEN (NEW.is_submitted = true)
-  EXECUTE FUNCTION update_shop_wtd_totals();
+    EXECUTE 'CREATE TRIGGER trigger_update_shop_daily_totals
+      AFTER INSERT OR UPDATE ON check_ins
+      FOR EACH ROW
+      WHEN (NEW.is_submitted = true)
+      EXECUTE FUNCTION update_shop_daily_totals();';
+
+    -- wtd totals trigger
+    IF EXISTS (
+      SELECT 1 FROM pg_trigger t
+      JOIN pg_class c ON t.tgrelid = c.oid
+      WHERE c.relname = 'check_ins' AND t.tgname = 'trigger_update_shop_wtd_totals'
+    ) THEN
+      PERFORM pg_trigger_drop('trigger_update_shop_wtd_totals'::regprocedure);
+    END IF;
+
+    EXECUTE 'CREATE TRIGGER trigger_update_shop_wtd_totals
+      AFTER INSERT OR UPDATE ON check_ins
+      FOR EACH ROW
+      WHEN (NEW.is_submitted = true)
+      EXECUTE FUNCTION update_shop_wtd_totals();';
+  END IF;
+END $$;
 
 -- 6) Backfill daily and WTD fuel_filters and (best-effort) other totals
 -- Update shop_daily_totals
