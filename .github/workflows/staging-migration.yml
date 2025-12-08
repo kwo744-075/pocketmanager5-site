@@ -1,0 +1,40 @@
+name: Run Staging Migration
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  staging-migration:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install psql client
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Apply migration SQL
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then echo "STAGING_DATABASE_URL secret missing"; exit 1; fi
+          echo "Applying migration file: supabase/migrations/20251207090000_make_rollups_canonical.sql"
+          psql "$DATABASE_URL" -f supabase/migrations/20251207090000_make_rollups_canonical.sql
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install npm deps
+        run: npm ci
+
+      - name: Run backfill script
+        env:
+          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
+        run: |
+          node scripts/backfill-fuel-filters.js

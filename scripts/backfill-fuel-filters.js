@@ -15,7 +15,8 @@ Note: run from a machine close to the DB (CI runner or dedicated admin machine).
 const { Client } = require('pg');
 
 async function main() {
-  const client = new Client();
+  const connectionString = process.env.DATABASE_URL || process.env.STAGING_DATABASE_URL || process.env.PG_CONNECTION || null;
+  const client = connectionString ? new Client({ connectionString }) : new Client();
   await client.connect();
 
   try {
