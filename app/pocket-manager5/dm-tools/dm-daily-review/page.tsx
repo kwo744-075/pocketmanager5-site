@@ -3,6 +3,8 @@
 import React, { useCallback, useState, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 
+export default function Page() {
+
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         <div className="col-span-4 p-4 rounded border border-slate-700 bg-slate-900/40 text-slate-300">Upload / KPI Selector / Actions temporarily disabled while debugging.</div>
       </div>
