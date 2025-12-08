@@ -8,16 +8,14 @@
 -- backfill steps which may be expensive on large datasets.
 
 -- 1) Ensure `fuel_filters` exists on check_ins
+-- Add column with default and not-null in one idempotent statement
 ALTER TABLE IF EXISTS check_ins
-  ADD COLUMN IF NOT EXISTS fuel_filters INTEGER;
+  ADD COLUMN IF NOT EXISTS fuel_filters INTEGER NOT NULL DEFAULT 0;
 
+-- Backfill any existing NULLs to 0
 UPDATE check_ins
-SET fuel_filters = COALESCE(fuel_filters, 0)
+SET fuel_filters = 0
 WHERE fuel_filters IS NULL;
-
-ALTER TABLE IF EXISTS check_ins
-  ALTER COLUMN fuel_filters SET DEFAULT 0,
-  ALTER COLUMN fuel_filters SET NOT NULL;
 
 -- 2) Ensure totals tables have `total_fuel_filters` (if they exist)
 DO $$

@@ -87,6 +87,10 @@ export default function Page() {
   const fileRef = useRef<HTMLInputElement | null>(null);
   const [headerMatchTrace, setHeaderMatchTrace] = useState<Record<string, { matched?: string; method?: string }>>({});
   const [mappingToast, setMappingToast] = useState<{ text: string; visible: boolean }>({ text: "", visible: false });
+  const [mappingPresets, setMappingPresets] = useState<Record<string, Record<string, string>>>({});
+  const [mappingPresetName, setMappingPresetName] = useState<string>("");
+  const [viewPresets, setViewPresets] = useState<Record<string, { includedKpis: string[]; selectedKpi?: string; mappingPreset?: string }>>({});
+  const [viewPresetName, setViewPresetName] = useState<string>("");
 
   const canonicalFields = useMemo(() => [
     'shop', 'sales', 'cars', 'big4', 'mobil1', 'coolants', 'diffs', 'donations', 'fuel_filters', 'pmix'
@@ -204,6 +208,69 @@ export default function Page() {
     agg.sort((a, b) => (b[selectedKpi as string] ?? 0) - (a[selectedKpi as string] ?? 0));
     setSummary(agg.slice(0, 24));
   }, [selectedKpi, canonicalFields, detectedHeaders, headerMap]);
+
+  // mapping & view presets storage helpers
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem('dm_mapping_presets_v1');
+      if (raw) setMappingPresets(JSON.parse(raw));
+    } catch (e) {
+      console.warn('failed to load mapping presets', e);
+    }
+    try {
+      const rawv = localStorage.getItem('dm_view_presets_v1');
+      if (rawv) setViewPresets(JSON.parse(rawv));
+    } catch (e) {
+      console.warn('failed to load view presets', e);
+    }
+  }, []);
+
+  const saveMappingPreset = useCallback((name: string) => {
+    if (!name) return;
+    const next = { ...(mappingPresets || {}), [name]: headerMap };
+    setMappingPresets(next);
+    localStorage.setItem('dm_mapping_presets_v1', JSON.stringify(next));
+    setMappingPresetName("");
+    setMappingToast({ text: `Mapping saved: ${name}`, visible: true });
+    window.setTimeout(() => setMappingToast((s) => ({ ...s, visible: false })), 3000);
+  }, [headerMap, mappingPresets]);
+
+  const deleteMappingPreset = useCallback((name: string) => {
+    const copy = { ...(mappingPresets || {}) };
+    delete copy[name];
+    setMappingPresets(copy);
+    localStorage.setItem('dm_mapping_presets_v1', JSON.stringify(copy));
+  }, [mappingPresets]);
+
+  const applyMappingPreset = useCallback((name: string) => {
+    const preset = mappingPresets?.[name];
+    if (!preset) return;
+    setHeaderMap(preset);
+    // re-run aggregation using currently loaded rows
+    if (rows && rows.length) applyAggregation(rows);
+    setMappingToast({ text: `Applied mapping: ${name}`, visible: true });
+    window.setTimeout(() => setMappingToast((s) => ({ ...s, visible: false })), 3000);
+  }, [mappingPresets, applyAggregation, rows]);
+
+  const saveViewPreset = useCallback((name: string, mappingPreset?: string) => {
+    if (!name) return;
+    const next = { ...(viewPresets || {}), [name]: { includedKpis, selectedKpi, mappingPreset } };
+    setViewPresets(next);
+    localStorage.setItem('dm_view_presets_v1', JSON.stringify(next));
+    setViewPresetName("");
+    setMappingToast({ text: `View saved: ${name}`, visible: true });
+    window.setTimeout(() => setMappingToast((s) => ({ ...s, visible: false })), 3000);
+  }, [includedKpis, selectedKpi, viewPresets]);
+
+  const applyViewPreset = useCallback((name: string) => {
+    const p = viewPresets?.[name];
+    if (!p) return;
+    if (p.mappingPreset) applyMappingPreset(p.mappingPreset);
+    if (p.includedKpis) setIncludedKpis(p.includedKpis);
+    if (p.selectedKpi) setSelectedKpi(p.selectedKpi);
+    setMappingToast({ text: `Applied view: ${name}`, visible: true });
+    window.setTimeout(() => setMappingToast((s) => ({ ...s, visible: false })), 3000);
+  }, [viewPresets, applyMappingPreset]);
 
   const onFile = useCallback(async (file: File | null) => {
     if (!file) return;
@@ -506,6 +573,7 @@ export default function Page() {
           </div>
         </div>
 
+        <aside>
         <div className="md:col-span-2">
           <div className="p-3 rounded border border-slate-700 bg-slate-900/40 h-full">
             <div className="text-sm text-slate-300 mb-2">KPI Selector</div>
@@ -583,6 +651,28 @@ export default function Page() {
                 }} className="bg-sky-600 text-white px-3 py-1 rounded text-sm">Save summary (to Supabase)</button>
                 <button onClick={() => setHeaderMapOpen((s) => !s)} className="bg-neutral-700 text-white px-3 py-1 rounded text-sm">Map columns</button>
                 <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(summary.slice(0, 20)))} className="bg-neutral-800 text-white px-3 py-1 rounded text-sm">Copy top 20 JSON</button>
+                <div className="border-t border-slate-700 pt-2">
+                  <div className="text-xs text-slate-300 mb-1">Quick Views</div>
+                  <div className="flex flex-col gap-2">
+                    <button onClick={() => setIncludedKpis(controllableKpis)} className="bg-emerald-600 text-black px-3 py-1 rounded text-sm">Controllables by Shop</button>
+                    <div className="flex gap-2">
+                      <input value={viewPresetName} onChange={(e) => setViewPresetName(e.target.value)} placeholder="View name" className="flex-1 bg-slate-800 text-white px-2 py-1 rounded text-xs" />
+                      <button onClick={() => saveViewPreset(viewPresetName)} className="bg-indigo-600 text-white px-3 py-1 rounded text-sm">Save view</button>
+                    </div>
+                    <div className="space-y-1">
+                      {Object.keys(viewPresets).length === 0 ? (
+                        <div className="text-slate-400 text-xs">No saved views</div>
+                      ) : (
+                        Object.keys(viewPresets).map((n) => (
+                          <div key={n} className="flex items-center gap-2">
+                            <button onClick={() => applyViewPreset(n)} className="bg-slate-800 text-white px-2 py-1 rounded text-xs">Apply</button>
+                            <div className="flex-1 text-slate-300 text-xs">{n}</div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -660,9 +750,26 @@ export default function Page() {
                       ))
                     )}
                   </div>
-                  <div className="mt-2">
-                    <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(headerMatchTrace))} className="bg-neutral-800 text-white px-2 py-1 rounded text-xs">Copy mapping JSON</button>
-                  </div>
+                    <div className="mt-2 flex gap-2 items-center">
+                      <button onClick={() => navigator.clipboard?.writeText(JSON.stringify(headerMatchTrace))} className="bg-neutral-800 text-white px-2 py-1 rounded text-xs">Copy mapping JSON</button>
+                      <input value={mappingPresetName} onChange={(e) => setMappingPresetName(e.target.value)} placeholder="Preset name" className="bg-slate-800 text-white px-2 py-1 rounded text-xs" />
+                      <button onClick={() => saveMappingPreset(mappingPresetName)} className="bg-emerald-600 text-black px-2 py-1 rounded text-xs">Save mapping</button>
+                    </div>
+                    <div className="mt-2 text-xs">
+                      {Object.keys(mappingPresets).length === 0 ? (
+                        <div className="text-slate-400">No saved mappings</div>
+                      ) : (
+                        <div className="space-y-1">
+                          {Object.keys(mappingPresets).map((n) => (
+                            <div key={n} className="flex items-center gap-2">
+                              <button onClick={() => applyMappingPreset(n)} className="bg-slate-800 text-white px-2 py-1 rounded text-xs">Apply</button>
+                              <div className="flex-1 text-slate-300 text-xs">{n}</div>
+                              <button onClick={() => deleteMappingPreset(n)} className="bg-rose-600 text-white px-2 py-1 rounded text-xs">Delete</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                 </div>
               </div>
             )}
