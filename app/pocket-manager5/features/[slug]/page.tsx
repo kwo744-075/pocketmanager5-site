@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import EmployeeProfileModalTrigger from "../../components/EmployeeProfileModalTrigger";
 import type { ReactNode } from "react";
-import { fetchDmSchedulePreview, fetchEmployeeSchedulingPreview, fetchPeopleFeaturePreview, type EmployeeSchedulingPreview, type PeopleFeaturePreview } from "@/lib/peopleFeatureData";
+import { fetchDmSchedulePreview, fetchEmployeeSchedulingPreview, fetchPeopleFeaturePreview } from "@/lib/peopleFeatureData";
 import { DmSchedulePlanner } from "../../components/DmSchedulePlanner";
 import {
   DM_RUNNING_PERIOD_WINDOW,
   buildRetailPeriodSequence,
   getRetailPeriodInfo,
-  shortDateFormatter,
   type SampleScheduleEntry,
   type ScheduleLocationId,
 } from "../../components/dmScheduleUtils";
@@ -16,7 +16,7 @@ import { EmployeeSchedulingWorkspace } from "../components/EmployeeSchedulingWor
 import { InventoryWorkspace } from "../components/InventoryWorkspace";
 import { fetchInventoryPreview } from "@/lib/inventoryPreview";
 import { FEATURE_LOOKUP, FEATURE_REGISTRY, getDocUrl, type FeatureMeta, type FeatureSlug } from "../../featureRegistry";
-import { FORM_REGISTRY, type FormConfig } from "../../forms/formRegistry";
+import { FORM_REGISTRY } from "../../forms/formRegistry";
 import { getServerSession, type ServerSession } from "@/lib/auth/session";
 import { resolvePermittedShopNumber, normalizeShopIdentifier } from "@/lib/auth/alignment";
 
@@ -135,7 +135,7 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
       <div className="mx-auto max-w-4xl px-4 py-12">
         <Link
           href="/pocket-manager5"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
         >
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
@@ -173,7 +173,7 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
                         <Link
                           key={form.slug}
                           href={formHref}
-                          className="inline-flex items-center gap-1 rounded-full border border-slate-800/70 px-3 py-1 text-xs font-semibold text-emerald-200 transition hover:border-emerald-400/60"
+                          className="inline-flex items-center gap-1 rounded-full border border-slate-800/70 px-3 py-1 text-xs font-semibold text-pm5-teal transition hover:pm5-teal-border"
                         >
                           {form.title} ↗
                         </Link>
@@ -375,7 +375,7 @@ async function DmScheduleFeaturePage({ feature, shopNumber, plannerPrefill }: Dm
       <div className="mx-auto max-w-6xl px-4 py-12">
         <Link
           href="/pocket-manager5"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
         >
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
@@ -397,9 +397,9 @@ async function DmScheduleFeaturePage({ feature, shopNumber, plannerPrefill }: Dm
               <p className="mt-1 text-2xl font-semibold text-white">DM Period Schedule</p>
             </div>
             <div className="flex flex-wrap gap-3">
-              <Link
+                <Link
                 href={liveWorkspaceHref}
-                className="inline-flex items-center gap-2 rounded-full border border-emerald-400/50 px-4 py-2 text-sm font-semibold text-emerald-200 transition hover:border-emerald-300"
+                className="inline-flex items-center gap-2 rounded-full border pm5-teal-border px-4 py-2 text-sm font-semibold text-pm5-teal transition hover:pm5-teal-border"
               >
                 Open DM workspace ↗
               </Link>
@@ -425,10 +425,10 @@ function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-7xl px-4 py-12 space-y-8">
-        <Link
-          href="/pocket-manager5"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
-        >
+          <Link
+            href="/pocket-manager5"
+            className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
+          >
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
 
@@ -479,7 +479,7 @@ function MiniPosFeaturePage({ feature, docUrl }: MiniPosFeaturePageProps) {
             <div className="mt-6 grid gap-6 md:grid-cols-2">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</p>
-                <p className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</p>
+                <p className="mt-2 font-mono text-sm text-pm5-teal">{feature.platformRoute}</p>
               </div>
               <div>
                 <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Documentation</p>
@@ -619,6 +619,14 @@ function EmployeeManagementFeaturePage({ preview }: EmployeeManagementFeaturePag
         >
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
+
+        <div className="flex items-center justify-end">
+          <EmployeeProfileModalTrigger
+            shopNumber={preview.shopNumber}
+            label={<span className="inline-block">+ Add teammate</span>}
+            className="rounded-full border pm5-teal-border pm5-teal-soft px-4 py-2 text-sm font-semibold text-pm5-teal transition hover:pm5-teal-soft"
+          />
+        </div>
 
         
         <section className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
@@ -829,14 +837,15 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
   const renderRoster = (source: PeopleFeaturePreview["roster"]) => (
     <div>
       <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Active teammates ({source.length})</p>
-      <div className="mt-3 overflow-x-auto">
+          <div className="mt-3 overflow-x-auto">
         <table className="w-full text-left text-sm text-slate-300">
           <thead>
             <tr className="text-xs uppercase tracking-[0.2em] text-slate-500">
               <th className="pb-2 pr-4">Name</th>
               <th className="pb-2 pr-4">Role</th>
               <th className="pb-2 pr-4">Status</th>
-              <th className="pb-2">Tenure</th>
+              <th className="pb-2 pr-4">Tenure</th>
+              <th className="pb-2">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -845,7 +854,15 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
                 <td className="py-2 pr-4">{teammate.name}</td>
                 <td className="py-2 pr-4">{teammate.role ?? "--"}</td>
                 <td className="py-2 pr-4">{teammate.status ?? "Active"}</td>
-                <td className="py-2">{formatTenureLabel(teammate.tenureMonths)}</td>
+                <td className="py-2 pr-4">{formatTenureLabel(teammate.tenureMonths)}</td>
+                <td className="py-2">
+                  <EmployeeProfileModalTrigger
+                    staffId={teammate.id}
+                    shopNumber={preview.shopNumber}
+                    label={<span className="text-sm text-pm5-teal underline-offset-4 hover:underline">Edit</span>}
+                    className="text-sm"
+                  />
+                </td>
               </tr>
             ))}
           </tbody>

@@ -122,7 +122,7 @@ export function usePocketHierarchy(redirectPath = "/pocket-manager5"): UsePocket
     const run = async () => {
       try {
         // Prefer the new server API which uses normalized tables; fall back to cached summary
-        const resp = await fetch("/api/hierarchy/summary");
+        const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
         if (cancelled) return;
 
         if (!resp.ok) {

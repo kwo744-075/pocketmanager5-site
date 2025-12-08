@@ -1,10 +1,18 @@
 import fs from "fs";
 import path from "path";
 
-export async function GET(_req: Request, context: any) {
+type SampleRouteContext = { params?: { name?: string } } | Promise<{ params?: { name?: string } }>;
+
+async function resolveParams(context: SampleRouteContext | undefined) {
+  if (!context) return undefined;
+  const resolved = await Promise.resolve(context);
+  return resolved?.params;
+}
+
+export async function GET(_req: Request, context?: SampleRouteContext) {
   try {
     // context.params may be a Promise in some Next.js type flows; resolve defensively
-    const params = await Promise.resolve(context?.params);
+    const params = await resolveParams(context);
     const rawName = params?.name;
     // basic sanitization: disallow path traversal
     if (!rawName || rawName.includes("..") || rawName.includes("/") || rawName.includes("\\")) {
@@ -38,7 +46,7 @@ export async function GET(_req: Request, context: any) {
         "Content-Disposition": `attachment; filename="${rawName}"`,
       },
     });
-  } catch (err: any) {
+  } catch (err) {
     console.error(err);
     return new Response("Server error", { status: 500 });
   }

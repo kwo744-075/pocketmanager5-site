@@ -1,6 +1,15 @@
-import fs from 'fs';
-import path from 'path';
-import * as XLSX from 'xlsx';
+import fs from "fs";
+import path from "path";
+import * as XLSX from "xlsx";
+
+type GeneratedTask = {
+  id: string;
+  label: string;
+  category: string;
+  allowedRoles: string[];
+  linkHref?: string;
+  linkLabel?: string;
+};
 
 async function main() {
   const repo = process.cwd();
@@ -15,14 +24,15 @@ async function main() {
   const buffer = await fs.promises.readFile(filePath);
   const workbook = XLSX.read(buffer, { type: 'buffer' });
 
-  const weekdays = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-  const patch: Record<string, any[]> = {};
+  const weekdays = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const patch: Record<string, GeneratedTask[]> = {};
 
   for (const day of weekdays) {
     const sheet = workbook.Sheets[day];
-    const tasks: any[] = [];
+    const tasks: GeneratedTask[] = [];
     if (sheet) {
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[];
+      const rawRows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+      const rows = Array.isArray(rawRows) ? rawRows : [];
       // iterate rows and look for task labels in first column (column A)
       let taskIndex = 0;
       for (let r = 0; r < rows.length; r++) {
@@ -37,30 +47,30 @@ async function main() {
         if (skipLabel) continue;
         taskIndex++;
         const id = `gen-${day.toLowerCase()}-${taskIndex}`;
-        const task: any = {
+        const task: GeneratedTask = {
           id,
           label: text,
-          category: 'core',
-          allowedRoles: ['RD','VP','ADMIN'],
+          category: "core",
+          allowedRoles: ["RD","VP","ADMIN"],
         };
         // if this task references labor, link to the daily labor portal and add a pill
         if (/labor/i.test(text)) {
-          task.linkHref = '/pocket-manager5/features/daily-labor';
-          task.linkLabel = 'Daily Labor Portal';
+          task.linkHref = "/pocket-manager5/features/daily-labor";
+          task.linkLabel = "Daily Labor Portal";
         }
         tasks.push(task);
       }
     }
     if (tasks.length === 0) {
       // fallback placeholder
-      tasks.push({ id: `gen-${day.toLowerCase()}-1`, label: `Daily ${day} placeholder task`, category: 'core', allowedRoles: ['RD','VP','ADMIN'] });
+      tasks.push({ id: `gen-${day.toLowerCase()}-1`, label: `Daily ${day} placeholder task`, category: "core", allowedRoles: ["RD","VP","ADMIN"] });
     }
     patch[day] = tasks;
   }
 
-  const outPath = path.join(repo, 'scripts', 'cadence_tasks_patch.json');
-  await fs.promises.writeFile(outPath, JSON.stringify(patch, null, 2), 'utf-8');
-  console.log('Wrote patch to', outPath);
+  const outPath = path.join(repo, "scripts", "cadence_tasks_patch.json");
+  await fs.promises.writeFile(outPath, JSON.stringify(patch, null, 2), "utf-8");
+  console.log("Wrote patch to", outPath);
 }
 
-main().catch(err => { console.error(err); process.exit(1); });
+main().catch((err) => { console.error(err); process.exit(1); });

@@ -1,4 +1,11 @@
-export const GENERATED_CADENCE_TASKS: Record<string, any[]> = {
+type GeneratedTask = {
+  id: string;
+  label: string;
+  category?: string;
+  allowedRoles?: string[];
+};
+
+export const GENERATED_CADENCE_TASKS: Record<string, GeneratedTask[]> = {
   "Sunday": [
     {
       "id": "gen-sunday-1",

@@ -18,6 +18,11 @@ type CheckInPayload = {
   submitted_at: string;
 };
 
+type UpsertResultShape = {
+  data: unknown[] | null;
+  error: { message?: string | null; details?: string | null; hint?: string | null } | null;
+};
+
 function normalizePayload(raw: unknown): CheckInPayload | null {
   if (!raw || typeof raw !== "object") {
     return null;
@@ -79,10 +84,39 @@ export async function POST(request: NextRequest) {
     }
 
     // Upsert with onConflict keys so we never overwrite an already submitted slot
-    const { data: inserted, error } = await supabaseAdmin
-      .from("check_ins")
-      .upsert([payload], { onConflict: "shop_id,check_in_date,time_slot" })
-      .select("time_slot");
+    // Some deployments may not have the `fuel_filters` column yet. If the
+    // upsert fails due to that missing column, retry without the field.
+    async function tryUpsert(p: Partial<CheckInPayload>) {
+      // Clean undefined keys so the client won't send them explicitly
+      const cleaned = Object.fromEntries(Object.entries(p).filter(([, v]) => v !== undefined));
+      try {
+        return (await supabaseAdmin
+          .from("check_ins")
+          .upsert([cleaned], { onConflict: "shop_id,check_in_date,time_slot" })
+          .select("time_slot")) as UpsertResultShape;
+      } catch (e) {
+        // Some Supabase/PostgREST errors can throw; normalize into the expected shape
+        const message = e instanceof Error ? e.message : String(e);
+        return { data: null, error: { message } } as UpsertResultShape;
+      }
+    }
+
+    let upsertResult = await tryUpsert(payload);
+
+    if (upsertResult.error) {
+      const msg = String(upsertResult.error.message ?? upsertResult.error.details ?? upsertResult.error.hint ?? "");
+      if (msg.toLowerCase().includes("fuel_filters")) {
+        // Retry without fuel_filters column
+        console.warn("check-ins upsert retrying without fuel_filters due to schema mismatch");
+        const payloadNoFuel: Partial<CheckInPayload> = { ...payload };
+        // safely remove the key without using `any`
+        const clone = { ...(payloadNoFuel as Record<string, unknown>) };
+        delete clone["fuel_filters"];
+        upsertResult = await tryUpsert(clone as Partial<CheckInPayload>);
+      }
+    }
+
+    const { data: inserted, error } = upsertResult as UpsertResultShape;
 
     if (error) {
       console.error("check-ins upsert error", error);

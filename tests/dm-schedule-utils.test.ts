@@ -7,7 +7,7 @@ import {
   DM_SCHEDULE_LOCATIONS,
   type SampleScheduleEntry,
   type ScheduleLocationId,
-} from "@shared/features/dm-schedule/dmScheduleUtils";
+} from "./dmScheduleUtils.mock";
 
 const makeEntry = (
   options: {

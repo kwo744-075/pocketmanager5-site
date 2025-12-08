@@ -18,13 +18,15 @@ export async function GET() {
     const sheets: Array<{ name: string; headers: string[]; rowCount: number }> = [];
     for (const name of workbook.SheetNames) {
       const sheet = workbook.Sheets[name];
-      const rows: any[][] = XLSX.utils.sheet_to_json(sheet, { header: 1 }) as any[];
-      const headers = Array.isArray(rows[0]) ? rows[0].map((h) => String(h ?? "").trim()) : [];
-      sheets.push({ name, headers, rowCount: rows.length });
+      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1 });
+      const normalizedRows = Array.isArray(rows) ? rows : [];
+      const headerRow = Array.isArray(normalizedRows[0]) ? normalizedRows[0] : [];
+      const headers = headerRow.map((headerCell) => String(headerCell ?? "").trim());
+      sheets.push({ name, headers, rowCount: normalizedRows.length });
     }
 
     return new Response(JSON.stringify({ file: fileName, sheets }), { status: 200, headers: { "Content-Type": "application/json" } });
-  } catch (err: any) {
+  } catch (err) {
     console.error(err);
     return new Response(JSON.stringify({ error: "Failed to parse workbook" }), { status: 500, headers: { "Content-Type": "application/json" } });
   }

@@ -133,7 +133,7 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await (admin as any).from('cadence_templates').upsert(payload as any, { onConflict: ['scope', 'scope_id', 'day'] }).select().maybeSingle();
+    const { data, error } = await admin.from('cadence_templates').upsert([payload], { onConflict: 'scope,scope_id,day' }).select().maybeSingle();
     if (error) {
       console.error('cadence templates upsert failed', error);
       return NextResponse.json({ error: 'Upsert failed' }, { status: 500 });

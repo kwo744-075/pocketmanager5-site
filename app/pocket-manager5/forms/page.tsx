@@ -20,7 +20,7 @@ export default function FormsLibraryPage() {
       <div className="mx-auto max-w-5xl px-4 py-12">
         <Link
           href="/pocket-manager5"
-          className="inline-flex items-center gap-2 text-sm font-semibold text-emerald-200 transition hover:text-emerald-100"
+          className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
         >
           <span aria-hidden>↩</span> Back to Pocket Manager5
         </Link>
@@ -43,12 +43,12 @@ export default function FormsLibraryPage() {
                     <Link
                       key={form.slug}
                       href={`/pocket-manager5/forms/${form.slug}`}
-                      className="rounded-3xl border border-slate-900/70 bg-slate-900/40 p-5 transition hover:border-emerald-400/40 hover:bg-slate-900/60"
+                      className="rounded-3xl border border-slate-900/70 bg-slate-900/40 p-5 transition hover:pm5-teal-border hover:bg-slate-900/60"
                     >
                       <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{feature?.title ?? "Form"}</p>
                       <h2 className="mt-1 text-xl font-semibold text-white">{form.title}</h2>
                       <p className="mt-2 text-sm text-slate-400">{form.description}</p>
-                      <div className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-emerald-200">
+                      <div className="mt-4 inline-flex items-center gap-2 text-xs font-semibold text-pm5-teal">
                         <span>Open form</span>
                         <span aria-hidden>↗</span>
                       </div>

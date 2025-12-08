@@ -109,7 +109,7 @@ export function HierarchyStamp({ align = "right", loginEmail, hierarchy }: Hiera
         if (!loginEmail || normalizeLogin(loginEmail) === normalizeLogin(localLogin)) {
           // current user — call server API
           try {
-            const resp = await fetch("/api/hierarchy/summary");
+            const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
             if (resp.ok) {
               const body = await resp.json();
               parsed = body?.data ?? null;

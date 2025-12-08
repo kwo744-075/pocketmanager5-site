@@ -17,8 +17,18 @@ type HierarchySummary = {
   shops_in_division: number | null;
 };
 
-export async function GET(req: Request) {
+type ShopRow = {
+  shop_number?: number | string | null;
+  shop_name?: string | null;
+  district_id?: string | null;
+  region_id?: string | null;
+  district_name?: string | null;
+  region_name?: string | null;
+  division_name?: string | null;
+};
+export async function GET(_req: Request) {
   try {
+    void _req;
     const session = await getServerSession();
     if (!session?.user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
@@ -40,21 +50,21 @@ export async function GET(req: Request) {
     if (shopNumber) {
       // Try to fetch shop metadata from shops table
       try {
-        const { data: shop } = await admin
+        const shopResp = await admin
           .from("shops")
           .select("shop_number, shop_name, district_id, region_id, district_name, region_name, division_name")
           .eq("shop_number", shopNumber)
           .limit(1)
           .maybeSingle();
-
+        const shop = (shopResp.data ?? null) as ShopRow | null;
         if (shop) {
-          shopNumber = String((shop as any).shop_number ?? shopNumber);
-          districtName = (shop as any).district_name ?? null;
-          regionName = (shop as any).region_name ?? null;
-          divisionName = (shop as any).division_name ?? null;
+          shopNumber = String(shop.shop_number ?? shopNumber);
+          districtName = shop.district_name ?? null;
+          regionName = shop.region_name ?? null;
+          divisionName = shop.division_name ?? null;
         }
-      } catch (err) {
-        // ignore
+      } catch (_err) {
+        void _err;
       }
     }
 
@@ -75,22 +85,23 @@ export async function GET(req: Request) {
       }
 
       if (regionName) {
-        let distinctDistricts: any = null;
+        let distinctDistricts: unknown = null;
         try {
           const resp = await admin.rpc("distinct_districts_in_region", { region_name: regionName }).maybeSingle();
           distinctDistricts = resp?.data ?? null;
-        } catch (e) {
+        } catch (_e) {
+          void _e;
           distinctDistricts = null;
         }
 
         // fallback: count distinct district_name
         if (!distinctDistricts) {
-          const { data } = await admin
+          const shopList = await admin
             .from("shops")
             .select("district_name")
             .eq("region_name", regionName);
           const set = new Set<string>();
-          (data ?? []).forEach((r: any) => r.district_name && set.add(r.district_name));
+          (shopList.data ?? []).forEach((r: ShopRow) => r.district_name && set.add(r.district_name as string));
           districtsInRegion = set.size;
         }
 
@@ -102,12 +113,12 @@ export async function GET(req: Request) {
       }
 
       if (divisionName) {
-        const { data } = await admin
+        const regionList = await admin
           .from("shops")
           .select("region_name")
           .eq("division_name", divisionName);
         const set = new Set<string>();
-        (data ?? []).forEach((r: any) => r.region_name && set.add(r.region_name));
+        (regionList.data ?? []).forEach((r: ShopRow) => r.region_name && set.add(r.region_name as string));
         regionsInDivision = set.size;
 
         const { count: sdiv } = await admin
@@ -116,8 +127,8 @@ export async function GET(req: Request) {
           .eq("division_name", divisionName);
         shopsInDivision = typeof sdiv === "number" ? sdiv : null;
       }
-    } catch (err) {
-      // ignore counting errors
+    } catch (_err) {
+      void _err;
     }
 
     // Determine scope level by membership specificity

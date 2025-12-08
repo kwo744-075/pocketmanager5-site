@@ -1,4 +1,5 @@
 import { pulseSupabase } from "@/lib/supabaseClient";
+import { buildTotalsSelectColumns, runSelectWithFuelFilterFallback } from "@/lib/fuelFilterFallback";
 
 const toSafeNumber = (value: number | null | undefined): number => value ?? 0;
 
@@ -178,80 +179,146 @@ export async function fetchHierarchyRollups({
   const [districtDaily, districtWeekly, regionDaily, regionWeekly, divisionDaily, divisionWeekly] = await Promise.all([
     districtId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("district_daily_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,daily_aro,daily_big4_percent,daily_coolant_percent,daily_diffs_percent,daily_mobil1_percent,district_name"
-            )
-            .eq("district_id", districtId)
-            .eq("check_in_date", dailyDate)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("district_daily_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "daily_aro",
+                    "daily_big4_percent",
+                    "daily_coolant_percent",
+                    "daily_diffs_percent",
+                    "daily_mobil1_percent",
+                    "district_name",
+                  ],
+                })
+              )
+              .eq("district_id", districtId)
+              .eq("check_in_date", dailyDate)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
     districtId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("district_wtd_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,wtd_aro,wtd_big4_percent,wtd_coolant_percent,wtd_diffs_percent,wtd_mobil1_percent,district_name"
-            )
-            .eq("district_id", districtId)
-            .eq("week_start", weekStart)
-            .order("current_date", { ascending: false })
-            .limit(1)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("district_wtd_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "wtd_aro",
+                    "wtd_big4_percent",
+                    "wtd_coolant_percent",
+                    "wtd_diffs_percent",
+                    "wtd_mobil1_percent",
+                    "district_name",
+                  ],
+                })
+              )
+              .eq("district_id", districtId)
+              .eq("week_start", weekStart)
+              .order("current_date", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
     regionId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("region_daily_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,daily_aro,daily_big4_percent,daily_coolant_percent,daily_diffs_percent,daily_mobil1_percent,region_name"
-            )
-            .eq("region_id", regionId)
-            .eq("check_in_date", dailyDate)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("region_daily_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "daily_aro",
+                    "daily_big4_percent",
+                    "daily_coolant_percent",
+                    "daily_diffs_percent",
+                    "daily_mobil1_percent",
+                    "region_name",
+                  ],
+                })
+              )
+              .eq("region_id", regionId)
+              .eq("check_in_date", dailyDate)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
     regionId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("region_wtd_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,wtd_aro,wtd_big4_percent,wtd_coolant_percent,wtd_diffs_percent,wtd_mobil1_percent,region_name"
-            )
-            .eq("region_id", regionId)
-            .eq("week_start", weekStart)
-            .order("current_date", { ascending: false })
-            .limit(1)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("region_wtd_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "wtd_aro",
+                    "wtd_big4_percent",
+                    "wtd_coolant_percent",
+                    "wtd_diffs_percent",
+                    "wtd_mobil1_percent",
+                    "region_name",
+                  ],
+                })
+              )
+              .eq("region_id", regionId)
+              .eq("week_start", weekStart)
+              .order("current_date", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
     divisionId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("division_daily_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,daily_aro,daily_big4_percent,daily_coolant_percent,daily_diffs_percent,daily_mobil1_percent,division_name"
-            )
-            .eq("division_id", divisionId)
-            .eq("check_in_date", dailyDate)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("division_daily_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "daily_aro",
+                    "daily_big4_percent",
+                    "daily_coolant_percent",
+                    "daily_diffs_percent",
+                    "daily_mobil1_percent",
+                    "division_name",
+                  ],
+                })
+              )
+              .eq("division_id", divisionId)
+              .eq("check_in_date", dailyDate)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
     divisionId
       ? handleResponse<TotalsRow>(
-          pulseSupabase
-            .from("division_wtd_totals")
-            .select(
-              "total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1,wtd_aro,wtd_big4_percent,wtd_coolant_percent,wtd_diffs_percent,wtd_mobil1_percent,division_name"
-            )
-            .eq("division_id", divisionId)
-            .eq("week_start", weekStart)
-            .order("current_date", { ascending: false })
-            .limit(1)
-            .maybeSingle()
+          runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+            pulseSupabase
+              .from("division_wtd_totals")
+              .select(
+                buildTotalsSelectColumns(includeFuelFilters, {
+                  trailing: [
+                    "wtd_aro",
+                    "wtd_big4_percent",
+                    "wtd_coolant_percent",
+                    "wtd_diffs_percent",
+                    "wtd_mobil1_percent",
+                    "division_name",
+                  ],
+                })
+              )
+              .eq("division_id", divisionId)
+              .eq("week_start", weekStart)
+              .order("current_date", { ascending: false })
+              .limit(1)
+              .maybeSingle()
+          )
         )
       : Promise.resolve(null),
   ]);

@@ -92,11 +92,12 @@ const metricLabels: Record<Exclude<MetricFilter, "all">, string> = {
   fuelFilters: "Fuel filters",
 };
 
-const metricSeverity: Record<Exclude<MetricFilter, "all">, string> = {
+const _metricSeverity: Record<Exclude<MetricFilter, "all">, string> = {
   coolants: "bg-sky-500/20 text-sky-100",
   diffs: "bg-indigo-500/20 text-indigo-100",
-  fuelFilters: "bg-emerald-500/20 text-emerald-100",
+  fuelFilters: "pm5-teal-soft pm5-accent-text",
 };
+void _metricSeverity;
 
 const isMetricFilter = (value: string | null): value is MetricFilter =>
   metricFilterDefinitions.some((filter) => filter.key === value);
@@ -136,17 +137,17 @@ export default function ZeroShopsPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400"
+            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:pm5-teal-border"
           >
             ← Back
           </button>
-          <Link href="/rankings/detail" className="text-xs text-emerald-300 hover:underline">
+          <Link href="/rankings/detail" className="text-xs text-pm5-teal hover:underline">
             Rankings detail
           </Link>
         </div>
 
         <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/40">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-amber-300">Zero shops list</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-amber">Zero shops list</p>
           <h1 className="text-3xl font-semibold text-white">Shops with zeros in key KPIs</h1>
           <p className="text-sm text-slate-300">
             {filteredRows.length} shop{filteredRows.length === 1 ? "" : "s"} • filter to focus your follow-ups
@@ -161,7 +162,7 @@ export default function ZeroShopsPage() {
               onClick={() => setFilter(option.key)}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 filter === option.key
-                  ? "border-amber-400 bg-amber-500/10 text-amber-50"
+                  ? "pm5-amber-border pm5-amber-soft pm5-accent-text"
                   : "border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600"
               }`}
             >

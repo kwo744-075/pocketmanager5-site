@@ -43,7 +43,7 @@ export async function fetchRetailContext(targetDate?: string): Promise<RetailCon
       .maybeSingle();
 
     if (error) {
-      console.error("retail_calendar fetch error", error);
+      console.warn("retail_calendar fetch warning", { message: error.message, hint: "falling back to secondary client" });
       continue;
     }
 

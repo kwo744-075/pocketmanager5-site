@@ -1,21 +1,45 @@
 import { NextResponse } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { getServerSession } from "@/lib/auth/session";
-import { hasShopAccess } from "@/lib/auth/alignment";
-
 import type { DmListItem } from "@/lib/types/cadence";
 
-function deriveUserRole(alignment: any): "Shop" | "DM" | "RD" | "VP" | "Unknown" {
+type AlignmentMembership = { role?: string | null };
+type AlignmentContext = {
+  memberships?: AlignmentMembership[];
+  shops?: Array<string | number>;
+  activeAlignmentId?: string | number | null;
+};
+
+type DmListPostBody = {
+  message: string;
+  category?: DmListItem["category"];
+  priority?: DmListItem["priority"];
+  shopId?: string | number;
+  carryForwardUntilCompleted?: boolean;
+  effectiveDate?: string;
+};
+
+type DmListInsert = Pick<DmListItem, "message" | "category" | "priority" | "created_by_user_id" | "created_by_role" | "target_role" | "shop_id" | "district_id" | "region_id" | "status" | "carry_forward_until_completed" | "effective_date"> & {
+  alignment_id: string | number | null;
+};
+
+type DmListPatchPayload = Partial<Pick<DmListItem, "status" | "resolution_type">> & {
+  completed_at?: string | null;
+};
+
+function deriveUserRole(alignment: AlignmentContext | undefined): "Shop" | "DM" | "RD" | "VP" | "Unknown" {
   if (!alignment?.memberships?.length) return "Unknown";
-  const roles = alignment.memberships.map((m: any) => (m.role ?? "").toString().toLowerCase());
-  if (roles.some((r: string) => r.includes("vp"))) return "VP";
-  if (roles.some((r: string) => r.includes("rd") || r.includes("regional"))) return "RD";
-  if (roles.some((r: string) => r.includes("dm") || r.includes("district"))) return "DM";
-  if (roles.some((r: string) => r.includes("shop") || r.includes("employee") || r.includes("ops"))) return "Shop";
+  const roles = alignment.memberships
+    .map((membership) => membership.role ?? "")
+    .map((role) => role.toString().toLowerCase());
+  if (roles.some((role) => role.includes("vp"))) return "VP";
+  if (roles.some((role) => role.includes("rd") || role.includes("regional"))) return "RD";
+  if (roles.some((role) => role.includes("dm") || role.includes("district"))) return "DM";
+  if (roles.some((role) => role.includes("shop") || role.includes("employee") || role.includes("ops"))) return "Shop";
   return "Unknown";
 }
 
-function nextLevel(role: string) {
+function nextLevel(role: ReturnType<typeof deriveUserRole>): DmListItem["target_role"] {
   switch (role) {
     case "Shop":
       return "DM";
@@ -49,48 +73,49 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Query failed" }, { status: 500 });
     }
 
-    const items: DmListItem[] = (data ?? []) as any;
+    const items = (data ?? []) as DmListItem[];
     const today = new Date().toISOString().split("T")[0];
     const userRole = deriveUserRole(session.alignment);
 
     // Filter by alignment scope and carry-forward rules
     const visible = items.filter((it) => {
       // only pending shows in the cadence inbox
-      if ((it as any).status !== "pending") return false;
+      if (it.status !== "pending") return false;
 
       // alignment-based scoping
       if (userRole === "Shop") {
-        return (it as any).created_by_user_id === userId || (it as any).shop_id === (session.alignment?.shops?.[0] ?? null);
+        const firstShop = session.alignment?.shops?.[0];
+        return it.created_by_user_id === userId || (firstShop ? String(it.shop_id) === String(firstShop) : false);
       }
 
       if (userRole === "DM") {
         // DM sees items targeted to DM and within their shops
-        if ((it as any).target_role !== "DM") return false;
-        if (session.alignment?.shops?.length && (it as any).shop_id) {
-          return session.alignment.shops.some((s: string) => String(s) === String((it as any).shop_id));
+        if (it.target_role !== "DM") return false;
+        if (session.alignment?.shops?.length && it.shop_id) {
+          return session.alignment.shops.some((shop) => String(shop) === String(it.shop_id));
         }
       }
 
       if (userRole === "RD") {
-        if ((it as any).target_role !== "RD") return false;
+        if (it.target_role !== "RD") return false;
         // If we have an activeAlignmentId, match against district/active alignment
-        if (session.alignment?.activeAlignmentId && (it as any).district_id) {
-          return String(session.alignment.activeAlignmentId) === String((it as any).district_id);
+        if (session.alignment?.activeAlignmentId && it.district_id) {
+          return String(session.alignment.activeAlignmentId) === String(it.district_id);
         }
         // Fallback: if the RD has shops listed, include items for those shops
-        if (session.alignment?.shops?.length && (it as any).shop_id) {
-          return session.alignment.shops.some((s: string) => String(s) === String((it as any).shop_id));
+        if (session.alignment?.shops?.length && it.shop_id) {
+          return session.alignment.shops.some((shop) => String(shop) === String(it.shop_id));
         }
       }
 
       if (userRole === "VP") {
-        if ((it as any).target_role !== "VP") return false;
+        if (it.target_role !== "VP") return false;
         // VP-level scoping could be company or region; accept if any overlap
       }
 
       // carry-forward logic: show if effective_date <= today OR if effective_date < today and carry_forward_until_completed true
-      const effective = String((it as any).effective_date ?? (it as any).effectiveDate ?? today).split("T")[0];
-      const carry = Boolean((it as any).carry_forward_until_completed ?? (it as any).carryForwardUntilCompleted ?? true);
+      const effective = String(it.effective_date ?? today).split("T")[0];
+      const carry = Boolean(it.carry_forward_until_completed ?? true);
 
       if (effective === today) return true;
       if (effective < today && carry) return true;
@@ -98,7 +123,7 @@ export async function GET(request: Request) {
     });
 
     // If shopId param provided, narrow further
-    const final = shopId ? visible.filter((v) => String((v as any).shop_id ?? (v as any).shopId) === String(shopId)) : visible;
+    const final = shopId ? visible.filter((v) => String(v.shop_id ?? "") === String(shopId)) : visible;
 
     return NextResponse.json({ data: final });
   } catch (err) {
@@ -112,7 +137,7 @@ export async function POST(request: Request) {
     const session = await getServerSession();
     if (!session?.user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
 
-    const body = await request.json();
+    const body = (await request.json()) as Partial<DmListPostBody>;
     if (!body?.message) return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
 
     const admin = getSupabaseAdmin();
@@ -120,24 +145,24 @@ export async function POST(request: Request) {
     const targetRole = nextLevel(userRole);
 
     // Determine alignment-scoped ids based on caller
-    let shop_id = null;
-    let district_id = null;
-    const region_id = null;
+    let shop_id: string | null = null;
+    let district_id: string | null = null;
+    const region_id: string | null = null;
 
     if (userRole === "Shop") {
-      shop_id = session.alignment?.shops?.[0] ?? null;
+      shop_id = session.alignment?.shops?.[0] ? String(session.alignment.shops[0]) : null;
     } else if (userRole === "DM") {
       // require shopId parameter and ensure it's in DM's alignment
       if (!body?.shopId) return NextResponse.json({ error: "Missing shopId" }, { status: 400 });
-      if (!session.alignment?.shops?.some((s: string) => String(s) === String(body.shopId))) {
+      if (!session.alignment?.shops?.some((shop) => String(shop) === String(body.shopId))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
       shop_id = String(body.shopId);
     } else if (userRole === "RD") {
-      district_id = session.alignment?.activeAlignmentId ?? null;
+      district_id = session.alignment?.activeAlignmentId ? String(session.alignment.activeAlignmentId) : null;
     }
 
-    const payload: any = {
+    const payload: DmListInsert = {
       message: body.message,
       category: body.category ?? "Other",
       priority: body.priority ?? "Normal",
@@ -174,19 +199,19 @@ export async function PATCH(request: Request) {
     const id = url.searchParams.get("id");
     if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
 
-    const body = await request.json();
-    const updates: any = {};
+    const body = (await request.json()) as Partial<{ status: DmListItem["status"]; resolutionType?: DmListItem["resolution_type"] }>;
+    const updates: DmListPatchPayload = {};
     if (body.status) updates.status = body.status;
     if (body.resolutionType) updates.resolution_type = body.resolutionType;
     if (body.status === "completed") updates.completed_at = new Date().toISOString();
 
     const admin = getSupabaseAdmin();
-    const { data: existing } = await admin.from("dm_list").select("*").eq("id", id).maybeSingle();
+    const { data: existing } = await admin.from("dm_list").select("*").eq("id", id).maybeSingle<DmListItem>();
     if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
     // simple alignment check: only allow updating if item is in user's alignment scope
     const userRole = deriveUserRole(session.alignment);
-    if (userRole === "Shop" && (existing as any).created_by_user_id !== session.user.id) {
+    if (userRole === "Shop" && existing.created_by_user_id !== session.user.id) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 

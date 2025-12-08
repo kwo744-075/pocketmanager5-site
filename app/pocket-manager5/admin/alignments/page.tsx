@@ -127,7 +127,14 @@ async function removeShopRoleAction(formData: FormData) {
 }
 
 export default async function AlignmentAdminPage() {
-  const session = await requireServerSession();
+  let session;
+  try {
+    session = await requireServerSession();
+  } catch (err) {
+    // If the user is not authenticated, redirect to login with a return path
+    redirect(`/login?redirect=/pocket-manager5/admin/alignments`);
+  }
+
   if (!userCanManageAlignments(session.alignment)) {
     redirect("/pocket-manager5");
   }

@@ -224,6 +224,8 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     historicalEntries: historicalEntriesProp,
   } = inputs;
 
+  void historicalEntriesProp;
+
   const activePeriodInfo = periodInfoProp ?? periodInfo;
   const activeCalendarGrid = calendarGridProp ?? calendarGrid;
   const activeEntries = scheduleEntriesProp ?? scheduleEntries;
@@ -253,7 +255,7 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     [coverageSummaryProp, activeEntries],
   );
 
-  const historicalEntries = historicalEntriesProp;
+  
 
   const nextPeriodInfo = useMemo(() => {
     const anchor = new Date(activePeriodInfo.endDate);
@@ -546,12 +548,12 @@ export function DmSchedulePlanner({
         if (!panel) return;
 
         const shopId = shop || shopNumber || "home";
-        const location = (DM_SCHEDULE_LOCATIONS as any)[shopId]?.label ?? `Shop ${String(shopId)}`;
+        const location = (DM_SCHEDULE_LOCATIONS as Record<string, { label: string }>)[shopId]?.label ?? `Shop ${String(shopId)}`;
         const entry: SampleScheduleEntry = {
           date: new Date(dayIso),
           iso: dayIso,
           visitType: visitType || "Standard Visit",
-          shopId: shopId as any,
+          shopId: shopId as string,
           focus: null,
           status: "planned",
           locationLabel: location,
@@ -666,16 +668,16 @@ export function DmSchedulePlanner({
     [activeSelectedDate, activeSelectedPanelKey, handleDaySelection],
   );
 
-  const buildPanelEmailPayload = useCallback((...args: any[]) => {
-    const [
-      panel,
-      flattenedEntries,
-      panelCoverage,
-      auditHeadline,
-      periodRangeLabel,
-      entryTypeCounts,
-      panelVisitCount,
-    ] = args as [PlannerPeriodPanel, SampleScheduleEntry[], ReturnType<typeof buildCoverageSummary>, string, string, Record<string, number>, number];
+  const buildPanelEmailPayload = useCallback(
+    (
+      panel: PlannerPeriodPanel,
+      flattenedEntries: SampleScheduleEntry[],
+      panelCoverage: ReturnType<typeof buildCoverageSummary>,
+      auditHeadline: string,
+      periodRangeLabel: string,
+      entryTypeCounts: Record<string, number>,
+      panelVisitCount: number,
+    ) => {
     const sortedEntries = [...flattenedEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
     const visitLines = sortedEntries.length
       ? sortedEntries.map((entry) => {
@@ -844,12 +846,12 @@ export function DmSchedulePlanner({
       const newMap: Record<string, SampleScheduleEntry[]> = {};
 
       const pushEntry = (day: PeriodDay, shopId: string, visitType: string) => {
-        const location = (DM_SCHEDULE_LOCATIONS as any)[shopId]?.label ?? `Shop ${String(shopId)}`;
+        const location = (DM_SCHEDULE_LOCATIONS as Record<string, { label: string }>)[shopId]?.label ?? `Shop ${String(shopId)}`;
         const entry: SampleScheduleEntry = {
           date: day.date,
           iso: day.iso,
           visitType,
-          shopId: shopId as any,
+          shopId: shopId as string,
           focus: null,
           status: "planned",
           locationLabel: location,
@@ -946,6 +948,7 @@ export function DmSchedulePlanner({
               .sort((a, b) => a.getTime() - b.getTime());
             return hist;
           } catch (err) {
+            void err;
             return [] as Date[];
           }
         })();
@@ -1000,7 +1003,7 @@ export function DmSchedulePlanner({
       setPanelOverrides((prev) => ({ ...prev, [panel.storageKey]: cloneEntriesMap(newMap) }));
       setClearedPanels((prev) => ({ ...prev, [panel.storageKey]: false }));
     },
-    [setPanelOverrides, setClearedPanels],
+    [historicalEntriesProp, setPanelOverrides, setClearedPanels],
   );
 
   const visibleVisitMix = visitMix.filter((mix) => mix.count > 0);
@@ -1200,7 +1203,7 @@ export function DmSchedulePlanner({
                 dueChecklist={dueChecklist}
                 coverageSummary={coverageSummary}
                 // show tracker anchored to next period
-                // @ts-ignore - anchorDate intentionally passed into tracker to shift period
+                // @ts-expect-error - anchorDate intentionally passed into tracker to shift period
                 anchorDate={nextPeriodAnchor}
               />
             </div>
@@ -1218,7 +1221,7 @@ export function DmSchedulePlanner({
               visitMix={visitMix}
               dueChecklist={dueChecklist}
               coverageSummary={coverageSummary}
-              // @ts-ignore - anchorDate intentionally passed
+              // @ts-expect-error - anchorDate intentionally passed
               anchorDate={yearStartAnchor}
             />
           </div>
@@ -1577,7 +1580,7 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
         onClose();
       }
     },
-    [day.iso, visitTypeInput, shopInput, onAdd, onClose],
+    [day.iso, visitTypeInput, shopInput, onAdd, onClose, isSubmitting],
   );
 
   const formattedDate = shortDateFormatter.format(day.date);
