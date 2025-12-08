@@ -1,4 +1,5 @@
 import { pulseSupabase } from "@/lib/supabaseClient";
+import { buildTotalsSelectColumns, runSelectWithFuelFilterFallback } from "@/lib/fuelFilterFallback";
 
 export type PulseTotals = {
   cars: number;
@@ -64,28 +65,25 @@ export async function fetchShopTotals(shopId: string): Promise<PulseTotalsResult
   const weekStart = getWeekStartISO();
 
   const [dailyResponse, weeklyResponse] = await Promise.all([
-    pulseSupabase
-      .from("shop_daily_totals")
-      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1")
-      .eq("shop_id", shopId)
-      .eq("check_in_date", dailyDate)
-      .maybeSingle(),
-    pulseSupabase
-      .from("shop_wtd_totals")
-      .select("total_cars,total_sales,total_big4,total_coolants,total_diffs,total_fuel_filters,total_donations,total_mobil1")
-      .eq("shop_id", shopId)
-      .eq("week_start", weekStart)
-      .order("current_date", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
+    runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+      pulseSupabase
+        .from("shop_daily_totals")
+        .select(buildTotalsSelectColumns(includeFuelFilters))
+        .eq("shop_id", shopId)
+        .eq("check_in_date", dailyDate)
+        .maybeSingle()
+    ),
+    runSelectWithFuelFilterFallback<TotalsRow | null>((includeFuelFilters) =>
+      pulseSupabase
+        .from("shop_wtd_totals")
+        .select(buildTotalsSelectColumns(includeFuelFilters))
+        .eq("shop_id", shopId)
+        .eq("week_start", weekStart)
+        .order("current_date", { ascending: false })
+        .limit(1)
+        .maybeSingle()
+    ),
   ]);
-
-  if (dailyResponse.error && dailyResponse.error.code !== "PGRST116") {
-    throw dailyResponse.error;
-  }
-  if (weeklyResponse.error && weeklyResponse.error.code !== "PGRST116") {
-    throw weeklyResponse.error;
-  }
 
   return {
     daily: buildTotals(dailyResponse.data ?? null),

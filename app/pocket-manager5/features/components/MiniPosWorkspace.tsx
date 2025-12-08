@@ -325,9 +325,9 @@ export function MiniPosWorkspace() {
             <h2 className="text-3xl font-semibold text-white">Pricing decks & oil families</h2>
             <p className="mt-2 text-sm text-slate-400">Tap a service tile to add it to the cart. Oil types and zero-dollar tiles drop in as notes for documentation.</p>
           </div>
-          <div className="rounded-2xl border border-emerald-400/40 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-100">
+          <div className="rounded-2xl pm5-teal-border pm5-teal-soft px-4 py-3 text-sm pm5-accent-text">
             <p className="font-semibold">{currency.format(subtotal)}</p>
-            <p className="text-xs uppercase tracking-[0.2em] text-emerald-200/80">Live subtotal</p>
+            <p className="text-xs uppercase tracking-[0.2em] pm5-accent-text">Live subtotal</p>
           </div>
         </header>
         <div className="mt-6 flex gap-3 overflow-x-auto pb-2">
@@ -338,7 +338,7 @@ export function MiniPosWorkspace() {
               onClick={() => setActiveServiceKey(service.key)}
               className={`rounded-2xl border px-4 py-2 text-sm font-semibold transition ${
                 activeServiceKey === service.key
-                  ? "border-emerald-400/60 bg-emerald-500/10 text-emerald-100"
+                  ? "pm5-teal-border pm5-teal-soft pm5-accent-text"
                   : "border-slate-800/60 bg-slate-900/60 text-slate-300 hover:border-slate-600"
               }`}
             >
@@ -465,7 +465,7 @@ function SessionStatusBanner({
           type="button"
           onClick={() => void onSaveDraft?.()}
           disabled={savingState === "saving" || sessionLoading}
-          className="inline-flex items-center gap-2 rounded-2xl border border-emerald-500/60 px-4 py-2 text-sm font-semibold text-emerald-100 transition disabled:cursor-not-allowed disabled:opacity-60"
+          className="inline-flex items-center gap-2 rounded-2xl pm5-teal-border px-4 py-2 text-sm font-semibold pm5-accent-text transition disabled:cursor-not-allowed disabled:opacity-60"
         >
           {savingState === "saving" ? "Saving…" : "Save now"}
         </button>
@@ -615,10 +615,10 @@ function CartAndPaymentPanel({
                   type="button"
                   onClick={() => onPaymentChange(method.value)}
                   className={`flex flex-col items-center gap-2 rounded-2xl border px-3 py-3 text-center text-xs font-semibold uppercase tracking-[0.2em] transition ${
-                    isActive
-                      ? "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
-                      : "border-slate-800/60 bg-slate-900/60 text-slate-400 hover:border-slate-600"
-                  }`}
+                      isActive
+                        ? "pm5-teal-border pm5-teal-soft pm5-accent-text"
+                        : "border-slate-800/60 bg-slate-900/60 text-slate-400 hover:border-slate-600"
+                    }`}
                 >
                   <Icon className="h-4 w-4" />
                   {method.label}
@@ -674,7 +674,7 @@ function CartAndPaymentPanel({
               type="button"
               onClick={() => void onSaveDraft?.()}
               disabled={!canPersist || isSaving}
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/50 px-4 py-2 text-sm font-semibold text-emerald-100 transition disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-2xl pm5-teal-border px-4 py-2 text-sm font-semibold pm5-accent-text transition disabled:cursor-not-allowed disabled:opacity-60"
             >
               {isSaving ? "Saving…" : "Save draft"}
             </button>
@@ -682,7 +682,7 @@ function CartAndPaymentPanel({
               type="button"
               onClick={() => void onComplete()}
               disabled={disableComplete}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-100/40 bg-emerald-500/20 px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-100/40 pm5-teal-soft px-4 py-2 text-sm font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-60"
             >
               Complete checkout
             </button>

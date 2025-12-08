@@ -75,16 +75,16 @@ export function InventoryWorkspace({ feature, docUrl, relatedForms, shopNumber, 
                   <p className="mt-1 font-semibold text-white">{preview.lastSync}</p>
                   <p className="text-xs text-slate-400">Pulled from inventory counts.</p>
                 </div>
-                <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.3em] text-emerald-200">Export</p>
+                <div className="rounded-xl pm5-teal-border pm5-teal-soft px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.3em] pm5-accent-text">Export</p>
                   <Link
                     href={`/pocket-manager5/api/inventory/export?shop=${shopNumber ?? ""}`}
-                    className="mt-1 inline-flex items-center gap-2 text-sm font-semibold text-emerald-100 underline-offset-4 transition hover:text-white hover:underline"
+                    className="mt-1 inline-flex items-center gap-2 text-sm font-semibold pm5-accent-text underline-offset-4 transition hover:text-white hover:underline"
                   >
                     Download Excel (CSV)
                     <ArrowUpRight className="h-4 w-4" aria-hidden />
                   </Link>
-                  <p className="text-[11px] text-emerald-200/80">Uses live counts and catalog mapping.</p>
+                  <p className="text-[11px] pm5-accent-text">Uses live counts and catalog mapping.</p>
                 </div>
               </div>
             </div>
@@ -126,7 +126,7 @@ export function InventoryWorkspace({ feature, docUrl, relatedForms, shopNumber, 
           </div>
 
           {preview.alerts.length > 0 ? (
-            <div className="rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm text-amber-100">
+            <div className="rounded-2xl pm5-amber-border pm5-amber-soft p-4 text-sm pm5-accent-text">
               <p className="font-semibold">Live alerts</p>
               <ul className="mt-2 space-y-1 list-disc pl-5">
                 {preview.alerts.map((alert) => (

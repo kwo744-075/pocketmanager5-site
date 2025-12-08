@@ -474,8 +474,8 @@ const EMPTY_TOTALS: Totals = {
 };
 
 const temperatureChips: { value: Temperature; label: string; accent: string; colorHex?: string }[] = [
-  { value: "green", label: "Green", accent: "bg-emerald-400/20 text-emerald-200", colorHex: "#10b981" },
-  { value: "yellow", label: "Yellow", accent: "bg-amber-400/20 text-amber-200", colorHex: "#f59e0b" },
+  { value: "green", label: "Green", accent: "pm5-teal-soft pm5-accent-text", colorHex: "#5BE0C3" },
+  { value: "yellow", label: "Yellow", accent: "pm5-amber-soft pm5-accent-text", colorHex: "#f59e0b" },
   { value: "red", label: "Red", accent: "bg-rose-500/20 text-rose-200", colorHex: "#ef4444" },
 ];
 
@@ -553,8 +553,8 @@ type PulsePanelTone = "aurora" | "violet" | "amber" | "cobalt";
 const PULSE_PANEL_TONES: Record<PulsePanelTone, { container: string; overlay: string }> = {
   aurora: {
     container:
-      "border-emerald-400/40 bg-gradient-to-br from-[#021321]/95 via-[#030c1b]/96 to-[#01040b]/98 shadow-[0_30px_85px_rgba(8,42,74,0.85)]",
-    overlay: "bg-[radial-gradient(circle_at_top,_rgba(16,185,129,0.25),_transparent_55%)]",
+      "pm5-teal-border bg-gradient-to-br from-[#021321]/95 via-[#030c1b]/96 to-[#01040b]/98 shadow-[0_30px_85px_rgba(8,42,74,0.85)]",
+    overlay: "bg-[radial-gradient(circle_at_top,_rgba(91,224,195,0.25),_transparent_55%)]",
   },
   violet: {
     container:
@@ -563,7 +563,7 @@ const PULSE_PANEL_TONES: Record<PulsePanelTone, { container: string; overlay: st
   },
   amber: {
     container:
-      "border-amber-400/40 bg-gradient-to-br from-[#2d1804]/95 via-[#1b0c03]/96 to-[#0a0401]/98 shadow-[0_30px_85px_rgba(84,51,10,0.78)]",
+      "pm5-amber-border bg-gradient-to-br from-[#2d1804]/95 via-[#1b0c03]/96 to-[#0a0401]/98 shadow-[0_30px_85px_rgba(84,51,10,0.78)]",
     overlay: "bg-[radial-gradient(circle_at_top,_rgba(251,191,36,0.22),_transparent_50%)]",
   },
   cobalt: {
@@ -2717,7 +2717,7 @@ export default function PulseCheckPage() {
       return null;
     }
     return (
-      <div className="rounded-xl border border-emerald-500/40 bg-emerald-500/10 px-4 py-2 text-sm text-emerald-100">
+      <div className="rounded-xl pm5-teal-border pm5-teal-soft px-4 py-2 text-sm pm5-accent-text">
         {statusMessage}
       </div>
     );
@@ -2743,7 +2743,7 @@ export default function PulseCheckPage() {
                 <div className="flex flex-wrap items-center gap-3">
                   <div className="flex items-center gap-2">
                     <div>
-                      <p className="text-[9px] tracking-[0.3em] uppercase text-emerald-400">Pulse Check5</p>
+                      <p className="text-[9px] tracking-[0.3em] uppercase pm5-accent-text">Pulse Check5</p>
                       <h1 className="text-lg font-semibold text-white">Live KPI Board</h1>
                     </div>
                     <RetailPills />
@@ -2751,20 +2751,20 @@ export default function PulseCheckPage() {
                   <div className="ml-auto flex flex-wrap items-center gap-2">
                     <Link
                       href="/"
-                      className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:border-emerald-400"
+                      className="inline-flex items-center rounded-full border border-slate-700 px-3 py-1 text-[11px] font-semibold text-slate-200 transition hover:pm5-teal-border"
                     >
                       Home portal
                     </Link>
                     <Link
                       href="/contests"
-                      className="inline-flex items-center rounded-full border border-amber-400/60 px-3 py-1 text-[11px] font-semibold text-amber-100 transition hover:bg-amber-400/10"
+                      className="inline-flex items-center rounded-full border pm5-amber-border px-3 py-1 text-[11px] font-semibold pm5-accent-text transition hover:pm5-amber-soft"
                     >
                       Contest portal →
                     </Link>
                     <button
                       onClick={refreshAll}
                       disabled={!shopMeta?.id || busy}
-                      className="inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/20 disabled:opacity-40"
+                      className="inline-flex items-center justify-center rounded-full pm5-teal-border pm5-teal-soft px-3 py-1 text-[10px] font-semibold pm5-accent-text transition hover:pm5-teal-soft disabled:opacity-40"
                     >
                       Refresh data
                     </button>
@@ -2819,7 +2819,7 @@ export default function PulseCheckPage() {
                 <div className="relative space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Alignment Summary</p>
+                      <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Alignment Summary</p>
                       <h3 className="text-lg font-semibold text-white">
                         {selectedScope?.label ?? hierarchy?.district_name ?? "District overview"}
                       </h3>
@@ -2834,7 +2834,7 @@ export default function PulseCheckPage() {
                         value={selectedScopeKey ?? ""}
                         disabled={scopeOptions.length === 0}
                         onChange={(event) => setSelectedScopeKey(event.target.value || null)}
-                        className="min-w-[11rem] rounded-xl border border-white/15 bg-slate-950/60 px-2.5 py-1 text-[11px] font-semibold text-white shadow-inner focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="min-w-[11rem] rounded-xl border border-white/15 bg-slate-950/60 px-2.5 py-1 text-[11px] font-semibold text-white shadow-inner focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pm5-teal disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {scopeOptions.map((option) => (
                           <option key={option.key} value={option.key} className="text-slate-900">
@@ -2845,7 +2845,7 @@ export default function PulseCheckPage() {
                       <p className="text-[10px] text-slate-400">{scopeHelperLabel}</p>
                     </div>
                   </div>
-                  {districtGridError && <p className="text-sm text-amber-200">{districtGridError}</p>}
+                  {districtGridError && <p className="text-sm text-pm5-amber">{districtGridError}</p>}
                   <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_20px_50px_rgba(1,6,20,0.6)]">
                     {districtGridLoading && !districtGridRows.length ? (
                       <div className="px-4 py-6 text-center text-sm text-slate-400">Loading district shops…</div>
@@ -2868,7 +2868,7 @@ export default function PulseCheckPage() {
                               const zebra = index % 2 ? "bg-slate-950/30" : "bg-slate-950/60";
                               const highlightClass =
                                 row.kind === "district" || row.kind === "region"
-                                  ? "bg-emerald-500/10"
+                                  ? "pm5-teal-soft"
                                   : row.isCurrentShop
                                   ? "bg-sky-500/10"
                                   : zebra;
@@ -2909,7 +2909,7 @@ export default function PulseCheckPage() {
               <div className="relative space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Weekly breakdown</p>
+                    <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Weekly breakdown</p>
                     <h3 className="text-lg font-semibold text-white">Daily submissions overview</h3>
                   </div>
                   <p className="text-[10px] uppercase tracking-[0.25em] text-slate-500">Resets Sunday • 9:00 AM</p>
@@ -2923,10 +2923,10 @@ export default function PulseCheckPage() {
                         key={day.iso}
                         type="button"
                         onClick={() => setSelectedBreakdownDate(day.iso)}
-                        className={`rounded-2xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300 ${
+                        className={`rounded-2xl border px-3 py-2 text-left transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-pm5-teal ${
                           active
-                            ? "border-emerald-400/70 bg-emerald-500/10 shadow-[0_12px_25px_rgba(16,185,129,0.25)]"
-                            : "border-white/10 bg-[#030a16]/70 hover:border-emerald-400/50"
+                            ? "pm5-teal-border pm5-teal-soft shadow-[0_12px_25px_rgba(91,224,195,0.25)]"
+                            : "border-white/10 bg-[#030a16]/70 hover:pm5-teal-border"
                         }`}
                       >
                         <p className="text-[9px] uppercase tracking-[0.35em] text-slate-400">{day.label}</p>
@@ -3008,11 +3008,11 @@ export default function PulseCheckPage() {
                     {canProxy && (
                       <div className="rounded-2xl border border-white/5 bg-[#040c1c]/70 p-3 text-[10px] text-slate-300">
                         <div className="flex flex-wrap items-center gap-2 text-slate-400">
-                          <span className="rounded-full border border-emerald-400/50 px-2 py-0.5 text-[9px] uppercase tracking-[0.35em] text-emerald-300">
+                          <span className="rounded-full pm5-teal-border px-2 py-0.5 text-[9px] uppercase tracking-[0.35em] pm5-accent-text">
                             {scope ?? "Scope"}
                           </span>
                           {proxyActive && (
-                            <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[9px] uppercase tracking-wide text-amber-200">
+                            <span className="rounded-full border pm5-amber-border px-2 py-0.5 text-[9px] uppercase tracking-wide pm5-accent-text">
                               Proxying
                             </span>
                           )}
@@ -3021,7 +3021,7 @@ export default function PulseCheckPage() {
                           <button
                             type="button"
                             onClick={() => setProxyPanelOpen((open) => !open)}
-                            className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-semibold text-slate-200 transition hover:border-emerald-400"
+                            className="rounded-full border border-white/10 px-3 py-1 text-[10px] font-semibold text-slate-200 transition hover:pm5-teal-border"
                           >
                             {proxyPanelOpen
                               ? "Hide proxy tools"
@@ -3033,7 +3033,7 @@ export default function PulseCheckPage() {
                             <button
                               type="button"
                               onClick={handleProxyExit}
-                              className="rounded-full border border-emerald-400/60 px-3 py-1 text-[10px] font-semibold text-emerald-300 transition hover:bg-emerald-500/10"
+                              className="rounded-full pm5-teal-border pm5-teal-soft px-3 py-1 text-[10px] font-semibold pm5-accent-text transition hover:pm5-teal-soft"
                             >
                               Return to {homeShopLabel ?? "home shop"}
                             </button>
@@ -3066,7 +3066,7 @@ export default function PulseCheckPage() {
                       <button
                         type="button"
                         onClick={handleSubmit}
-                        className="rounded-xl bg-emerald-500 px-2.5 py-1.5 text-xs font-semibold text-emerald-900 transition hover:bg-emerald-400 disabled:opacity-50"
+                        className="rounded-xl pm5-teal px-2.5 py-1.5 text-xs font-semibold pm5-accent-text transition hover:pm5-teal-border disabled:opacity-50"
                         disabled={busy || !shopMeta?.id || currentSlotLocked || (!hasDirtyFields && submissionCount === 0)}
                       >
                         {submitting ? "Saving…" : "Submit check-in"}
@@ -3095,7 +3095,7 @@ export default function PulseCheckPage() {
                           </div>
                           <div className="mt-1 h-1.5 rounded-full bg-slate-800">
                             <div
-                              className={`h-full rounded-full ${simBusy ? "bg-cyan-300" : "bg-emerald-300"}`}
+                              className={`h-full rounded-full ${simBusy ? "bg-cyan-300" : "pm5-teal"}`}
                               style={{ width: `${simQueueSize > 0 ? simProgress : simBusy ? 15 : 0}%` }}
                             />
                           </div>
@@ -3116,7 +3116,7 @@ export default function PulseCheckPage() {
               <div className={panelOverlayClasses("cobalt")} />
               <div className="relative space-y-3">
                 <div>
-                  <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-300">Retail time calendar</p>
+                  <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Retail time calendar</p>
                   <h3 className="text-xl font-semibold text-white">13-week scope trends</h3>
                 </div>
                 <div className="overflow-hidden rounded-3xl border border-white/5 bg-[#030b18]/60 shadow-[0_25px_65px_rgba(1,6,20,0.7)]">
@@ -3140,7 +3140,7 @@ export default function PulseCheckPage() {
                             <div
                               key={row.id}
                               className={`grid px-3 py-2 text-sm transition ${
-                                highlight ? "bg-emerald-500/5" : index % 2 ? "bg-slate-950/30" : "bg-slate-950/60"
+                                highlight ? "pm5-teal-soft" : index % 2 ? "bg-slate-950/30" : "bg-slate-950/60"
                               }`}
                               style={{ gridTemplateColumns: TREND_GRID_TEMPLATE }}
                             >
@@ -3164,7 +3164,7 @@ export default function PulseCheckPage() {
                         <button
                           type="button"
                           onClick={() => setShowAllTrendRows((prev) => !prev)}
-                          className="rounded-full border border-emerald-400/50 px-3 py-1 text-[11px] font-semibold text-emerald-200 transition hover:bg-emerald-500/10"
+                          className="rounded-full pm5-teal-border px-3 py-1 text-[11px] font-semibold pm5-accent-text transition hover:pm5-teal-soft"
                         >
                           {showAllTrendRows ? "Collapse to 6" : "Expand to 13"}
                         </button>
@@ -3197,7 +3197,7 @@ function ProxyModePanel({
   tone: "info" | "error" | "success";
 }) {
   const messageClass =
-    tone === "success" ? "text-emerald-300" : tone === "error" ? "text-rose-300" : "text-slate-400";
+    tone === "success" ? "text-pm5-teal" : tone === "error" ? "text-rose-300" : "text-slate-400";
 
   return (
     <div className="rounded-2xl border border-white/5 bg-[#040c1c]/80 p-3 text-[10px] text-slate-300">
@@ -3209,14 +3209,14 @@ function ProxyModePanel({
             inputMode="numeric"
             value={value}
             onChange={(event) => onChange(event.target.value)}
-            className="min-w-[7rem] flex-1 rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-white outline-none focus:border-emerald-400"
+            className="min-w-[7rem] flex-1 rounded-2xl border border-slate-700 bg-slate-950/60 px-3 py-1.5 text-xs font-semibold text-white outline-none focus:border-pm5-teal"
             placeholder="Enter shop #"
           />
           <button
             type="button"
             onClick={onSubmit}
             disabled={busy}
-            className="rounded-2xl border border-emerald-400/60 px-3 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/10 disabled:opacity-50"
+            className="rounded-2xl pm5-teal-border px-3 py-1.5 text-xs font-semibold pm5-accent-text transition hover:pm5-teal-soft disabled:opacity-50"
           >
             {busy ? "Resolving…" : "Proxy to shop"}
           </button>
@@ -3259,7 +3259,7 @@ function SlotForm({
   return (
     <div className={`${spacing} w-full rounded-2xl border border-white/5 bg-gradient-to-br from-[#0f203f]/80 via-[#07142d]/80 to-[#020915]/95 shadow-[0_15px_35px_rgba(1,6,20,0.65)]`}>
       {locked && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[10px] text-amber-200">
+        <div className="rounded-xl border pm5-amber-border pm5-amber-soft px-3 py-2 text-[10px] pm5-accent-text">
           Slot locked until {unlockLabel}. Check back later.
         </div>
       )}
@@ -3297,7 +3297,7 @@ function SlotForm({
                   step={isCurrency ? "0.01" : undefined}
                   value={slotState.metrics[field.key]}
                   onChange={(event) => onMetricChange(slotKey, field.key, event.target.value)}
-                  className={`w-full rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-1 ${inputText} font-semibold text-white outline-none focus:border-emerald-400 ${
+                  className={`w-full rounded-lg border border-slate-700 bg-slate-950/60 px-2.5 py-1 ${inputText} font-semibold text-white outline-none focus:border-pm5-teal ${
                     isCurrency ? "text-right" : ""
                   }`}
                   placeholder={isCurrency ? "0.00" : "0"}
@@ -3318,7 +3318,7 @@ function LoginPrompt() {
       <p>Sign in to Pocket Manager5 to submit Pulse Check slots on the web.</p>
       <Link
         href="/login"
-        className="mt-3 inline-flex items-center justify-center rounded-full border border-emerald-400/70 bg-emerald-500/10 px-4 py-1.5 text-xs font-semibold text-emerald-300 transition hover:bg-emerald-500/20"
+        className="mt-3 inline-flex items-center justify-center rounded-full border pm5-teal-border pm5-teal-soft px-4 py-1.5 text-xs font-semibold text-pm5-teal transition hover:pm5-teal-soft"
       >
         Go to login
       </Link>

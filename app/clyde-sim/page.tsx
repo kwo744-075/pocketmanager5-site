@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import {
   OrbitControls,
@@ -1395,7 +1395,8 @@ export default function ClydeSimPage() {
 
   // Role & cadence loading from server
   const [canEditCadence, setCanEditCadence] = useState(false);
-  const [loadingCadence, setLoadingCadence] = useState(true);
+  const [_loadingCadence, setLoadingCadence] = useState(true);
+  void _loadingCadence;
 
   // Load session role and cadence templates from server on mount
   useEffect(() => {
@@ -1426,9 +1427,9 @@ export default function ClydeSimPage() {
 
         const role = derive(alignment);
         // detect explicit admin-like roles in the membership roles (if present)
-        const memberships = (alignment as any)?.memberships;
+        const memberships = (alignment as { memberships?: unknown })?.memberships;
         const rolesLower: string[] = Array.isArray(memberships)
-          ? memberships.map((m: any) => String((m && m.role) ?? '').toLowerCase())
+          ? (memberships as unknown[]).map((m) => String(((m as Record<string, unknown>)['role']) ?? '').toLowerCase())
           : [];
         const isAdmin = rolesLower.some((r) => r.includes('admin') || r.includes('administrator') || r.includes('super'));
 
@@ -1526,7 +1527,7 @@ export default function ClydeSimPage() {
   const dailyGoal = game.dailyGoal;
   const dailyEvent = game.dailyEvent;
 
-  const gameWithUpgrades: GameState = {
+  const gameWithUpgrades = useMemo<GameState>(() => ({
     ...game,
     upgrades,
     dailyGoal,
@@ -1535,7 +1536,7 @@ export default function ClydeSimPage() {
     lifetimeVisitors: game.lifetimeVisitors ?? 0,
     bestDayRevenue: game.bestDayRevenue ?? 0,
     bestDayVisitors: game.bestDayVisitors ?? 0,
-  };
+  }), [game, upgrades, dailyGoal, dailyEvent]);
 
   const dayCompleted =
     gameWithUpgrades.currentMinute >= CLOSING_MINUTE && !gameWithUpgrades.failed;

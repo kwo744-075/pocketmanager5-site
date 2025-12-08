@@ -15,6 +15,33 @@ type DepositEntryPayload = {
   notes?: string;
 };
 
+type DepositFilePayload = {
+  signed_url: string | null;
+  path: string | null;
+  expires_at: string | null;
+};
+
+type DepositEntryInsert = {
+  date: string;
+  shop_id: string;
+  bank_visit_verified: boolean;
+  deposit_amount: number | null;
+  expected_amount: number | null;
+  cash_over_short: number;
+  notes: string | null;
+  files: DepositFilePayload[];
+  created_by: string;
+  alignment_id: string | null;
+};
+
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+};
+
 export async function GET(request: Request) {
   try {
     const session = await getServerSession();
@@ -64,7 +91,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as Partial<DepositEntryPayload> & { files?: unknown };
     if (!body?.date || !body?.shopId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -77,18 +104,23 @@ export async function POST(request: Request) {
     // Allow clients to send an array of file URLs (we now expect the client to upload via /api/cadence/uploads first)
     // Normalize incoming files: support either an array of signed URL strings
     // or objects returned by the upload proxy ({ path, signedUrl, expiresAt }).
-    const incomingFiles = Array.isArray(body.files) ? body.files : [];
-    const filesPayload = incomingFiles
-      .map((f: any) => {
-        if (!f) return null;
-        if (typeof f === "string") return { signed_url: f };
-        return {
-          signed_url: f.signedUrl ?? f.signed_url ?? null,
-          path: f.path ?? null,
-          expires_at: f.expiresAt ?? f.expires_at ?? null,
-        };
+    const incomingFiles: Array<string | Record<string, unknown>> = Array.isArray(body.files) ? body.files : [];
+    const filesPayload: DepositFilePayload[] = incomingFiles
+      .map((fileEntry) => {
+        if (!fileEntry) return null;
+        if (typeof fileEntry === "string") {
+          return { signed_url: fileEntry, path: null, expires_at: null };
+        }
+        if (typeof fileEntry === "object") {
+          const record = fileEntry as Record<string, unknown>;
+          const signedUrl = typeof record.signedUrl === "string" ? record.signedUrl : typeof record.signed_url === "string" ? record.signed_url : null;
+          const filePath = typeof record.path === "string" ? record.path : null;
+          const expiresAt = typeof record.expiresAt === "string" ? record.expiresAt : typeof record.expires_at === "string" ? record.expires_at : null;
+          return { signed_url: signedUrl, path: filePath, expires_at: expiresAt };
+        }
+        return null;
       })
-      .filter(Boolean);
+      .filter((file): file is DepositFilePayload => Boolean(file));
 
     // Verify signed URLs look like they originate from our Supabase storage bucket.
     // Signed URLs from Supabase have the form: https://<project>.supabase.co/storage/v1/object/sign/<bucket>/<path>?...
@@ -110,18 +142,18 @@ export async function POST(request: Request) {
       }
     }
 
-    const payload: Partial<DepositEntryPayload & { created_by?: string; alignment_id?: string; files?: any[] }> = {
+    const payload: DepositEntryInsert = {
       date: body.date,
       shop_id: String(body.shopId),
-      bank_visit_verified: Boolean(body.bankVisitVerified) ?? false,
-      deposit_amount: Number(body.depositAmount) || null,
-      expected_amount: Number(body.expectedAmount) || null,
+      bank_visit_verified: Boolean(body.bankVisitVerified),
+      deposit_amount: toNullableNumber(body.depositAmount),
+      expected_amount: toNullableNumber(body.expectedAmount),
       cash_over_short: Number(body.cashOverShort) || 0,
       notes: body.notes ?? null,
       files: filesPayload,
       created_by: session.user.id,
       alignment_id: session.alignment?.activeAlignmentId ?? null,
-    } as any;
+    };
 
     const { data, error } = await admin.from("deposit_entries").insert([payload]).select().maybeSingle();
     if (error) {

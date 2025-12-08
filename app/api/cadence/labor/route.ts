@@ -6,9 +6,27 @@ import { hasShopAccess } from "@/lib/auth/alignment";
 type LaborEntryPayload = {
   date: string;
   shopId: string;
-  expectedLaborPct: number;
-  actualLaborPct: number;
-  notes?: string;
+  expectedLaborPct?: number | string | null;
+  actualLaborPct?: number | string | null;
+  notes?: string | null;
+};
+
+type LaborEntryInsert = {
+  date: string;
+  shop_id: string;
+  expected_labor_pct: number | null;
+  actual_labor_pct: number | null;
+  notes: string | null;
+  created_by: string;
+  alignment_id: string | null;
+};
+
+const toNullableNumber = (value: unknown): number | null => {
+  if (value === null || value === undefined || value === "") {
+    return null;
+  }
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
 };
 
 export async function GET(request: Request) {
@@ -61,7 +79,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
     }
 
-    const body = await request.json();
+    const body = (await request.json()) as Partial<LaborEntryPayload>;
     if (!body?.date || !body?.shopId) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
@@ -71,15 +89,15 @@ export async function POST(request: Request) {
     }
 
     const admin = getSupabaseAdmin();
-    const payload: Partial<LaborEntryPayload & { created_by?: string; alignment_id?: string }> = {
+    const payload: LaborEntryInsert = {
       date: body.date,
       shop_id: String(body.shopId),
-      expected_labor_pct: Number(body.expectedLaborPct) || null,
-      actual_labor_pct: Number(body.actualLaborPct) || null,
+      expected_labor_pct: toNullableNumber(body.expectedLaborPct),
+      actual_labor_pct: toNullableNumber(body.actualLaborPct),
       notes: body.notes ?? null,
       created_by: session.user.id,
       alignment_id: session.alignment?.activeAlignmentId ?? null,
-    } as any;
+    };
 
     const { data, error } = await admin.from("labor_entries").insert([payload]).select().maybeSingle();
     if (error) {

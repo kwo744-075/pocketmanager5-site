@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import DailyWorkflowSidebar from "./DailyWorkflowSidebar";
 import GENERATED_CADENCE_TASKS from "./generated-cadence-tasks";
@@ -51,6 +51,8 @@ type CadenceTask = {
   linkLabel?: string;
   external?: boolean;
 };
+
+type AlignmentMembership = { role?: string | null };
 
 export const CADENCE_TASKS: Record<string, CadenceTask[]> = {
   Monday: [
@@ -157,7 +159,6 @@ export const CADENCE_TASKS: Record<string, CadenceTask[]> = {
 
 export function CadenceWorkflow() {
   const [dmFilter, setDmFilter] = useState<"All" | "Open" | "Completed">("All");
-  const [tab, setTab] = useState<"daily" | "wtd">("daily");
   const [activeDay, setActiveDay] = useState<typeof DAYS[number]>("Monday");
   const router = useRouter();
 
@@ -170,7 +171,8 @@ export function CadenceWorkflow() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   // Fetch DM list with loading/error handling. Refetch when filter/page changes.
-  async function fetchDmList(signal?: AbortSignal) {
+  const fetchDmList = useCallback(
+    async (signal?: AbortSignal) => {
     setLoadingDm(true);
     setDmError(null);
     try {
@@ -216,23 +218,26 @@ export function CadenceWorkflow() {
         return it.status === "Completed";
       });
 
-      // server already paginated; use filtered results directly
-      setDmItems(filtered);
-    } catch (err: any) {
-      if (err.name === "AbortError") return;
-      console.error("Failed to load DM list", err);
-      setDmError(err?.message ?? "Failed to load DM list");
-    } finally {
-      setLoadingDm(false);
-    }
-  }
+        // server already paginated; use filtered results directly
+        setDmItems(filtered);
+      } catch (err) {
+        if (err instanceof Error && err.name === "AbortError") return;
+        console.error("Failed to load DM list", err);
+        const message = err instanceof Error ? err.message : "Failed to load DM list";
+        setDmError(message);
+      } finally {
+        setLoadingDm(false);
+      }
+    },
+    [PAGE_SIZE, dmFilter, page],
+  );
 
   // initial load + when filter/page changes
   useEffect(() => {
     const ctrl = new AbortController();
     fetchDmList(ctrl.signal);
     return () => ctrl.abort();
-  }, [dmFilter, page]);
+  }, [fetchDmList]);
 
   // polling for freshness
   useEffect(() => {
@@ -240,7 +245,7 @@ export function CadenceWorkflow() {
       fetchDmList();
     }, POLL_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [dmFilter, page]);
+  }, [fetchDmList]);
 
   const [selectedItem, setSelectedItem] = useState<DmListItem | null>(null);
   const [resolutionType, setResolutionType] = useState<"complete" | "called_in" | "ordered">("complete");
@@ -270,15 +275,13 @@ export function CadenceWorkflow() {
         if (!sRes.ok) return;
         const sJson = await sRes.json();
         const alignment = sJson?.alignment ?? null;
-        const memberships = alignment?.memberships ?? [];
-        const rolesLower: string[] = Array.isArray(memberships)
-          ? memberships.map((m: any) => String((m && m.role) ?? '').toLowerCase())
-          : [];
+        const memberships: AlignmentMembership[] = Array.isArray(alignment?.memberships) ? alignment.memberships : [];
+        const rolesLower = memberships.map((membership) => String(membership?.role ?? '').toLowerCase());
         const isAdmin = rolesLower.some((r) => r.includes('admin') || r.includes('administrator') || r.includes('super'));
         const isVP = rolesLower.some((r) => r.includes('vp'));
         const isRD = rolesLower.some((r) => r.includes('rd') || r.includes('regional'));
         if (mounted) setCanEditCadence(isAdmin || isVP || isRD);
-      } catch (err) {
+      } catch {
         // ignore
       }
     })();
@@ -294,26 +297,23 @@ export function CadenceWorkflow() {
         if (!res.ok) return;
         const json = await res.json();
         const map: Record<string, string[]> = json?.data ?? {};
-        const converted: Record<string, CadenceTask[]> = { ...tasksByDay };
-        Object.entries(map).forEach(([day, arr]) => {
-          if (!Array.isArray(arr)) return;
-          converted[day] = arr.map((label, i) => ({ id: `db-${day}-${i}`, label }));
-        });
-        if (mounted) setTasksByDay(converted);
-      } catch (err) {
+        if (mounted) {
+          setTasksByDay((prev) => {
+            const next: Record<string, CadenceTask[]> = { ...prev };
+            Object.entries(map).forEach(([day, arr]) => {
+              if (!Array.isArray(arr)) return;
+              next[day] = arr.map((label, i) => ({ id: `db-${day}-${i}`, label }));
+            });
+            return next;
+          });
+        }
+      } catch {
         // ignore, keep defaults
       }
     }
     loadTemplates();
     return () => { mounted = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const visibleDmItems = useMemo(() => {
-    if (dmFilter === "All") return dmItems;
-    if (dmFilter === "Open") return dmItems.filter((d) => d.status === "Open");
-    return dmItems.filter((d) => d.status === "Completed");
-  }, [dmFilter, dmItems]);
 
   async function markItemComplete(id: string, resolution: string) {
     // optimistic update: remove locally first
@@ -396,7 +396,7 @@ export function CadenceWorkflow() {
           <div className="mt-8 rounded-lg border border-slate-800/40 bg-slate-900/40 p-4">
             <div className="flex items-start justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-white">Today's Deposit & Cash Summary</h3>
+                <h3 className="text-sm font-semibold text-white">Today&apos;s Deposit & Cash Summary</h3>
                 <p className="text-xs text-slate-300">Snapshot of deposits and cash over/short for today. (Mock data)</p>
               </div>
               <Link href="/pocket-manager5/features/deposit-verification" className="text-sm text-emerald-300 hover:underline">View All in Deposit Portal</Link>
@@ -477,7 +477,7 @@ export function CadenceWorkflow() {
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({ scope: 'company', scopeId: null, day: activeDay, tasks: lines }),
                           });
-                        } catch (err) {
+                        } catch {
                           // ignore
                         }
                         setEditing(false);

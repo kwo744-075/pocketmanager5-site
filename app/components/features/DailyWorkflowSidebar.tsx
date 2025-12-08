@@ -4,7 +4,14 @@ import Link from "next/link";
 
 export const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"] as const;
 
-export function DailyWorkflowSidebar({ activeDay, setActiveDay, tasks }: { activeDay: string; setActiveDay: (d: any) => void; tasks?: Record<string, any[]> }) {
+type DailyTask = {
+  id: string | number;
+  label: string;
+  linkHref?: string;
+  external?: boolean;
+};
+
+export function DailyWorkflowSidebar({ activeDay, setActiveDay, tasks }: { activeDay: string; setActiveDay: (d: string) => void; tasks?: Record<string, DailyTask[]> }) {
   return (
     <aside className="rounded-lg border border-slate-800/60 bg-slate-900/60 p-4">
       <div className="mb-3">

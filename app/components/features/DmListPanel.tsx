@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import Link from "next/link";
+// Link unused here
 
 type DmListItem = {
   id: string;
@@ -20,7 +20,7 @@ type Props = {
   setFilter: (f: "All" | "Open" | "Completed") => void;
   loading: boolean;
   error: string | null;
-  onSelect: (item: any) => void;
+  onSelect: (item: DmListItem) => void;
   onRefresh: () => void;
   page: number;
   setPage: (n: number) => void;

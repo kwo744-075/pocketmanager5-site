@@ -70,6 +70,33 @@ export async function POST(request: NextRequest) {
 
     logSubmissionEvent("attempt", { slug, table: plan.table, profileResolved: Boolean(profile) });
 
+    // If the client provided an `id` field in the payload, treat this as an update.
+    const providedId = (data && typeof (data as any).id === "string") ? (data as any).id : null;
+
+    if (providedId) {
+      const { data: updatedRows, error: updateError } = await adminClient
+        .from(plan.table)
+        .update(plan.payload)
+        .eq("id", providedId)
+        .select("id")
+        .maybeSingle();
+
+      if (updateError) {
+        console.error("PocketManager form update failed", {
+          table: plan.table,
+          id: providedId,
+          error: updateError,
+        });
+        logSubmissionEvent("failure", { slug, table: plan.table, reason: updateError.message });
+        return NextResponse.json<ApiError>({ error: updateError.message ?? "Unable to update form in Supabase." }, { status: 500 });
+      }
+
+      const updatedId = (updatedRows as { id?: string } | null)?.id ?? providedId;
+      logSubmissionEvent("success", { slug, table: plan.table, id: updatedId, action: "update" });
+
+      return NextResponse.json<ApiSuccess>({ ok: true, table: plan.table, id: updatedId, message: `Updated ${plan.table}.` });
+    }
+
     const { data: insertedRows, error } = await adminClient
       .from(plan.table)
       .insert([plan.payload])
@@ -86,14 +113,9 @@ export async function POST(request: NextRequest) {
     }
 
     const insertedId = (insertedRows as { id?: string } | null)?.id ?? null;
-    logSubmissionEvent("success", { slug, table: plan.table, id: insertedId });
+    logSubmissionEvent("success", { slug, table: plan.table, id: insertedId, action: "insert" });
 
-    return NextResponse.json<ApiSuccess>({
-      ok: true,
-      table: plan.table,
-      id: insertedId,
-      message: `Saved to ${plan.table}.`,
-    });
+    return NextResponse.json<ApiSuccess>({ ok: true, table: plan.table, id: insertedId, message: `Saved to ${plan.table}.` });
   } catch (error) {
     console.error("PocketManager form submission error", error);
     return NextResponse.json<ApiError>({ error: "Unexpected server error." }, { status: 500 });

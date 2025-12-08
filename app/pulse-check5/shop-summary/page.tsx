@@ -197,17 +197,17 @@ export default function ShopPulseSummaryPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400"
+            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:pm5-teal-border"
           >
             ← Back
           </button>
-          <Link href="/" className="text-xs text-emerald-300 hover:underline">
+          <Link href="/" className="text-xs text-pm5-teal hover:underline">
             Home
           </Link>
         </div>
 
         <div className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/40">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-400">Pulse Check summary</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Pulse Check summary</p>
           <h1 className="text-3xl font-semibold text-white">Pulse Check – {shopName ?? "Shop"}</h1>
           <p className="text-sm text-slate-300">
             {shopNumber ? `Shop #${shopNumber}` : "Resolving shop"}

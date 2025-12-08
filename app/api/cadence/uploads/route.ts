@@ -27,22 +27,18 @@ export async function POST(request: Request) {
     const uploaded: Array<{ path: string; signedUrl: string; expiresAt: string }> = [];
 
     for (const [, value] of entries) {
-      // value may be a File or a single Blob; handle both
-      // If multiple files were appended under 'files', value will be the file.
-      const file = value as any;
-      if (!file || typeof file.stream !== "function") continue;
+      if (!(value instanceof File)) {
+        continue;
+      }
 
+      const file = value;
       const filename = file.name ?? `upload-${Date.now()}`;
-      const ext = filename.split('.').pop() ?? 'bin';
-      const filePath = `uploads/${session.user?.id ?? 'anon'}/${Date.now()}_${filename}`;
+      const filePath = `uploads/${session.user?.id ?? "anon"}/${Date.now()}_${filename}`;
 
-      // In Node/Edge, file.stream() returns a ReadableStream — supabase-js accepts a Blob/ReadableStream
-      const stream = file.stream();
-
-      const { error } = await admin.storage.from(UPLOAD_BUCKET).upload(filePath, stream as any, {
-        contentType: file.type ?? undefined,
+      const { error } = await admin.storage.from(UPLOAD_BUCKET).upload(filePath, file, {
+        contentType: file.type || undefined,
         upsert: false,
-      } as any);
+      });
 
       if (error) {
         console.error("upload proxy: storage.upload error", error);

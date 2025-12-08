@@ -56,7 +56,7 @@ export default function DepositVerificationPage() {
         cashOverShort: Number((Number(depositAmount || 0) - Number(expectedAmount || 0)).toFixed(2)),
         notes,
         files: uploadedUrls,
-      } as any;
+      };
 
       const res = await fetch(`/api/cadence/deposits`, {
         method: "POST",
@@ -112,11 +112,11 @@ export default function DepositVerificationPage() {
               </label>
               <label className="text-sm">
                 Deposit Amount
-                <input type="number" className="mt-1 w-full rounded-md bg-slate-800/40 p-2 text-white" value={depositAmount as any} onChange={(e) => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))} />
+                <input type="number" className="mt-1 w-full rounded-md bg-slate-800/40 p-2 text-white" value={depositAmount} onChange={(e) => setDepositAmount(e.target.value === "" ? "" : Number(e.target.value))} />
               </label>
               <label className="text-sm">
                 System Expected
-                <input type="number" className="mt-1 w-full rounded-md bg-slate-800/40 p-2 text-white" value={expectedAmount as any} onChange={(e) => setExpectedAmount(e.target.value === "" ? "" : Number(e.target.value))} />
+                <input type="number" className="mt-1 w-full rounded-md bg-slate-800/40 p-2 text-white" value={expectedAmount} onChange={(e) => setExpectedAmount(e.target.value === "" ? "" : Number(e.target.value))} />
               </label>
             </div>
 

@@ -227,7 +227,7 @@ export default function Home() {
         // Prefer server API which reads normalized tables; fall back to the legacy view
         let resolved: HierarchySummary | null = null;
         try {
-          const resp = await fetch("/api/hierarchy/summary");
+          const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
           if (resp.ok) {
             const body = await resp.json();
             resolved = (body?.data ?? null) as HierarchySummary | null;

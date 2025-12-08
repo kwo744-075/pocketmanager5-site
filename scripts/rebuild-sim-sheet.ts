@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-const fs = require("fs");
-const path = require("path");
-const XLSX = require("xlsx");
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import * as XLSX from "xlsx";
 
-// Converts the updated CSV sim sheet into XLSX for Pulse Check imports.
-const workspaceRoot = path.resolve(__dirname, "..", "..");
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const appsRoot = path.resolve(__dirname, "..", "..");
 const csvName = "Checkins Test Sheet Master..csv";
 const xlsxName = "Checkins Test Sheet Master..xlsx";
-const csvPath = path.join(workspaceRoot, csvName);
-const xlsxPath = path.join(workspaceRoot, xlsxName);
+const csvPath = path.join(appsRoot, csvName);
+const xlsxPath = path.join(appsRoot, xlsxName);
 
 if (!fs.existsSync(csvPath)) {
   console.error(`CSV source not found at ${csvPath}`);

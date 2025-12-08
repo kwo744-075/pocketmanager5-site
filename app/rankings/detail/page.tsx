@@ -105,7 +105,7 @@ export default function RankingsDetailPage() {
       try {
         let resolvedScope: string | null = null;
         try {
-          const resp = await fetch("/api/hierarchy/summary");
+          const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
           if (resp.ok) {
             const body = await resp.json();
             resolvedScope = (body?.data?.scope_level as string | null) ?? null;
@@ -158,19 +158,19 @@ export default function RankingsDetailPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400"
+            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:pm5-teal-border"
           >
             ← Back
           </button>
-          <Link href="/pulse-check5" className="text-xs text-emerald-300 hover:underline">
+          <Link href="/pulse-check5" className="text-xs text-pm5-teal hover:underline">
             Pulse Check dashboard
           </Link>
         </div>
 
         <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/40">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-400">Rankings</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Rankings</p>
           <h1 className="text-3xl font-semibold text-white">Top performers by metric</h1>
-          <p className="text-sm text-slate-300">Performance analysis and outlier detection</p>
+              <p className="text-sm text-slate-300">Performance analysis and outlier detection</p>
         </section>
 
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -178,7 +178,7 @@ export default function RankingsDetailPage() {
             <div key={leader.metric} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
               <p className="text-xs uppercase tracking-wide text-slate-500">{leader.metric}</p>
               <p className="mt-2 text-2xl font-semibold text-white">{leader.value}</p>
-              <p className="text-sm text-emerald-300">{leader.shop}</p>
+              <p className="text-sm text-pm5-teal">{leader.shop}</p>
             </div>
           ))}
         </div>
@@ -186,7 +186,7 @@ export default function RankingsDetailPage() {
         <button
           type="button"
           onClick={() => router.push("/rankings/zero-shops")}
-          className="flex items-center justify-between rounded-2xl border border-amber-400/50 bg-amber-500/10 px-4 py-3 text-left text-sm text-amber-100 transition hover:border-amber-300 hover:bg-amber-400/20"
+          className="flex items-center justify-between rounded-2xl border pm5-amber-border pm5-amber-soft px-4 py-3 text-left text-sm pm5-accent-text transition hover:pm5-amber-border hover:pm5-amber-soft"
         >
           <span>ZERO Shops (12) • Shops with zeros in key KPIs</span>
           <span className="text-xs font-semibold">View list →</span>
@@ -205,8 +205,8 @@ export default function RankingsDetailPage() {
             {topShops.map((row) => (
               <li
                 key={row.rank}
-                className={`rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 ${
-                  row.rank === 1 ? "ring-2 ring-emerald-400/60" : ""
+                  className={`rounded-2xl border border-slate-800 bg-slate-900/70 px-4 py-3 ${
+                  row.rank === 1 ? "ring-pm5-teal" : ""
                 }`}
               >
                 <button
@@ -222,17 +222,17 @@ export default function RankingsDetailPage() {
                     <span className="h-10 w-10 rounded-full bg-slate-800 text-center text-lg font-semibold text-white flex items-center justify-center">
                       {row.rank}
                     </span>
-                    <div>
-                      <p className="text-base font-semibold text-white">
-                        {row.shop} {row.rank === 1 && <span className="ml-2 rounded-full bg-emerald-500/20 px-2 py-0.5 text-xs text-emerald-200">Leader</span>}
-                      </p>
-                      <div className="mt-1 flex gap-2 text-xs">
-                        <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-emerald-200">{row.met} Met</span>
-                        <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-rose-200">{row.missed} Missed</span>
+                      <div>
+                        <p className="text-base font-semibold text-white">
+                          {row.shop} {row.rank === 1 && <span className="ml-2 rounded-full pm5-teal-soft px-2 py-0.5 text-xs pm5-accent-text">Leader</span>}
+                        </p>
+                        <div className="mt-1 flex gap-2 text-xs">
+                          <span className="rounded-full pm5-teal-soft px-2 py-0.5 pm5-accent-text">{row.met} Met</span>
+                          <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-rose-200">{row.missed} Missed</span>
+                        </div>
                       </div>
-                    </div>
                   </div>
-                  <span className="text-lg font-semibold text-emerald-300">{row.performance}%</span>
+                  <span className="text-lg font-semibold text-pm5-teal">{row.performance}%</span>
                 </button>
               </li>
             ))}
@@ -286,7 +286,7 @@ export default function RankingsDetailPage() {
 function renderVarianceCell(pair: { act: string; var: string }) {
   const varianceNumber = Number(pair.var.replace(/[^0-9-]/g, ""));
   const isPositive = !Number.isNaN(varianceNumber) && varianceNumber >= 0;
-  const color = isPositive ? "text-emerald-300" : "text-rose-300";
+  const color = isPositive ? "text-pm5-teal" : "text-rose-300";
   return (
     <td className="px-3 py-2">
       <p className="font-semibold text-white">{pair.act}</p>

@@ -23,7 +23,7 @@ export default function AddShiftPanel({ shopNumber }: Props) {
     (async () => {
       try {
         const { data } = await supabase.from("shop_staff").select("id, staff_name").eq("shop_id", shopNumber).order("staff_name");
-        if (mounted && Array.isArray(data)) setStaff(data as any);
+        if (mounted && Array.isArray(data)) setStaff(data as Array<{ id: string; staff_name?: string }>);
       } catch (err) {
         console.warn("Failed to load staff list", err);
       }

@@ -147,6 +147,41 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [shopNumber, weekStartISO]);
 
+  // Keep the editor in sync with external changes (app or other browser)
+  useEffect(() => {
+    if (!shopNumber) return;
+    let channel: any = null;
+    try {
+      channel = supabase
+        .channel(`employee_shifts_changes_${shopNumber}`)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'employee_shifts', filter: `shop_id=eq.${shopNumber}` },
+          () => {
+            // debounce a little to avoid thundering reloads
+            void loadData();
+          },
+        )
+        .subscribe((status: any) => {
+          // noop: subscription status logged in console for debugging
+          // console.debug('employee_shifts realtime status', status);
+        });
+    } catch (err) {
+      // subscription failure shouldn't break the UI
+      // console.warn('Realtime subscription failed', err);
+    }
+
+    return () => {
+      try {
+        if (channel) supabase.removeChannel(channel);
+      } catch (err) {
+        // ignore cleanup errors
+      }
+    };
+    // intentionally depend on shopNumber only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shopNumber]);
+
   // Build week options (-8 .. +8 from current)
   useEffect(() => {
     const weeks: Array<{ iso: string; label: string }> = [];
