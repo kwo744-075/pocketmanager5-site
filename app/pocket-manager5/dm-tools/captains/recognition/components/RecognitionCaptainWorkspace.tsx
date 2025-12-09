@@ -1619,12 +1619,16 @@ function StepNavigator({
         <div className="flex items-center gap-3 overflow-auto">
           {steps.map((step, idx) => {
             const isActive = step.id === activeStep;
-            // allow the 'exports' badge to appear green when complete, otherwise red
-            const dynamicColor =
-              step.id === "exports" && step.status === "complete" ? "from-emerald-500 to-emerald-700 border-emerald-400/60" : colorMap[step.id];
+            // Color by status: complete = green, upcoming = red, current = amber
+            const statusColor =
+              step.status === "complete"
+                ? "from-emerald-500 to-emerald-700 border-emerald-400/60"
+                : step.status === "upcoming"
+                ? "from-rose-500 to-rose-700 border-rose-400/60"
+                : "from-amber-500 to-amber-700 border-amber-400/60";
             const badgeClasses = isActive
-              ? `ring-2 ring-white/10 ${dynamicColor} text-white`
-              : `text-slate-200 border-slate-800/50`;
+              ? `ring-2 ring-white/10 ${statusColor} text-white`
+              : `${statusColor} text-white border-slate-800/50`;
             return (
               <button
                 key={step.id}
