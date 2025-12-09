@@ -11,6 +11,7 @@ import {
   Download,
   FileSpreadsheet,
   Loader2,
+  Paperclip,
   LucideIcon,
   NotebookPen,
   Package,
@@ -79,11 +80,11 @@ type AwardShowStep = {
 };
 
 const AWARD_SHOW_STEPS: AwardShowStep[] = [
-  { id: "qualifiers", label: "Qualifiers", description: "Power Ranker + Period Results", icon: Sparkles },
-  { id: "uploads", label: "Uploads", description: "KPI + EPR data", icon: FileSpreadsheet },
-  { id: "manual-awards", label: "Manual Awards", description: "DM & RD selections", icon: NotebookPen },
+  { id: "qualifiers", label: "Qualifiers & uploads", description: "Power Ranker + Period Results", icon: Sparkles },
+  { id: "uploads", label: "Confirm lists and employee names", description: "KPI + EPR data", icon: FileSpreadsheet },
+  { id: "manual-awards", label: "Manual awards", description: "DM & RD selections", icon: NotebookPen },
   { id: "review", label: "Review", description: "Confirm winners & notes", icon: ShieldCheck },
-  { id: "exports", label: "Exports", description: "Decks & CSV", icon: Download },
+  { id: "exports", label: "Generate", description: "Decks & CSV", icon: Download },
 ];
 
 type UploadedFileMeta = {
@@ -93,11 +94,12 @@ type UploadedFileMeta = {
   notes?: string[];
 };
 
-type QualifierUploadKind = "powerRanker" | "periodWinner";
+type QualifierUploadKind = "powerRanker" | "periodWinner" | "donations";
 
 type QualifierUploadResult = {
   powerRanker?: UploadedFileMeta;
   periodWinner?: UploadedFileMeta;
+  donations?: UploadedFileMeta;
   coverageNotes?: string[];
   previewRows?: RecognitionDatasetRow[];
 };
@@ -216,6 +218,7 @@ export function RecognitionCaptainWorkspace() {
   const [qualifierUploadState, setQualifierUploadState] = useState<Record<QualifierUploadKind, ProcessingState>>({
     powerRanker: "idle",
     periodWinner: "idle",
+    donations: "idle",
   });
   const [rules, setRules] = useState<RecognitionRuleDraft[]>(() => defaultRules.map((rule) => ({ ...rule })));
   const [ruleMessage, setRuleMessage] = useState<string | null>(null);
@@ -244,6 +247,15 @@ export function RecognitionCaptainWorkspace() {
   const [birthdaysError, setBirthdaysError] = useState<string | null>(null);
   const [metadataStatus, setMetadataStatus] = useState<MetadataStatus>("idle");
   const [metadataMessage, setMetadataMessage] = useState<string | null>(null);
+  // Manual award modal state
+  const [manualModalOpen, setManualModalOpen] = useState(false);
+  const [manualForm, setManualForm] = useState<{ winnerName: string; winnerShop: string; district: string; rationale: string; title: string }>({
+    winnerName: "",
+    winnerShop: "",
+    district: "",
+    rationale: "",
+    title: "KPI District winner",
+  });
 
   const qualifiersComplete = Boolean(draft.qualifiers?.powerRanker && draft.qualifiers?.periodWinner);
   const uploadsComplete = dataset.length > 0;
@@ -518,7 +530,7 @@ export function RecognitionCaptainWorkspace() {
     setStatusMessage("Upload a KPI workbook to calculate captains.");
     setLastFileName(null);
     setUploadError(null);
-    setQualifierUploadState({ powerRanker: "idle", periodWinner: "idle" });
+    setQualifierUploadState({ powerRanker: "idle", periodWinner: "idle", donations: "idle" });
     setBirthdaysLoading(false);
     setBirthdaysError(null);
     setMetadataStatus("idle");
@@ -706,24 +718,20 @@ export function RecognitionCaptainWorkspace() {
 
   return (
     <div className="space-y-8">
-      <AwardShowsStepper
-        steps={stepsWithStatus}
-        onStepChange={setActiveStep}
-        onResetDraft={handleResetDraft}
-      />
-
       <StepNavigator
         activeStep={activeStep}
-        steps={AWARD_SHOW_STEPS}
+        steps={stepsWithStatus}
         canGoPrev={canGoPrev}
         canGoNext={canGoNext}
         onPrev={() => handleAdvanceStep(-1)}
         onNext={() => handleAdvanceStep(1)}
+        onStepClick={(id) => setActiveStep(id)}
+        onReset={handleResetDraft}
       />
 
       <StepSection
         id="qualifiers"
-        title="Step 1 · Qualifiers"
+        title="Qualifiers & uploads"
         description="Upload Power Ranker + Period Results files to build eligible pools."
         active={activeStep === "qualifiers"}
       >
@@ -731,18 +739,49 @@ export function RecognitionCaptainWorkspace() {
           qualifiers={draft.qualifiers}
           uploadState={qualifierUploadState}
           onFileChange={handleQualifierFileChange}
+          onEmployeeFileChange={handleFileChange("employee") as any}
+          onShopFileChange={handleFileChange("shop") as any}
           thresholds={winnerThresholds}
           onThresholdChange={handleThresholdChange}
           eligibleShops={periodWinnerInsights.eligibleShops}
           eligibleEmployees={periodWinnerInsights.eligibleEmployees}
           shopQualifiers={periodWinnerInsights.shopQualifiers}
           employeeQualifiers={periodWinnerInsights.employeeQualifiers}
+          uploads={draft.uploads}
         />
+        <div className="mt-6">
+          <div className="flex flex-col gap-2">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Eligible employees</p>
+            <h3 className="text-2xl font-semibold text-white">Eligible employees</h3>
+            <p className="text-sm text-slate-300">Shops and employees that meet qualifier thresholds.</p>
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <EligibleListCard
+              label="Eligible shops"
+              description={`Period Results upload · ${winnerThresholds.npsQualifier}%+ NPS`}
+              count={periodWinnerInsights.eligibleShops}
+              qualifiers={periodWinnerInsights.shopQualifiers}
+              isActive={true}
+              onToggle={() => {}}
+              emptyLabel={`Shops with ${winnerThresholds.npsQualifier}%+ NPS will appear here after the Period Results upload.`}
+            />
+            <EligibleListCard
+              label="Eligible employees"
+              description="NPS qualifier + oil change floors"
+              count={periodWinnerInsights.eligibleEmployees}
+              qualifiers={periodWinnerInsights.employeeQualifiers}
+              isActive={true}
+              onToggle={() => {}}
+              emptyLabel={`Managers with ${winnerThresholds.npsQualifier}%+ NPS will appear here after processing.`}
+            />
+          </div>
+        </div>
       </StepSection>
 
       <StepSection
         id="uploads"
-        title="Step 2 · KPI & EPR uploads"
+        title="Confirm lists and employee names"
         description="Process KPI data to generate awards, leaderboards, and dataset previews."
         active={activeStep === "uploads"}
       >
@@ -772,7 +811,7 @@ export function RecognitionCaptainWorkspace() {
 
       <StepSection
         id="manual-awards"
-        title="Step 3 · Manual awards"
+        title="Manual awards"
         description="Capture DM + RD winners, rationale, and spotlight notes."
         active={activeStep === "manual-awards"}
       >
@@ -785,7 +824,7 @@ export function RecognitionCaptainWorkspace() {
 
       <StepSection
         id="review"
-        title="Step 4 · Review & confirmation"
+        title="Review"
         description="Confirm qualifiers, DM notes, and celebrations before exporting."
         active={activeStep === "review"}
       >
@@ -803,7 +842,7 @@ export function RecognitionCaptainWorkspace() {
 
       <StepSection
         id="exports"
-        title="Step 5 · Exports"
+        title="Generate"
         description="Queue PPTX decks, CSV summaries, and adjust guardrails."
         active={activeStep === "exports"}
       >
@@ -828,11 +867,13 @@ export function RecognitionCaptainWorkspace() {
 
       <StepNavigator
         activeStep={activeStep}
-        steps={AWARD_SHOW_STEPS}
+        steps={stepsWithStatus}
         canGoPrev={canGoPrev}
         canGoNext={canGoNext}
         onPrev={() => handleAdvanceStep(-1)}
         onNext={() => handleAdvanceStep(1)}
+        onStepClick={(id) => setActiveStep(id)}
+        onReset={handleResetDraft}
       />
     </div>
   );
@@ -1043,22 +1084,28 @@ function QualifierUploadsPanel({
   qualifiers,
   uploadState,
   onFileChange,
+  onEmployeeFileChange,
+  onShopFileChange,
   thresholds,
   onThresholdChange,
   eligibleShops,
   eligibleEmployees,
   shopQualifiers,
   employeeQualifiers,
+  uploads,
 }: {
   qualifiers: QualifierUploadResult | null;
   uploadState: Record<QualifierUploadKind, ProcessingState>;
   onFileChange: (kind: QualifierUploadKind) => (event: ChangeEvent<HTMLInputElement>) => void;
+  onEmployeeFileChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onShopFileChange?: (event: ChangeEvent<HTMLInputElement>) => void;
   thresholds: PeriodWinnerThresholds;
   onThresholdChange: (key: keyof PeriodWinnerThresholds, value: number) => void;
   eligibleShops: number;
   eligibleEmployees: number;
   shopQualifiers: PeriodWinnerQualifier[];
   employeeQualifiers: PeriodWinnerQualifier[];
+  uploads?: { employee?: UploadedFileMeta; shop?: UploadedFileMeta };
 }) {
   const [activeList, setActiveList] = useState<"shops" | "employees" | null>(null);
   const cards: Array<{ kind: QualifierUploadKind; title: string; description?: string; helper: string }> = [
@@ -1081,6 +1128,7 @@ function QualifierUploadsPanel({
   const metaByKind: Partial<Record<QualifierUploadKind, UploadedFileMeta | undefined>> = {
     powerRanker: qualifiers?.powerRanker,
     periodWinner: qualifiers?.periodWinner,
+    donations: qualifiers?.donations,
   };
   const toggleList = (panel: "shops" | "employees") => {
     setActiveList((prev) => (prev === panel ? null : panel));
@@ -1104,7 +1152,7 @@ function QualifierUploadsPanel({
                   min={0}
                   value={thresholds[field.key]}
                   onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
-                  className="w-full rounded-2xl border border-slate-800/70 bg-slate-950/60 px-3 py-2 text-sm text-white"
+                  className="w-24 rounded-2xl border border-slate-800/70 bg-slate-950/60 px-2 py-1 text-sm text-white"
                 />
                 {field.suffix ? <span className="text-xs text-slate-500">{field.suffix}</span> : null}
               </div>
@@ -1113,63 +1161,79 @@ function QualifierUploadsPanel({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-4 lg:grid-cols-2">
-        <EligibleListCard
-          label="Eligible shops"
-          description={`Period Results upload · ${thresholds.npsQualifier}%+ NPS`}
-          count={eligibleShops}
-          qualifiers={shopQualifiers}
-          isActive={activeList === "shops"}
-          onToggle={() => toggleList("shops")}
-          emptyLabel={`Shops with ${thresholds.npsQualifier}%+ NPS will appear here after the Period Results upload.`}
-        />
-        <EligibleListCard
-          label="Eligible employees"
-          description="NPS qualifier + oil change floors"
-          count={eligibleEmployees}
-          qualifiers={employeeQualifiers}
-          isActive={activeList === "employees"}
-          onToggle={() => toggleList("employees")}
-          emptyLabel={`Managers with ${thresholds.npsQualifier}%+ NPS will appear here after processing.`}
-        />
-      </div>
+      
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-2">
-        {cards.map((card) => {
-          const meta = metaByKind[card.kind];
-          const state = uploadState[card.kind];
-          return (
-            <div key={card.kind} className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{card.title}</p>
-                  {card.description ? <p className="text-sm text-slate-300">{card.description}</p> : null}
-                </div>
-                <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200">
-                  <ArrowUp className="h-4 w-4" />
-                  Upload
-                  <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange(card.kind)} />
-                </label>
-              </div>
-              <div className="mt-3 rounded-2xl border border-slate-800/70 bg-slate-950/70 p-4">
-                <p
-                  className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.3em] ${statusBadgeClassMap[state]}`}
-                >
-                  {state === "uploading" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />} {state.toUpperCase()}
-                </p>
-                {meta ? (
-                  <div className="mt-2 text-sm text-slate-200">
-                    <p className="font-semibold">{meta.name}</p>
-                    <p className="text-xs text-slate-400">Uploaded {new Date(meta.uploadedAt).toLocaleString()}</p>
-                  </div>
-                ) : (
-                  <p className="mt-2 text-xs text-slate-500">No upload captured yet.</p>
-                )}
-                <p className="mt-3 text-xs text-slate-500">{card.helper}</p>
-              </div>
+      <div className="mt-6">
+        {/* Compact five-box upload grid: 1x2x2 formation on wide screens */}
+        <div className="grid gap-3 lg:grid-cols-4">
+          {/* Top - Employee Performance (spans full width) */}
+          <div className="col-span-4 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Employee performance report</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onEmployeeFileChange} />
+              </label>
             </div>
-          );
-        })}
+          </div>
+
+          {/* Row 2: NPS (mapped to periodWinner) and Period KPIs by shop */}
+          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">NPS</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("periodWinner")} />
+              </label>
+            </div>
+          </div>
+          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Period KPIs by shop</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onShopFileChange} />
+              </label>
+            </div>
+          </div>
+
+          {/* Row 3: Power Ranker and Donations */}
+          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Power ranker</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("powerRanker")} />
+              </label>
+            </div>
+          </div>
+          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Donations</p>
+              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                <Paperclip className="h-4 w-4" />
+                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("donations")} />
+              </label>
+            </div>
+          </div>
+        </div>
+
+        {/* Bottom row: filenames only */}
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          {[
+            uploads?.employee?.name,
+            qualifiers?.periodWinner?.name,
+            uploads?.shop?.name,
+            qualifiers?.powerRanker?.name,
+            qualifiers?.donations?.name,
+          ]
+            .filter(Boolean)
+            .map((name, idx) => (
+              <span key={idx} className="rounded-full border border-slate-800/60 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
+                {name}
+              </span>
+            ))}
+        </div>
       </div>
     </section>
   );
@@ -1515,37 +1579,101 @@ function StepNavigator({
   canGoNext,
   onPrev,
   onNext,
+  onStepClick,
+  onReset,
 }: {
   activeStep: AwardShowStepId;
-  steps: AwardShowStep[];
+  steps: Array<AwardShowStep & { status?: StepStatus }>;
   canGoPrev: boolean;
   canGoNext: boolean;
   onPrev: () => void;
   onNext: () => void;
+  onStepClick?: (id: AwardShowStepId) => void;
+  onReset?: () => void;
 }) {
-  const currentLabel = steps.find((step) => step.id === activeStep)?.label ?? "";
+  const colorMap: Record<AwardShowStepId, string> = {
+    qualifiers: "from-emerald-500 to-emerald-700 border-emerald-400/60",
+    uploads: "from-amber-500 to-amber-700 border-amber-400/60",
+    "manual-awards": "from-violet-500 to-violet-700 border-violet-400/60",
+    review: "from-sky-500 to-sky-700 border-sky-400/60",
+    exports: "from-rose-500 to-rose-700 border-rose-400/60",
+  };
+
+  const total = steps.length || 1;
+  const completeCount = steps.filter((s) => s.status === "complete").length;
+  const pct = Math.round((completeCount / total) * 100);
+
   return (
-    <div className="flex flex-col gap-3 rounded-3xl border border-slate-900/70 bg-slate-950/60 p-4 text-sm text-slate-300 md:flex-row md:items-center md:justify-between">
-      <p>
-        Active step: <span className="font-semibold text-white">{currentLabel}</span>
-      </p>
-      <div className="flex gap-3">
+    <div className="flex w-full items-center justify-between gap-4 rounded-3xl border border-slate-900/70 bg-slate-950/60 p-3">
+      <div className="flex items-center gap-4">
+        <div className="hidden sm:block">
+          <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Award Shows workflow</p>
+          <div className="mt-2 w-56">
+            <div className="h-2 w-full rounded-full bg-slate-900/50">
+              <div className={`h-2 rounded-full bg-emerald-500`} style={{ width: `${pct}%` }} />
+            </div>
+            <p className="mt-1 text-xs text-slate-400">{completeCount}/{total} stages complete · {pct}%</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3 overflow-auto">
+          {steps.map((step, idx) => {
+            const isActive = step.id === activeStep;
+            // allow the 'exports' badge to appear green when complete, otherwise red
+            const dynamicColor =
+              step.id === "exports" && step.status === "complete" ? "from-emerald-500 to-emerald-700 border-emerald-400/60" : colorMap[step.id];
+            const badgeClasses = isActive
+              ? `ring-2 ring-white/10 ${dynamicColor} text-white`
+              : `text-slate-200 border-slate-800/50`;
+            return (
+              <button
+                key={step.id}
+                type="button"
+                onClick={() => onStepClick?.(step.id)}
+                className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:opacity-90 ${isActive ? "bg-gradient-to-br" : "bg-transparent"}`}
+                aria-current={isActive}
+              >
+                <span
+                  className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${badgeClasses} font-semibold`}
+                >
+                  {idx + 1}
+                </span>
+                <div className="text-left">
+                  <div className={`text-xs ${isActive ? "text-white font-semibold" : "text-slate-300"}`}>{step.label}</div>
+                  <div className="text-2xs text-slate-500 hidden sm:block">{step.description}</div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="flex items-center gap-2">
         <button
           type="button"
           onClick={onPrev}
           disabled={!canGoPrev}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Previous
+          Prev
         </button>
         <button
           type="button"
           onClick={onNext}
           disabled={!canGoNext}
-          className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-3 py-1 font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Next
         </button>
+        {onReset ? (
+          <button
+            type="button"
+            onClick={onReset}
+            className="ml-2 inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 text-sm font-semibold text-slate-200"
+          >
+            Reset
+          </button>
+        ) : null}
       </div>
     </div>
   );
