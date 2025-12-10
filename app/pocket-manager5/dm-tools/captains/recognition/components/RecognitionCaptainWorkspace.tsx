@@ -1358,7 +1358,7 @@ function RecognitionUploadPanel({
             />
             <span className="text-[11px] normal-case tracking-normal text-slate-500">Optional label applied to both uploads.</span>
           </label>
-          <div className="flex gap-2">
+            <div className="flex gap-2">
             <button
               type="button"
               onClick={() => onProcess()}
@@ -1367,84 +1367,21 @@ function RecognitionUploadPanel({
               <FileSpreadsheet className="h-4 w-4" />
               Process uploaded files
             </button>
+          </div>
+        </div>
+      </div>
+      <div className="mt-5">
+        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
+          <p className="text-sm text-slate-300">Uploads for Employee performance and Shop KPI have been centralized to the <strong>Step1 — Qualifiers & uploads</strong> tab. Use that tab to upload your files (Employee Performance, Shop KPI, NPS, Custom Region, Donations, Power Ranker). When ready, come back here and click <strong>Process uploaded files</strong>.</p>
+          <div className="mt-3">
             <button
               type="button"
-              onClick={onLoadSample}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-emerald-400/60"
+              onClick={() => onOpenQualifiers?.()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
             >
-              <Sparkles className="h-4 w-4" />
-              Load sample data
+              <ArrowUp className="h-4 w-4" />
+              Open Qualifiers & Uploads (Step1)
             </button>
-          </div>
-        </div>
-      </div>
-      <div className="mt-5 grid gap-4 sm:grid-cols-2">
-        <UploadMetaCard label="Employee performance" meta={uploads.employee} />
-        <UploadMetaCard label="Shop KPI" meta={uploads.shop} />
-      </div>
-      <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-dashed border-slate-800/70 bg-slate-900/60 p-5">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Employee file</p>
-              <p className="text-sm text-slate-300">Drop the Employee Performance report (hire date, NPS, oil changes).</p>
-            </div>
-            <div className="inline-flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onOpenQualifiers?.()}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
-              >
-                <ArrowUp className="h-4 w-4" />
-                Manage in qualifiers
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-            <p className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] ${statusBadgeClassMap[status]}`}>
-              {status === "uploading" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />} {status.toUpperCase()}
-            </p>
-            <p className="mt-2 text-sm text-white">{statusMessage}</p>
-            {lastFileName ? <p className="text-xs text-slate-400">Last file: {lastFileName}</p> : null}
-            {runId ? <p className="text-xs text-slate-500">Active run: {runId}</p> : null}
-            {uploaderEmail ? <p className="text-xs text-emerald-200">Uploader: {uploaderEmail}</p> : null}
-            {errorMessage ? <p className="text-xs text-rose-300">{errorMessage}</p> : null}
-            <p className="mt-3 text-xs text-slate-400">Note: Upload KPI files from the <strong>Qualifiers & uploads</strong> tab above. This panel processes those files into awards and leaderboards.</p>
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-5 text-sm text-slate-300">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Shop KPI upload</p>
-              <p className="text-sm text-slate-300">Use the KPI export with Shop #, manager, cars, ticket, and CSI.</p>
-            </div>
-            <div className="inline-flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => onOpenQualifiers?.()}
-                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
-              >
-                <ArrowUp className="h-4 w-4" />
-                Manage in qualifiers
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
-            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Parser checklist</p>
-            <ul className="mt-3 space-y-2">
-              <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />
-                Include headers: Shop #, Manager, Cars (Oil Changes), Growth %, Ticket, CSI, Retention, Safety.
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />
-                District + region columns help the exports build context slides.
-              </li>
-              <li className="flex items-start gap-2">
-                <CheckCircle2 className="mt-0.5 h-4 w-4 text-emerald-300" />
-                Keep one reporting period per upload so deltas stay accurate.
-              </li>
-            </ul>
           </div>
         </div>
       </div>
@@ -1519,9 +1456,9 @@ function QualifierUploadsPanel({
       helper: "Cars + sales + email % help the confirmation grid.",
     },
   ];
-  const fields: { key: keyof PeriodWinnerThresholds; label: string; suffix?: string }[] = [
-    { key: "minOilChanges", label: "Min oil changes", suffix: "cars" },
-    { key: "npsQualifier", label: "NPS qualifier", suffix: "%" },
+  const fields: { key: keyof PeriodWinnerThresholds; label: string }[] = [
+    { key: "minOilChanges", label: "Min oil changes" },
+    { key: "npsQualifier", label: "NPS qualifier" },
   ];
   
   // Column mapper pill
@@ -1536,6 +1473,73 @@ function QualifierUploadsPanel({
     setActiveList((prev) => (prev === panel ? null : panel));
   };
 
+  const [uploading, setUploading] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    // Clear uploading indicators when parent reports uploaded meta
+    if (uploads?.employee) setUploading((s) => ({ ...s, employee: false }));
+    if (uploads?.shop) setUploading((s) => ({ ...s, shop: false }));
+    if (uploads?.customRegion) setUploading((s) => ({ ...s, customRegion: false }));
+    if (qualifiers?.powerRanker) setUploading((s) => ({ ...s, powerRanker: false }));
+    if (qualifiers?.periodWinner) setUploading((s) => ({ ...s, periodWinner: false }));
+    if (qualifiers?.donations) setUploading((s) => ({ ...s, donations: false }));
+  }, [uploads, qualifiers]);
+
+  const UploadBox = ({
+    item,
+    uploading,
+    onChange,
+    onRemove,
+  }: {
+    item: { key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void };
+    uploading?: boolean;
+    onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
+    onRemove?: () => void;
+  }) => {
+    return (
+      <div key={item.key} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
+        </div>
+        <div className="flex items-center gap-3">
+          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+            <Paperclip className="h-4 w-4" />
+            <input
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              className="sr-only"
+              onChange={(e) => {
+                setUploading((s) => ({ ...s, [item.key]: true }));
+                item.onChange?.(e as any);
+                onChange?.(e as any);
+              }}
+            />
+          </label>
+          <div className="text-xs text-slate-300 flex items-center gap-3">
+            <div>
+              <div className="font-medium text-slate-200">{item.meta?.name ?? "No file"}</div>
+              {item.meta?.uploadedAt ? <div className="text-xs text-slate-400">Uploaded {new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
+            </div>
+            {uploading ? (
+              <div className="flex items-center gap-2">
+                <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+              </div>
+            ) : item.meta ? (
+              <button
+                type="button"
+                onClick={onRemove}
+                aria-label={`Remove ${item.label}`}
+                className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
+              >
+                ✕
+              </button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
       <div className="gap-4 lg:flex lg:items-start lg:justify-between">
@@ -1545,24 +1549,24 @@ function QualifierUploadsPanel({
           <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
 
           <div className="mt-4">
-            <div className="space-y-3">
-              {fields.map((field) => (
-                <label key={field.key} className="block text-xs uppercase tracking-[0.3em] text-slate-400">
-                  <div className="flex items-center gap-3">
-                    <span className="min-w-[110px]">{field.label}</span>
-                    <input
-                      type="number"
-                      min={0}
-                      value={thresholds[field.key]}
-                      onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
-                      className="w-20 rounded-2xl border border-slate-800/70 bg-slate-950/60 px-2 py-1 text-sm text-white"
-                    />
-                    {field.suffix ? <span className="text-xs text-slate-500">{field.suffix}</span> : null}
-                  </div>
-                </label>
-              ))}
-            </div>
+            <p className="text-xs text-slate-400">Thresholds for qualifiers are shown below. Adjust as needed after uploading qualifier files.</p>
           </div>
+        </div>
+
+        {/* Thresholds moved to bottom and evenly spaced */}
+        <div className="mt-6 flex gap-4 w-full">
+          {fields.map((field) => (
+            <div key={field.key} className="flex-1 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-center">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{field.label}</div>
+              <input
+                type="number"
+                min={0}
+                value={thresholds[field.key]}
+                onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
+                className="mt-2 w-full max-w-[160px] mx-auto rounded-2xl border border-slate-800/70 bg-slate-900/40 px-3 py-2 text-sm text-white text-center"
+              />
+            </div>
+          ))}
         </div>
 
         {/* Upload boxes moved under the qualifier uploads section in a 2x3 grid */}
@@ -1585,33 +1589,7 @@ function QualifierUploadsPanel({
             };
 
             return (
-              <div key={item.key} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
-                </div>
-                <div className="flex items-center gap-3">
-                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                    <Paperclip className="h-4 w-4" />
-                    <input type="file" accept=".csv,.xlsx,.xls" className="sr-only" onChange={item.onChange} />
-                  </label>
-                  <div className="text-xs text-slate-300 flex items-center gap-3">
-                    <div>
-                      <div className="font-medium text-slate-200">{item.meta?.name ?? "No file"}</div>
-                      {item.meta?.uploadedAt ? <div className="text-xs text-slate-400">Uploaded {new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
-                    </div>
-                    {item.meta ? (
-                      <button
-                        type="button"
-                        onClick={handleRemove}
-                        aria-label={`Remove ${item.label}`}
-                        className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
-                      >
-                        ✕
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
+              <UploadBox key={item.key} item={item} uploading={uploading[item.key]} onRemove={handleRemove} />
             );
           })}
         </div>
@@ -1780,7 +1758,7 @@ function ConfirmationGridPanel({
       ...row,
       dmNote: stored?.dmNote ?? "",
       rdNote: stored?.rdNote ?? "",
-    } satisfies ConfirmationRow & { dmNote: string; rdNote: string };
+    } as ConfirmationRow & { dmNote: string; rdNote: string };
   });
 
   const handleNoteChange = (rowId: string, field: "dmNote" | "rdNote", value: string) => {
