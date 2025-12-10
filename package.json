@@ -10,8 +10,8 @@
     "test": "tsx --test tests/form-submission-route.test.ts tests/form-submission-route-smoke.test.ts tests/dm-review-import-route.test.ts tests/dm-schedule-utils.test.ts tests/pulse-check-checkins-sim.test.ts",
     "sim:sheet": "tsx scripts/rebuild-sim-sheet.ts",
     "sim:upload": "tsx scripts/upload-sim-sheet.ts",
-    "sim:sync": "pnpm run sim:sheet && pnpm run sim:upload"
-    ,"copy:weekly-templates": "node scripts/copy-weekly-templates.js"
+    "sim:sync": "pnpm run sim:sheet && pnpm run sim:upload",
+    "copy:weekly-templates": "node scripts/copy-weekly-templates.js"
   },
   "dependencies": {
     "@react-three/drei": "^10.7.7",
@@ -23,7 +23,7 @@
     "formidable": "^3.5.4",
     "framer-motion": "^11.0.17",
     "lucide-react": "^0.453.0",
-    "next": "16.0.4",
+    "next": "^16.0.4",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
@@ -37,7 +37,7 @@
     "@types/react-dom": "^19",
     "baseline-browser-mapping": "^2.9.2",
     "eslint": "^9",
-    "eslint-config-next": "16.0.4",
+    "eslint-config-next": "^16.0.4",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"
