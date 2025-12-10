@@ -43,7 +43,7 @@ export default function KpiSummary() {
       {mapped.map((m) => (
         <div key={m.kpi} className="rounded-md border border-slate-800/60 bg-slate-950 p-3">
           <div className="text-xs text-slate-400">{m.kpi}</div>
-          <div className="mt-1 text-lg font-semibold text-white">{m.value ?? "—"}</div>
+          <div className="mt-1 text-lg font-semibold text-white">{String(m.value ?? "—")}</div>
           <div className="mt-1 text-[11px] text-slate-500">{m.key ?? "(not mapped)"}</div>
         </div>
       ))}

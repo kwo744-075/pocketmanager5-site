@@ -1,5 +1,5 @@
 'use client';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
 type ModalProps = {
@@ -14,10 +14,23 @@ export default function Modal({ open, onClose, children, labelledById }: ModalPr
   const contentRef = useRef<HTMLDivElement | null>(null);
   const lastFocusedRef = useRef<HTMLElement | null>(null);
 
-  if (!elRef.current && typeof document !== 'undefined') {
-    elRef.current = document.createElement('div');
-    elRef.current.className = 'pm-modal-root';
-  }
+  // Create the portal element only on the client and only once.
+  const [portalEl, setPortalEl] = useState<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (!elRef.current) {
+      elRef.current = document.createElement('div');
+      elRef.current.className = 'pm-modal-root';
+    }
+    setPortalEl(elRef.current);
+    return () => {
+      // cleanup: remove element if it was appended to body
+      if (elRef.current && elRef.current.parentElement === document.body) {
+        document.body.removeChild(elRef.current);
+      }
+      setPortalEl(null);
+    };
+  }, []);
 
   useEffect(() => {
     const root = document.body;
@@ -84,5 +97,6 @@ export default function Modal({ open, onClose, children, labelledById }: ModalPr
     </div>
   );
 
-  return createPortal(modalContent, elRef.current);
+  // Render portal only when `portalEl` is set by the client effect.
+  return portalEl ? createPortal(modalContent, portalEl) : null;
 }

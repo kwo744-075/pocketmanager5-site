@@ -70,7 +70,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: ins.error.message }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, upload_id, inserted: ins.data?.length ?? rows.length });
+    const insData = ins.data as any;
+    const insertedCount = Array.isArray(insData) ? insData.length : rows.length;
+    return NextResponse.json({ success: true, upload_id, inserted: insertedCount });
   } catch (err: any) {
     console.error('save-summary error', err);
     return NextResponse.json({ error: err?.message ?? String(err) }, { status: 500 });

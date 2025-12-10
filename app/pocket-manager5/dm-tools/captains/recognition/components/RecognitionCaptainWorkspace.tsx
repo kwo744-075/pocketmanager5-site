@@ -28,6 +28,8 @@ import {
   RECOGNITION_METRIC_LOOKUP,
   RECOGNITION_METRICS,
 } from "@/lib/recognition-captain/config";
+import CompactKpiLeaders from "./CompactKpiLeaders";
+import OnePagerGrid from "./OnePagerGrid";
 import {
   type RecognitionAwardResult,
   type RecognitionDatasetRow,
@@ -59,7 +61,7 @@ type ProcessingState = "idle" | "uploading" | "ready" | "error";
 
 type ExportKind = "summary" | "pptx";
 
-type UploadKind = "employee" | "shop";
+type UploadKind = "employee" | "shop" | "customRegion";
 
 type ExportResponse = {
   exportId: string;
@@ -80,11 +82,11 @@ type AwardShowStep = {
 };
 
 const AWARD_SHOW_STEPS: AwardShowStep[] = [
-  { id: "qualifiers", label: "Qualifiers & uploads", description: "Power Ranker + Period Results", icon: Sparkles },
-  { id: "uploads", label: "Confirm lists and employee names", description: "KPI + EPR data", icon: FileSpreadsheet },
-  { id: "manual-awards", label: "Manual awards", description: "DM & RD selections", icon: NotebookPen },
-  { id: "review", label: "Review", description: "Confirm winners & notes", icon: ShieldCheck },
-  { id: "exports", label: "Generate", description: "Decks & CSV", icon: Download },
+  { id: "qualifiers", label: "Qualifiers & uploads", description: "", icon: Sparkles },
+  { id: "uploads", label: "Reports", description: "", icon: FileSpreadsheet },
+  { id: "manual-awards", label: "Rankings", description: "", icon: NotebookPen },
+  { id: "review", label: "Review", description: "", icon: ShieldCheck },
+  { id: "exports", label: "Generate", description: "", icon: Download },
 ];
 
 type UploadedFileMeta = {
@@ -110,6 +112,7 @@ type AwardShowRunDraft = {
   uploads: {
     employee?: UploadedFileMeta;
     shop?: UploadedFileMeta;
+    customRegion?: UploadedFileMeta;
   };
   manualAwards: ManualAwardEntry[];
   birthdays: CelebrationEntry[];
@@ -214,6 +217,17 @@ export function RecognitionCaptainWorkspace() {
     window.localStorage.setItem(AWARD_SHOW_DRAFT_STORAGE_KEY, JSON.stringify(draft));
   }, [draft]);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('pocketmanager-award-mapper');
+      if (raw) {
+        setFileMapperState(JSON.parse(raw));
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
   const [activeStep, setActiveStep] = useState<AwardShowStepId>("qualifiers");
   const [qualifierUploadState, setQualifierUploadState] = useState<Record<QualifierUploadKind, ProcessingState>>({
     powerRanker: "idle",
@@ -242,7 +256,36 @@ export function RecognitionCaptainWorkspace() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const [uploaderEmail, setUploaderEmail] = useState<string | null>(null);
+  const [fileMapperState, setFileMapperState] = useState<any>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Qualification lists (derived from dataset + thresholds)
+  const [qualifiedEmployees, setQualifiedEmployees] = useState<RecognitionDatasetRow[]>([]);
+  const [disqualifiedEmployees, setDisqualifiedEmployees] = useState<RecognitionDatasetRow[]>([]);
+  const [qualifiedShops, setQualifiedShops] = useState<RecognitionDatasetRow[]>([]);
+  const [disqualifiedShops, setDisqualifiedShops] = useState<RecognitionDatasetRow[]>([]);
+  // KPI leaderboards (computed from qualified pools)
+  const [kpiLeadersEmployees, setKpiLeadersEmployees] = useState<Record<string, RecognitionDatasetRow[]>>({});
+  const [kpiLeadersShops, setKpiLeadersShops] = useState<Record<string, RecognitionDatasetRow[]>>({});
+  // Global runtime error catcher (shows a visible banner instead of a blank screen)
+  const [runtimeError, setRuntimeError] = useState<any>(null);
+  useEffect(() => {
+    const onError = (e: ErrorEvent) => {
+      // eslint-disable-next-line no-console
+      console.error("Runtime error event:", e.error ?? e.message ?? e);
+      setRuntimeError(e.error ?? e.message ?? String(e));
+    };
+    const onRejection = (e: PromiseRejectionEvent) => {
+      // eslint-disable-next-line no-console
+      console.error("Unhandled rejection:", e.reason ?? e);
+      setRuntimeError(e.reason ?? String(e));
+    };
+    window.addEventListener("error", onError);
+    window.addEventListener("unhandledrejection", onRejection as any);
+    return () => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection as any);
+    };
+  }, []);
   const [birthdaysLoading, setBirthdaysLoading] = useState(false);
   const [birthdaysError, setBirthdaysError] = useState<string | null>(null);
   const [metadataStatus, setMetadataStatus] = useState<MetadataStatus>("idle");
@@ -364,6 +407,105 @@ export function RecognitionCaptainWorkspace() {
     [qualifiersComplete, uploadsComplete, manualAwardsComplete, reviewComplete, exportsComplete],
   );
 
+  // Compute qualified/disqualified employees and shops when dataset or thresholds change
+  useEffect(() => {
+    if (!dataset || dataset.length === 0) {
+      setQualifiedEmployees([]);
+      setDisqualifiedEmployees([]);
+      setQualifiedShops([]);
+      setDisqualifiedShops([]);
+      return;
+    }
+
+    const qEmployees: RecognitionDatasetRow[] = [];
+    const dEmployees: RecognitionDatasetRow[] = [];
+
+    // Treat rows with a managerName as employee-level rows
+    for (const row of dataset) {
+      const isEmployee = Boolean(row.managerName);
+      if (!isEmployee) continue;
+      const cars = Number(row.metrics?.carCount ?? 0);
+      const nps = Number(row.metrics?.csi ?? 0);
+      if (Number.isFinite(cars) && cars < winnerThresholds.minOilChanges) {
+        dEmployees.push(row);
+      } else if (Number.isFinite(nps) && nps < winnerThresholds.npsQualifier) {
+        dEmployees.push(row);
+      } else {
+        qEmployees.push(row);
+      }
+    }
+
+    // Build shop-level map (one representative row per shop)
+    const shopMap = new Map<number, RecognitionDatasetRow>();
+    for (const row of dataset) {
+      const existing = shopMap.get(row.shopNumber);
+      if (!existing) {
+        shopMap.set(row.shopNumber, row);
+      } else {
+        // prefer the row with higher car count as representative
+        const existingCars = Number(existing.metrics?.carCount ?? 0);
+        const newCars = Number(row.metrics?.carCount ?? 0);
+        if (newCars > existingCars) {
+          shopMap.set(row.shopNumber, row);
+        }
+      }
+    }
+
+    const qSh: RecognitionDatasetRow[] = [];
+    const dSh: RecognitionDatasetRow[] = [];
+    for (const [, shopRow] of shopMap) {
+      const nps = Number(shopRow.metrics?.csi ?? 0);
+      if (Number.isFinite(nps) && nps < winnerThresholds.npsQualifier) {
+        dSh.push(shopRow);
+      } else {
+        qSh.push(shopRow);
+      }
+    }
+
+    setQualifiedEmployees(qEmployees.sort((a, b) => (b.metrics.csi ?? 0) - (a.metrics.csi ?? 0)));
+    setDisqualifiedEmployees(dEmployees);
+    setQualifiedShops(qSh.sort((a, b) => (b.metrics.csi ?? 0) - (a.metrics.csi ?? 0)));
+    setDisqualifiedShops(dSh);
+  }, [dataset, winnerThresholds]);
+
+  // Compute KPI leaderboards for employees and shops whenever qualified pools change
+  useEffect(() => {
+    const topN = 10;
+    const empLeaders: Record<string, RecognitionDatasetRow[]> = {};
+    const shopLeaders: Record<string, RecognitionDatasetRow[]> = {};
+
+    for (const metric of RECOGNITION_METRICS) {
+      const key = metric.key;
+
+      const empSorted = [...qualifiedEmployees]
+        .filter((r) => typeof r.metrics?.[key] === 'number' && Number.isFinite(r.metrics?.[key]))
+        .sort((a, b) => (b.metrics?.[key] ?? 0) - (a.metrics?.[key] ?? 0))
+        .slice(0, topN);
+
+      const shopSorted = [...qualifiedShops]
+        .filter((r) => typeof r.metrics?.[key] === 'number' && Number.isFinite(r.metrics?.[key]))
+        .sort((a, b) => (b.metrics?.[key] ?? 0) - (a.metrics?.[key] ?? 0))
+        .slice(0, topN);
+
+      empLeaders[key] = empSorted;
+      shopLeaders[key] = shopSorted;
+    }
+
+    setKpiLeadersEmployees(empLeaders);
+    setKpiLeadersShops(shopLeaders);
+  }, [qualifiedEmployees, qualifiedShops]);
+
+  // Helpers to retrieve leader lists for UI consumers
+  const getTopEmployeeLeaders = (metricKey: string, limit = 10) => {
+    const list = kpiLeadersEmployees[metricKey] ?? [];
+    return list.slice(0, limit);
+  };
+
+  const getTopShopLeaders = (metricKey: string, limit = 10) => {
+    const list = kpiLeadersShops[metricKey] ?? [];
+    return list.slice(0, limit);
+  };
+
   const currentStepIndex = AWARD_SHOW_STEPS.findIndex((step) => step.id === activeStep);
   const canGoPrev = currentStepIndex > 0;
   const canGoNext = currentStepIndex < AWARD_SHOW_STEPS.length - 1;
@@ -439,8 +581,194 @@ export function RecognitionCaptainWorkspace() {
         if (!file) {
           return;
         }
-        const label = kind === "employee" ? "Employee performance" : "Shop KPI";
+        const label = kind === "employee" ? "Employee performance" : kind === "customRegion" ? "Custom Region" : "Shop KPI";
         setLastFileName(`${label} · ${file.name}`);
+        // Client-side parsing helpers
+        const parseFileToRows = async (file: File) => {
+          const ext = file.name.split('.').pop()?.toLowerCase();
+          if (ext === 'csv' || ext === 'txt') {
+            const text = await file.text();
+            const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+            if (!lines.length) return { headers: [], rows: [] };
+            const headers = lines[0].split(',').map((h) => h.trim());
+            const rows = lines.slice(1).map((ln) => {
+              const cols = ln.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map((c) => c.replace(/^\"|\"$/g, '').trim());
+              const obj: Record<string, any> = {};
+              headers.forEach((h, i) => (obj[h] = cols[i] ?? ''));
+              return obj;
+            });
+            return { headers, rows };
+          }
+          if (ext === 'xlsx' || ext === 'xls') {
+            try {
+              const XLSX = await import('xlsx');
+              const buffer = await file.arrayBuffer();
+              const workbook = XLSX.read(buffer, { type: 'array' });
+              const sheet = workbook.Sheets[workbook.SheetNames[0]];
+              const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
+              const headers = json.length ? Object.keys(json[0]) : [];
+              return { headers, rows: json };
+            } catch (err) {
+              console.warn('XLSX parse failed', err);
+              return { headers: [], rows: [] };
+            }
+          }
+          return { headers: [], rows: [] };
+        };
+
+        // map header to recognition metric key when possible
+        const ONE_PAGER_KPI_KEYS = [
+          'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
+          'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
+        ];
+
+        const mapHeaderToMetricKey = (header: string) => {
+          if (!header) return undefined;
+          const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+          // prefer matching against the recognition metrics, but only return keys that appear on the one-pager
+          for (const m of RECOGNITION_METRICS) {
+            const lab = (m.label ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            const key = (m.key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (norm.includes(lab) || norm.includes(key) || lab.includes(norm) || key.includes(norm)) {
+              // map legacy CSI -> NPS for mapper/headers
+              const resolved = m.key === 'csi' ? 'nps' : m.key;
+              return ONE_PAGER_KPI_KEYS.includes(resolved) ? resolved : undefined;
+            }
+          }
+
+          // fallback: if header text contains 'nps' prefer nps
+          if (norm.includes('nps')) return 'nps';
+          return undefined;
+        };
+
+        // Handle custom region uploads locally (no server processing) to avoid server-side parser hang.
+        if (kind === 'customRegion') {
+          try {
+            const parsed = await parseFileToRows(file);
+            const headers = parsed.headers ?? [];
+            const rows = parsed.rows ?? [];
+
+            // Build recognition dataset rows from custom region (shop-level)
+            const parsedDataset: RecognitionDatasetRow[] = rows.map((r: Record<string, any>) => {
+              const metrics: Record<string, number> = {};
+              let shopNumber = Number(r['shop'] ?? r['shop_number'] ?? r['Shop'] ?? r['Shop #'] ?? r['Shop#'] ?? r['store'] ?? r['Store'] ?? r['site'] ?? r['Site'] ?? null) || undefined;
+              for (const h of headers) {
+                const metricKey = mapHeaderToMetricKey(h);
+                const raw = r[h];
+                const val = typeof raw === 'string' ? Number(raw.replace(/[^0-9.\-]/g, '')) : Number(raw);
+                if (!Number.isFinite(val)) continue;
+                if (metricKey) {
+                  metrics[metricKey] = val;
+                } else {
+                  // also add generic metrics under normalized header
+                  const n = h.toString().trim();
+                  metrics[n] = val;
+                }
+              }
+              return {
+                shopNumber: shopNumber ?? 0,
+                managerName: '',
+                metrics,
+              } as any as RecognitionDatasetRow;
+            });
+
+            setDataset(parsedDataset);
+            const meta: UploadedFileMeta = {
+              name: file.name,
+              uploadedAt: new Date().toISOString(),
+              rows: parsedDataset.length,
+            };
+            dispatch({ type: 'setUploadMeta', kind, meta });
+            setQualifierUploadState((prev) => ({ ...prev, [kind]: 'ready' }));
+            setUploadState('ready');
+            setStatusMessage(`Processed ${parsedDataset.length} customRegion rows`);
+          } catch (error) {
+            console.error('Custom region upload handling failed', error);
+            setUploadError(error instanceof Error ? error.message : 'Custom region upload failed');
+            setQualifierUploadState((prev) => ({ ...prev, [kind]: 'error' }));
+          } finally {
+            event.target.value = '';
+          }
+          return;
+        }
+
+        // Handle employee uploads locally using the mapper (client-side parsing)
+        if (kind === 'employee') {
+          try {
+            const parsed = await parseFileToRows(file);
+            const headers = parsed.headers ?? [];
+            const rows = parsed.rows ?? [];
+
+            // load mapper from localStorage (if present)
+            let mapper: any = null;
+            try {
+              const raw = window.localStorage.getItem('pocketmanager-award-mapper');
+              if (raw) mapper = JSON.parse(raw);
+            } catch (e) {
+              // ignore
+            }
+
+            const nameCol = mapper?.columns?.employee?.nameCol;
+            const shopCol = mapper?.columns?.employee?.shopCol;
+            const metricCol = mapper?.columns?.employee?.metricCol;
+            const perKpi = mapper?.perKpi ?? {};
+
+            const parsedDataset: RecognitionDatasetRow[] = rows.map((r: Record<string, any>) => {
+              const metrics: Record<string, number> = {};
+              // detect shop number
+              let shopNumber = Number(r[shopCol] ?? r['shop'] ?? r['shop_number'] ?? r['Shop'] ?? r['Store'] ?? null) || undefined;
+
+              // If a single metric column is explicitly mapped, prefer it and use perKpi or header mapping to assign KPI key
+              if (metricCol) {
+                const raw = r[metricCol];
+                const mapped = perKpi?.[metricCol] || mapHeaderToMetricKey(metricCol);
+                const key = mapped ?? undefined;
+                const val = typeof raw === 'string' ? Number(String(raw).replace(/[^0-9.\-]/g, '')) : Number(raw);
+                if (key && Number.isFinite(val)) metrics[key] = val;
+              } else {
+                for (const h of headers) {
+                  if (h === nameCol || h === shopCol) continue;
+                  const keyFromPer = perKpi?.[h];
+                  const metricKey = keyFromPer || mapHeaderToMetricKey(h);
+                  const raw = r[h];
+                  const val = typeof raw === 'string' ? Number(String(raw).replace(/[^0-9.\-]/g, '')) : Number(raw);
+                  if (!Number.isFinite(val)) continue;
+                  if (metricKey) {
+                    metrics[metricKey] = val;
+                  }
+                }
+              }
+
+              const employeeName = String(r[nameCol] ?? r['manager'] ?? r['Manager'] ?? r['employee'] ?? r['Employee'] ?? '').trim();
+
+              return {
+                shopNumber: shopNumber ?? 0,
+                managerName: employeeName,
+                metrics,
+              } as any as RecognitionDatasetRow;
+            });
+
+            setDataset(parsedDataset);
+            const meta: UploadedFileMeta = {
+              name: file.name,
+              uploadedAt: new Date().toISOString(),
+              rows: parsedDataset.length,
+            };
+            dispatch({ type: 'setUploadMeta', kind, meta });
+            setQualifierUploadState((prev) => ({ ...prev, [kind]: 'ready' }));
+            setUploadState('ready');
+            setStatusMessage(`Processed ${parsedDataset.length} employee rows`);
+          } catch (error) {
+            console.error('Employee upload handling failed', error);
+            setUploadError(error instanceof Error ? error.message : 'Employee upload failed');
+            setQualifierUploadState((prev) => ({ ...prev, [kind]: 'error' }));
+          } finally {
+            event.target.value = '';
+          }
+          return;
+        }
+
         const success = await processUpload({ file, sourceLabel: label });
         if (success) {
           dispatch({ type: "setUploadMeta", kind, meta: { name: file.name, uploadedAt: new Date().toISOString() } });
@@ -489,6 +817,30 @@ export function RecognitionCaptainWorkspace() {
           event.target.value = "";
         }
       },
+    [dispatch],
+  );
+
+  const handleRemoveUpload = useCallback(
+    (kind: UploadKind) => {
+      dispatch({ type: "setUploadMeta", kind, meta: undefined });
+      // also clear any summary/dataset if employee/shop uploads are removed
+      if (kind === "employee" || kind === "shop") {
+        setSummary(null);
+        setAwards([]);
+        setDataset([]);
+        setActiveRunId(null);
+        setUploaderEmail(null);
+        setUploadState("idle");
+        setStatusMessage("Upload a KPI workbook to calculate captains.");
+      }
+    },
+    [dispatch],
+  );
+
+  const handleRemoveQualifier = useCallback(
+    (kind: QualifierUploadKind) => {
+      dispatch({ type: "setQualifierMeta", kind, meta: undefined });
+    },
     [dispatch],
   );
 
@@ -716,6 +1068,15 @@ export function RecognitionCaptainWorkspace() {
     );
   }
 
+  if (runtimeError) {
+    return (
+      <div className="rounded-3xl border border-rose-600/40 bg-rose-900/10 p-6">
+        <p className="text-sm font-semibold text-rose-300">A client-side error occurred while loading this workspace</p>
+        <pre className="mt-3 max-h-40 overflow-auto text-xs text-slate-300">{String(runtimeError)}</pre>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <StepNavigator
@@ -741,43 +1102,21 @@ export function RecognitionCaptainWorkspace() {
           onFileChange={handleQualifierFileChange}
           onEmployeeFileChange={handleFileChange("employee") as any}
           onShopFileChange={handleFileChange("shop") as any}
+          onCustomRegionFileChange={handleFileChange("customRegion") as any}
           thresholds={winnerThresholds}
           onThresholdChange={handleThresholdChange}
           eligibleShops={periodWinnerInsights.eligibleShops}
           eligibleEmployees={periodWinnerInsights.eligibleEmployees}
           shopQualifiers={periodWinnerInsights.shopQualifiers}
           employeeQualifiers={periodWinnerInsights.employeeQualifiers}
+          qualifierPreview={qualifierDataset?.[0] ?? null}
           uploads={draft.uploads}
+          onRemoveUpload={handleRemoveUpload}
+          onRemoveQualifier={handleRemoveQualifier}
         />
-        <div className="mt-6">
-          <div className="flex flex-col gap-2">
-            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Eligible employees</p>
-            <h3 className="text-2xl font-semibold text-white">Eligible employees</h3>
-            <p className="text-sm text-slate-300">Shops and employees that meet qualifier thresholds.</p>
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-            <EligibleListCard
-              label="Eligible shops"
-              description={`Period Results upload · ${winnerThresholds.npsQualifier}%+ NPS`}
-              count={periodWinnerInsights.eligibleShops}
-              qualifiers={periodWinnerInsights.shopQualifiers}
-              isActive={true}
-              onToggle={() => {}}
-              emptyLabel={`Shops with ${winnerThresholds.npsQualifier}%+ NPS will appear here after the Period Results upload.`}
-            />
-            <EligibleListCard
-              label="Eligible employees"
-              description="NPS qualifier + oil change floors"
-              count={periodWinnerInsights.eligibleEmployees}
-              qualifiers={periodWinnerInsights.employeeQualifiers}
-              isActive={true}
-              onToggle={() => {}}
-              emptyLabel={`Managers with ${winnerThresholds.npsQualifier}%+ NPS will appear here after processing.`}
-            />
-          </div>
-        </div>
       </StepSection>
+
+      {/* Eligible cards moved to the Uploads (tab 2) processing summary */}
 
       <StepSection
         id="uploads"
@@ -797,9 +1136,20 @@ export function RecognitionCaptainWorkspace() {
           onEmployeeFileChange={handleFileChange("employee")}
           onShopFileChange={handleFileChange("shop")}
           onLoadSample={handleLoadSample}
+          onProcess={processUpload}
+          onOpenQualifiers={() => setActiveStep("qualifiers")}
           uploads={draft.uploads}
         />
-        {summary ? <SummaryPanel summary={summary} runId={activeRunId} /> : null}
+        <SummaryPanel
+          summary={summary}
+          runId={activeRunId}
+          periodLabel={periodValue}
+          qualifiedShopsCount={qualifiedShops.length}
+          qualifiedEmployeesCount={qualifiedEmployees.length}
+          winnerThresholds={winnerThresholds}
+          getTopEmployeeLeaders={getTopEmployeeLeaders}
+          getTopShopLeaders={getTopShopLeaders}
+        />
         {awards.length ? <AwardsGrid awards={awards} /> : null}
         {dataset.length ? (
           <>
@@ -815,10 +1165,14 @@ export function RecognitionCaptainWorkspace() {
         description="Capture DM + RD winners, rationale, and spotlight notes."
         active={activeStep === "manual-awards"}
       >
-        <ManualAwardsPanel
-          manualAwards={draft.manualAwards}
-          onEntryChange={handleManualAwardChange}
-          uploaderEmail={uploaderEmail}
+        {/* Manual award cards removed per request; leaving OnePagerGrid only */}
+        <OnePagerGrid
+          qualifierPreview={qualifierDataset?.[0] ?? null}
+          getTopEmployeeLeaders={getTopEmployeeLeaders}
+          getTopShopLeaders={getTopShopLeaders}
+          initialConfirmations={draft.confirmations}
+          onConfirmationsChange={(rows) => dispatch({ type: 'setConfirmations', rows })}
+          fileMapper={fileMapperState}
         />
       </StepSection>
 
@@ -944,6 +1298,16 @@ function EligibleListCard({
   );
 }
 
+function CompactEligibleCard({ label, count, hint }: { label: string; count: number; hint?: string }) {
+  return (
+    <div className="rounded-xl border border-slate-800/60 bg-slate-950/60 px-4 py-3 text-sm w-48">
+      <p className="text-[10px] uppercase tracking-[0.3em] text-slate-400">{label}</p>
+      <p className="mt-1 text-2xl font-semibold text-white">{count}</p>
+      {hint ? <p className="mt-1 text-xs text-slate-400">{hint}</p> : null}
+    </div>
+  );
+}
+
 function RecognitionUploadPanel({
   status,
   statusMessage,
@@ -956,6 +1320,8 @@ function RecognitionUploadPanel({
   onEmployeeFileChange,
   onShopFileChange,
   onLoadSample,
+  onProcess,
+  onOpenQualifiers,
   uploads,
 }: {
   status: ProcessingState;
@@ -969,6 +1335,8 @@ function RecognitionUploadPanel({
   onEmployeeFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onShopFileChange: (event: ChangeEvent<HTMLInputElement>) => void;
   onLoadSample: () => Promise<void>;
+  onProcess: () => Promise<boolean>;
+  onOpenQualifiers?: () => void;
   uploads: AwardShowRunDraft["uploads"];
 }) {
   return (
@@ -990,14 +1358,24 @@ function RecognitionUploadPanel({
             />
             <span className="text-[11px] normal-case tracking-normal text-slate-500">Optional label applied to both uploads.</span>
           </label>
-          <button
-            type="button"
-            onClick={onLoadSample}
-            className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-emerald-400/60"
-          >
-            <Sparkles className="h-4 w-4" />
-            Load sample data
-          </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => onProcess()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:opacity-40"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Process uploaded files
+            </button>
+            <button
+              type="button"
+              onClick={onLoadSample}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:border-emerald-400/60"
+            >
+              <Sparkles className="h-4 w-4" />
+              Load sample data
+            </button>
+          </div>
         </div>
       </div>
       <div className="mt-5 grid gap-4 sm:grid-cols-2">
@@ -1011,11 +1389,16 @@ function RecognitionUploadPanel({
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Employee file</p>
               <p className="text-sm text-slate-300">Drop the Employee Performance report (hire date, NPS, oil changes).</p>
             </div>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-emerald-500/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100">
-              <ArrowUp className="h-4 w-4" />
-              Upload
-              <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onEmployeeFileChange} />
-            </label>
+            <div className="inline-flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenQualifiers?.()}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
+              >
+                <ArrowUp className="h-4 w-4" />
+                Manage in qualifiers
+              </button>
+            </div>
           </div>
           <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
             <p className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.3em] ${statusBadgeClassMap[status]}`}>
@@ -1026,6 +1409,7 @@ function RecognitionUploadPanel({
             {runId ? <p className="text-xs text-slate-500">Active run: {runId}</p> : null}
             {uploaderEmail ? <p className="text-xs text-emerald-200">Uploader: {uploaderEmail}</p> : null}
             {errorMessage ? <p className="text-xs text-rose-300">{errorMessage}</p> : null}
+            <p className="mt-3 text-xs text-slate-400">Note: Upload KPI files from the <strong>Qualifiers & uploads</strong> tab above. This panel processes those files into awards and leaderboards.</p>
           </div>
         </div>
         <div className="rounded-2xl border border-slate-800/70 bg-slate-900/60 p-5 text-sm text-slate-300">
@@ -1034,11 +1418,16 @@ function RecognitionUploadPanel({
               <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Shop KPI upload</p>
               <p className="text-sm text-slate-300">Use the KPI export with Shop #, manager, cars, ticket, and CSI.</p>
             </div>
-            <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200">
-              <ArrowUp className="h-4 w-4" />
-              Upload
-              <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onShopFileChange} />
-            </label>
+            <div className="inline-flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => onOpenQualifiers?.()}
+                className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
+              >
+                <ArrowUp className="h-4 w-4" />
+                Manage in qualifiers
+              </button>
+            </div>
           </div>
           <div className="mt-4 rounded-2xl border border-slate-800/70 bg-slate-950/50 p-4">
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Parser checklist</p>
@@ -1086,6 +1475,9 @@ function QualifierUploadsPanel({
   onFileChange,
   onEmployeeFileChange,
   onShopFileChange,
+  onCustomRegionFileChange,
+  onRemoveUpload,
+  onRemoveQualifier,
   thresholds,
   onThresholdChange,
   eligibleShops,
@@ -1093,19 +1485,25 @@ function QualifierUploadsPanel({
   shopQualifiers,
   employeeQualifiers,
   uploads,
+  qualifierPreview,
 }: {
   qualifiers: QualifierUploadResult | null;
   uploadState: Record<QualifierUploadKind, ProcessingState>;
   onFileChange: (kind: QualifierUploadKind) => (event: ChangeEvent<HTMLInputElement>) => void;
   onEmployeeFileChange?: (event: ChangeEvent<HTMLInputElement>) => void;
   onShopFileChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onCustomRegionFileChange?: (event: ChangeEvent<HTMLInputElement>) => void;
+  onRemoveUpload?: (kind: UploadKind) => void;
+  onRemoveQualifier?: (kind: QualifierUploadKind) => void;
   thresholds: PeriodWinnerThresholds;
   onThresholdChange: (key: keyof PeriodWinnerThresholds, value: number) => void;
   eligibleShops: number;
   eligibleEmployees: number;
   shopQualifiers: PeriodWinnerQualifier[];
   employeeQualifiers: PeriodWinnerQualifier[];
-  uploads?: { employee?: UploadedFileMeta; shop?: UploadedFileMeta };
+  uploads?: { employee?: UploadedFileMeta; shop?: UploadedFileMeta; customRegion?: UploadedFileMeta };
+  qualifierPreview?: RecognitionDatasetRow | null;
+  
 }) {
   const [activeList, setActiveList] = useState<"shops" | "employees" | null>(null);
   const cards: Array<{ kind: QualifierUploadKind; title: string; description?: string; helper: string }> = [
@@ -1125,6 +1523,10 @@ function QualifierUploadsPanel({
     { key: "minOilChanges", label: "Min oil changes", suffix: "cars" },
     { key: "npsQualifier", label: "NPS qualifier", suffix: "%" },
   ];
+  
+  // Column mapper pill
+  // qualifierPreview provides a sample row to derive available column keys for mapping
+  
   const metaByKind: Partial<Record<QualifierUploadKind, UploadedFileMeta | undefined>> = {
     powerRanker: qualifiers?.powerRanker,
     periodWinner: qualifiers?.periodWinner,
@@ -1136,103 +1538,82 @@ function QualifierUploadsPanel({
 
   return (
     <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
-      <div className="gap-4 lg:flex lg:items-end lg:justify-between">
-        <div className="flex-1 space-y-2">
+      <div className="gap-4 lg:flex lg:items-start lg:justify-between">
+        <div className="flex-1">
           <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Qualifier uploads</p>
-          <h3 className="text-2xl font-semibold text-white">Power Ranker + Period Results</h3>
-          <p className="text-sm text-slate-300">Upload both workbooks, set quick floors, and watch eligible pools light up.</p>
+          <h3 className="text-2xl font-semibold text-white">Step1 set qualifiers / upload Qlik Docs</h3>
+          <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
+
+          <div className="mt-4">
+            <div className="space-y-3">
+              {fields.map((field) => (
+                <label key={field.key} className="block text-xs uppercase tracking-[0.3em] text-slate-400">
+                  <div className="flex items-center gap-3">
+                    <span className="min-w-[110px]">{field.label}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      value={thresholds[field.key]}
+                      onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
+                      className="w-20 rounded-2xl border border-slate-800/70 bg-slate-950/60 px-2 py-1 text-sm text-white"
+                    />
+                    {field.suffix ? <span className="text-xs text-slate-500">{field.suffix}</span> : null}
+                  </div>
+                </label>
+              ))}
+            </div>
+          </div>
         </div>
-        <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:mt-0 lg:min-w-[320px]">
-          {fields.map((field) => (
-            <label key={field.key} className="block text-xs uppercase tracking-[0.3em] text-slate-400">
-              {field.label}
-              <div className="mt-1 flex items-center gap-2">
-                <input
-                  type="number"
-                  min={0}
-                  value={thresholds[field.key]}
-                  onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
-                  className="w-24 rounded-2xl border border-slate-800/70 bg-slate-950/60 px-2 py-1 text-sm text-white"
-                />
-                {field.suffix ? <span className="text-xs text-slate-500">{field.suffix}</span> : null}
+
+        {/* Upload boxes moved under the qualifier uploads section in a 2x3 grid */}
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+          {([
+            { key: "employee", label: "Employee performance report", meta: uploads?.employee, onChange: onEmployeeFileChange },
+            { key: "shop", label: "Shop KPI", meta: uploads?.shop, onChange: onShopFileChange },
+            { key: "customRegion", label: "Custom Region Report", meta: uploads?.customRegion, onChange: onCustomRegionFileChange },
+            { key: "powerRanker", label: "Power Ranker", meta: metaByKind.powerRanker, onChange: onFileChange("powerRanker") },
+            { key: "donations", label: "Donations", meta: metaByKind.donations, onChange: onFileChange("donations") },
+            { key: "nps", label: "NPS", meta: metaByKind.periodWinner, onChange: onFileChange("periodWinner") },
+          ] as Array<{ key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void }>).map((item) => {
+            const handleRemove = () => {
+              if (item.key === "employee" || item.key === "customRegion" || item.key === "shop") {
+                onRemoveUpload?.(item.key as UploadKind);
+              } else if (item.key === "powerRanker" || item.key === "donations" || item.key === "nps") {
+                const qKind: QualifierUploadKind = item.key === "nps" ? "periodWinner" : (item.key as QualifierUploadKind);
+                onRemoveQualifier?.(qKind);
+              }
+            };
+
+            return (
+              <div key={item.key} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                    <Paperclip className="h-4 w-4" />
+                    <input type="file" accept=".csv,.xlsx,.xls" className="sr-only" onChange={item.onChange} />
+                  </label>
+                  <div className="text-xs text-slate-300 flex items-center gap-3">
+                    <div>
+                      <div className="font-medium text-slate-200">{item.meta?.name ?? "No file"}</div>
+                      {item.meta?.uploadedAt ? <div className="text-xs text-slate-400">Uploaded {new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
+                    </div>
+                    {item.meta ? (
+                      <button
+                        type="button"
+                        onClick={handleRemove}
+                        aria-label={`Remove ${item.label}`}
+                        className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
               </div>
-            </label>
-          ))}
-        </div>
-      </div>
-
-      
-
-      <div className="mt-6">
-        {/* Compact five-box upload grid: 1x2x2 formation on wide screens */}
-        <div className="grid gap-3 lg:grid-cols-4">
-          {/* Top - Employee Performance (spans full width) */}
-          <div className="col-span-4 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Employee performance report</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onEmployeeFileChange} />
-              </label>
-            </div>
-          </div>
-
-          {/* Row 2: NPS (mapped to periodWinner) and Period KPIs by shop */}
-          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">NPS</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("periodWinner")} />
-              </label>
-            </div>
-          </div>
-          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Period KPIs by shop</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onShopFileChange} />
-              </label>
-            </div>
-          </div>
-
-          {/* Row 3: Power Ranker and Donations */}
-          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Power ranker</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("powerRanker")} />
-              </label>
-            </div>
-          </div>
-          <div className="col-span-2 rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Donations</p>
-              <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                <Paperclip className="h-4 w-4" />
-                <input type="file" accept=".csv,.xlsx" className="sr-only" onChange={onFileChange("donations")} />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        {/* Bottom row: filenames only */}
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          {[
-            uploads?.employee?.name,
-            qualifiers?.periodWinner?.name,
-            uploads?.shop?.name,
-            qualifiers?.powerRanker?.name,
-            qualifiers?.donations?.name,
-          ]
-            .filter(Boolean)
-            .map((name, idx) => (
-              <span key={idx} className="rounded-full border border-slate-800/60 bg-slate-900/60 px-3 py-1 text-xs text-slate-200">
-                {name}
-              </span>
-            ))}
+            );
+          })}
         </div>
       </div>
     </section>
@@ -1345,21 +1726,8 @@ function ReadyChecklistPanel({ items }: { items: ReadyChecklistItem[] }) {
         <h3 className="text-2xl font-semibold text-white">Pre-export checklist</h3>
         <p className="text-sm text-slate-300">Make sure each stage lands before sending decks downstream.</p>
       </div>
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
-          <div
-            key={item.id}
-            className={`rounded-2xl border px-4 py-3 ${
-              item.complete ? "border-emerald-500/50 bg-emerald-600/10" : "border-slate-800/70 bg-slate-950/60"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              {item.complete ? <CheckCircle2 className="h-4 w-4 text-emerald-200" /> : <CircleAlert className="h-4 w-4 text-amber-200" />}
-              <p className="text-sm font-semibold text-white">{item.label}</p>
-            </div>
-            <p className="text-xs text-slate-400">{item.helper}</p>
-          </div>
-        ))}
+      <div className="mt-5">
+        <p className="text-sm text-slate-300">File uploads (Employee & Shop KPI) are managed in <strong>Step1 set qualifiers / upload Qlik Docs</strong>. Use that tab to drop your Employee Performance, Shop KPI, NPS, Custom Region, Donations and Power Ranker files. Once uploaded there, come back to this panel to process and create the period rankings show.</p>
       </div>
     </section>
   );
@@ -1376,35 +1744,33 @@ function ConfirmationGridPanel({
   confirmations: ConfirmationRow[];
   onRowsChange: (rows: ConfirmationRow[]) => void;
 }) {
-  const manualRows: ConfirmationRow[] = manualAwards
-    .filter((entry) => entry.winnerName.trim().length)
-    .map((entry) => ({
-      id: entry.id,
-      awardId: entry.id,
-      awardLabel: entry.title,
-      winnerName: entry.winnerName,
-      shopNumber: entry.winnerShop,
-      shopLabel: entry.winnerShop ? `#${entry.winnerShop}` : "—",
-      level: entry.level,
-      metricKey: undefined,
-      dmNote: undefined,
-      rdNote: undefined,
-    }));
+  const manualRows = (manualAwards ?? []).map((entry) => ({
+    id: `manual-${entry.id}`,
+    awardId: entry.id,
+    level: entry.level ?? "Manual",
+    awardLabel: entry.title ?? entry.title,
+    winnerName: entry.winnerName ?? "",
+    shopNumber: entry.winnerShop,
+    shopLabel: entry.winnerShop ? String(entry.winnerShop) : undefined,
+    metricKey: undefined,
+  }));
 
-  const autoRows: ConfirmationRow[] = awards.flatMap((award) =>
-    award.winners.slice(0, 3).map((winner) => ({
-      id: `${award.awardId}-${winner.rank}`,
-      awardId: award.awardId,
-      awardLabel: award.awardLabel,
-      winnerName: winner.shopName,
-      shopNumber: winner.shopNumber,
-      shopLabel: `#${winner.shopNumber}`,
-      level: "Auto",
-      metricKey: winner.metricKey,
-      dmNote: undefined,
-      rdNote: undefined,
-    })),
-  );
+  // Flatten server awards (each award can have multiple winners) into rows
+  const autoRows = (awards ?? []).flatMap((a) => {
+    const awardId = (a as any).awardId ?? (a as any).id ?? "";
+    const awardLabel = (a as any).awardLabel ?? (a as any).label ?? "";
+    const winners = (a as any).winners ?? [];
+    return winners.map((w: any, idx: number) => ({
+      id: `award-${awardId}-${w.shopNumber ?? idx}`,
+      awardId,
+      level: "Auto" as const,
+      awardLabel,
+      winnerName: w.managerName ?? w.winnerName ?? "",
+      shopNumber: w.shopNumber,
+      shopLabel: w.shopName ? String(w.shopName) : w.shopNumber ? String(w.shopNumber) : undefined,
+      metricKey: w.metricKey,
+    }));
+  });
 
   const baseRows = [...manualRows, ...autoRows];
   const confirmationMap = new Map(confirmations.map((row) => [row.id, row]));
@@ -1591,93 +1957,86 @@ function StepNavigator({
   onStepClick?: (id: AwardShowStepId) => void;
   onReset?: () => void;
 }) {
-  const colorMap: Record<AwardShowStepId, string> = {
-    qualifiers: "from-emerald-500 to-emerald-700 border-emerald-400/60",
-    uploads: "from-amber-500 to-amber-700 border-amber-400/60",
-    "manual-awards": "from-violet-500 to-violet-700 border-violet-400/60",
-    review: "from-sky-500 to-sky-700 border-sky-400/60",
-    exports: "from-rose-500 to-rose-700 border-rose-400/60",
-  };
-
   const total = steps.length || 1;
   const completeCount = steps.filter((s) => s.status === "complete").length;
   const pct = Math.round((completeCount / total) * 100);
 
   return (
-    <div className="flex w-full items-center justify-between gap-4 rounded-3xl border border-slate-900/70 bg-slate-950/60 p-3">
-      <div className="flex items-center gap-4">
-        <div className="hidden sm:block">
+    <div className="w-full">
+      {/* Thin banner row: left label + right progress + reset pill */}
+      <div className="mb-3 flex w-full items-center justify-between gap-4 rounded-2xl border border-slate-900/70 bg-slate-950/60 p-3">
+        <div>
           <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Award Shows workflow</p>
-          <div className="mt-2 w-56">
-            <div className="h-2 w-full rounded-full bg-slate-900/50">
-              <div className={`h-2 rounded-full bg-emerald-500`} style={{ width: `${pct}%` }} />
-            </div>
-            <p className="mt-1 text-xs text-slate-400">{completeCount}/{total} stages complete · {pct}%</p>
-          </div>
         </div>
-
-        <div className="flex items-center gap-3 overflow-auto">
-          {steps.map((step, idx) => {
-            const isActive = step.id === activeStep;
-            // Color by status: complete = green, upcoming = red, current = amber
-            const statusColor =
-              step.status === "complete"
-                ? "from-emerald-500 to-emerald-700 border-emerald-400/60"
-                : step.status === "upcoming"
-                ? "from-rose-500 to-rose-700 border-rose-400/60"
-                : "from-amber-500 to-amber-700 border-amber-400/60";
-            const badgeClasses = isActive
-              ? `ring-2 ring-white/10 ${statusColor} text-white`
-              : `${statusColor} text-white border-slate-800/50`;
-            return (
-              <button
-                key={step.id}
-                type="button"
-                onClick={() => onStepClick?.(step.id)}
-                className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:opacity-90 ${isActive ? "bg-gradient-to-br" : "bg-transparent"}`}
-                aria-current={isActive}
-              >
-                <span
-                  className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${badgeClasses} font-semibold`}
-                >
-                  {idx + 1}
-                </span>
-                <div className="text-left">
-                  <div className={`text-xs ${isActive ? "text-white font-semibold" : "text-slate-300"}`}>{step.label}</div>
-                  <div className="text-2xs text-slate-500 hidden sm:block">{step.description}</div>
-                </div>
-              </button>
-            );
-          })}
+        <div className="flex items-center gap-3">
+          <div className="hidden sm:block">
+            <div className="mt-0 w-56">
+              <div className="h-2 w-full rounded-full bg-slate-900/50">
+                <div className={`h-2 rounded-full bg-emerald-500`} style={{ width: `${pct}%` }} />
+              </div>
+              <p className="mt-1 text-xs text-slate-400">{completeCount}/{total} stages complete · {pct}%</p>
+            </div>
+          </div>
+          {onReset ? (
+            <button
+              type="button"
+              onClick={onReset}
+              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 text-sm font-semibold text-slate-200"
+            >
+              Reset
+            </button>
+          ) : null}
         </div>
       </div>
 
-      <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={onPrev}
-          disabled={!canGoPrev}
-          className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Prev
-        </button>
-        <button
-          type="button"
-          onClick={onNext}
-          disabled={!canGoNext}
-          className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-3 py-1 font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          Next
-        </button>
-        {onReset ? (
+      {/* Numbered step badges row */}
+      <div className="flex w-full items-center gap-3 overflow-auto">
+          {steps.map((step, idx) => {
+          const isActive = step.id === activeStep;
+          // Color by status: complete = green, upcoming = red, current = primary (sky)
+          // Use only green (complete/current) or red (upcoming) per request
+          const statusColor = step.status === "upcoming" ? "from-rose-500 to-rose-700 border-rose-400/60" : "from-emerald-500 to-emerald-700 border-emerald-400/60";
+          const badgeClasses = isActive
+            ? `ring-2 ring-white/10 ${statusColor} text-white`
+            : `${statusColor} text-white border-slate-800/50`;
+          return (
+            <button
+              key={step.id}
+              type="button"
+              onClick={() => onStepClick?.(step.id)}
+              className={`flex cursor-pointer items-center gap-3 rounded-xl px-3 py-2 transition-colors hover:opacity-90 ${isActive ? "bg-gradient-to-br" : "bg-transparent"}`}
+              aria-current={isActive}
+            >
+              <span
+                className={`inline-flex h-8 w-8 items-center justify-center rounded-full border ${badgeClasses} font-semibold`}
+              >
+                {idx + 1}
+              </span>
+              <div className="text-left">
+                <div className={`text-xs ${isActive ? "text-white font-semibold" : "text-slate-300"}`}>{step.label}</div>
+              </div>
+            </button>
+          );
+        })}
+
+        <div className="ml-auto flex items-center gap-2">
           <button
             type="button"
-            onClick={onReset}
-            className="ml-2 inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 text-sm font-semibold text-slate-200"
+            onClick={onPrev}
+            disabled={!canGoPrev}
+            className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-3 py-1 font-semibold text-slate-200 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            Reset
+            Prev
           </button>
-        ) : null}
+          <button
+            type="button"
+            onClick={onNext}
+            disabled={!canGoNext}
+            className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-3 py-1 font-semibold text-emerald-100 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1715,44 +2074,72 @@ function MetadataSyncStatus({ status, message }: { status: MetadataStatus; messa
   );
 }
 
-function SummaryPanel({ summary, runId }: { summary: RecognitionProcessingSummary; runId: string | null }) {
+function SummaryPanel({
+  summary,
+  runId,
+  periodLabel,
+  qualifiedShopsCount,
+  qualifiedEmployeesCount,
+  winnerThresholds,
+  getTopEmployeeLeaders,
+  getTopShopLeaders,
+}: {
+  summary?: RecognitionProcessingSummary | null;
+  runId: string | null;
+  periodLabel?: string;
+  qualifiedShopsCount: number;
+  qualifiedEmployeesCount: number;
+  winnerThresholds: PeriodWinnerThresholds;
+  getTopEmployeeLeaders?: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
+  getTopShopLeaders?: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
+}) {
+  const rowsProcessed = summary?.rowCount ? summary.rowCount.toLocaleString("en-US") : "—";
+  const medianCars = summary?.medianCarCount ? summary.medianCarCount.toLocaleString("en-US") : "—";
+  const avgTicket = summary ? formatRecognitionMetricValue("ticket", summary.averageTicket) : "—";
+  const reportingPeriod = summary?.reportingPeriod ?? periodLabel ?? "Period";
+
   const cards = [
-    { label: "Rows processed", value: summary.rowCount.toLocaleString("en-US"), icon: Table },
-    { label: "Median car count", value: summary.medianCarCount.toLocaleString("en-US"), icon: ShieldCheck },
-    { label: "Avg. ticket", value: formatRecognitionMetricValue("ticket", summary.averageTicket), icon: NotebookPen },
+    { label: "Rows processed", value: rowsProcessed, icon: Table },
+    { label: "Median car count", value: medianCars, icon: ShieldCheck },
+    { label: "Avg. ticket", value: avgTicket, icon: NotebookPen },
   ];
+
   return (
     <section className="rounded-3xl border border-slate-900/70 bg-slate-950/60 p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Processing summary</p>
-          <h3 className="mt-1 text-2xl font-semibold text-white">{summary.reportingPeriod}</h3>
-          <p className="text-sm text-slate-400">Source: {summary.dataSource}</p>
-          <div className="mt-2 text-xs text-slate-500">
-            <p>Run ID: {runId ?? "n/a"}</p>
-            <p>Processed by: {summary.processedBy || "Recognition Captain"}</p>
-            <p>Processed at: {new Date(summary.processedAt).toLocaleString()}</p>
+      <div className="flex flex-col gap-4">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Processing summary</p>
+            <h3 className="mt-1 text-2xl font-semibold text-white">{reportingPeriod}</h3>
+            <p className="text-sm text-slate-400">Source: {summary?.dataSource ?? "N/A"}</p>
+            <div className="mt-2 text-xs text-slate-500">
+              <p>Run ID: {runId ?? "n/a"}</p>
+              <p>Processed by: {summary?.processedBy ?? "Recognition Captain"}</p>
+              {summary?.processedAt ? <p>Processed at: {new Date(summary.processedAt).toLocaleString()}</p> : null}
+            </div>
           </div>
-          <div className="mt-3 space-y-2 text-xs text-slate-400">
-            {summary.submissionNotes.map((note) => (
-              <p key={note} className="flex items-start gap-2">
-                <CircleAlert className="mt-0.5 h-3.5 w-3.5 text-amber-300" />
-                {note}
-              </p>
+          <div className="grid flex-1 gap-3 sm:grid-cols-3">
+            {cards.map((card) => (
+              <div key={card.label} className="rounded-2xl border border-slate-800/70 bg-slate-950/70 p-3">
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{card.label}</p>
+                <div className="mt-2 flex items-center gap-2">
+                  <card.icon className="h-4 w-4 text-emerald-200" />
+                  <p className="text-xl font-semibold text-white">{card.value}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
-        <div className="grid flex-1 gap-3 sm:grid-cols-3">
-          {cards.map((card) => (
-            <div key={card.label} className="rounded-2xl border border-slate-800/70 bg-slate-950/70 p-3">
-              <p className="text-xs uppercase tracking-[0.3em] text-slate-500">{card.label}</p>
-              <div className="mt-2 flex items-center gap-2">
-                <card.icon className="h-4 w-4 text-emerald-200" />
-                <p className="text-xl font-semibold text-white">{card.value}</p>
-              </div>
-            </div>
-          ))}
+
+        <div className="mt-4 flex items-start gap-4">
+          <CompactEligibleCard label="Eligible shops" count={qualifiedShopsCount} hint={`Period Results · ${winnerThresholds.npsQualifier}%+ NPS`} />
+          <CompactEligibleCard label="Eligible employees" count={qualifiedEmployeesCount} hint={`NPS qualifier + oil change floors`} />
         </div>
+        {getTopEmployeeLeaders && getTopShopLeaders ? (
+          <div className="mt-4">
+            <CompactKpiLeaders getTopEmployeeLeaders={getTopEmployeeLeaders} getTopShopLeaders={getTopShopLeaders} />
+          </div>
+        ) : null}
       </div>
     </section>
   );

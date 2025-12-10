@@ -27,7 +27,7 @@ type DmListPatchPayload = Partial<Pick<DmListItem, "status" | "resolution_type">
   completed_at?: string | null;
 };
 
-function deriveUserRole(alignment: AlignmentContext | undefined): "Shop" | "DM" | "RD" | "VP" | "Unknown" {
+function deriveUserRole(alignment: AlignmentContext | null | undefined): "Shop" | "DM" | "RD" | "VP" | "Unknown" {
   if (!alignment?.memberships?.length) return "Unknown";
   const roles = alignment.memberships
     .map((membership) => membership.role ?? "")

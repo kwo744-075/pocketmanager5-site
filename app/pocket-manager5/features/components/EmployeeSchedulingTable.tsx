@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
-import { format } from "date-fns";
+
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
 import { calculateHours, aggregateShifts, type ShiftRow } from "@/lib/scheduleUtils";
 
@@ -29,16 +29,7 @@ const addDaysISO = (iso: string, n: number) => {
   return d.toISOString().slice(0, 10);
 };
 
-const calculateHours = (start?: string | null, end?: string | null, breakMinutes?: number | null) => {
-  if (!start || !end) return 0;
-  const [sh, sm] = start.split(":").map((v) => Number(v) || 0);
-  const [eh, em] = end.split(":").map((v) => Number(v) || 0);
-  let startTotal = sh * 60 + sm;
-  let endTotal = eh * 60 + em;
-  let diff = endTotal - startTotal;
-  if (diff < 0) diff += 24 * 60;
-  return Math.max(0, (diff - (breakMinutes ?? 0)) / 60);
-};
+
 
 export default function EmployeeSchedulingTable() {
   const { needsLogin, shopMeta, hierarchy, hierarchyLoading } = usePocketHierarchy();

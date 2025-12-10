@@ -2,6 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabaseClient";
+import {
+  getSchedules,
+  createShift,
+  updateShift,
+  deleteShift,
+  subscribeToChanges,
+} from "@/hooks/useEmployeeScheduling";
 
 type Staff = {
   id: string;
@@ -150,32 +157,12 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
   // Keep the editor in sync with external changes (app or other browser)
   useEffect(() => {
     if (!shopNumber) return;
-    let channel: any = null;
-    try {
-      channel = supabase
-        .channel(`employee_shifts_changes_${shopNumber}`)
-        .on(
-          'postgres_changes',
-          { event: '*', schema: 'public', table: 'employee_shifts', filter: `shop_id=eq.${shopNumber}` },
-          () => {
-            // debounce a little to avoid thundering reloads
-            void loadData();
-          },
-        )
-        .subscribe((status: any) => {
-          // noop: subscription status logged in console for debugging
-          // console.debug('employee_shifts realtime status', status);
-        });
-    } catch (err) {
-      // subscription failure shouldn't break the UI
-      // console.warn('Realtime subscription failed', err);
-    }
-
+    const unsub = subscribeToChanges(shopNumber, () => void loadData());
     return () => {
       try {
-        if (channel) supabase.removeChannel(channel);
-      } catch (err) {
-        // ignore cleanup errors
+        unsub();
+      } catch (_err) {
+        void _err;
       }
     };
     // intentionally depend on shopNumber only
@@ -211,26 +198,12 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
   async function loadData() {
     setLoading(true);
     try {
-      const [{ data: staffData }, { data: shiftData }, { data: projData }] = await Promise.all([
-        supabase.from("shop_staff").select("id, staff_name, primary_role").eq("shop_id", shopNumber).order("staff_name"),
-        supabase
-          .from("employee_shifts")
-          .select("id, employee_id, shop_id, date, start_time, end_time, break_minutes, kind")
-          .eq("shop_id", shopNumber)
-          .gte("date", weekStartISO)
-          .lte("date", weekEndISO)
-          .limit(300),
-        supabase
-          .from("weekly_projections")
-          .select("formulation_factor, sunday_cars, monday_cars, tuesday_cars, wednesday_cars, thursday_cars, friday_cars, saturday_cars")
-          .eq("shop_id", shopNumber)
-          .eq("week_start_date", weekStartISO)
-          .maybeSingle(),
-      ]);
-
-      setStaff(Array.isArray(staffData) ? staffData : []);
-      setShifts(Array.isArray(shiftData) ? shiftData : []);
-      setProjections((projData as Projections) ?? null);
+      if (shopNumber) {
+        const { staff, shifts, projections } = await getSchedules(shopNumber, weekStartISO);
+        setStaff(staff ?? []);
+        setShifts(shifts ?? []);
+        setProjections((projections as Projections) ?? null);
+      }
     } catch (err) {
       console.error("Scheduler load error", err);
       setMessage("Failed to load schedule");
@@ -276,16 +249,10 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
     setSaving(true);
     setMessage(null);
     try {
-      const action = editorState.shiftId ? "update" : "create";
-      const resp = await fetch("/api/pocket-manager/employee-shifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, payload }),
-      });
-      const json = await resp.json();
-      if (!resp.ok) {
-        setMessage(json?.error ?? "Save failed");
-        return;
+      if (editorState.shiftId) {
+        await updateShift(payload);
+      } else {
+        await createShift(payload);
       }
       setMessage("Saved");
       setEditorState(null);
@@ -302,16 +269,7 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
     if (!editorState?.shiftId) return;
     setSaving(true);
     try {
-      const resp = await fetch("/api/pocket-manager/employee-shifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "delete", payload: { id: editorState.shiftId } }),
-      });
-      const json = await resp.json();
-      if (!resp.ok) {
-        setMessage(json?.error ?? "Delete failed");
-        return;
-      }
+      await deleteShift(editorState.shiftId);
       setMessage("Deleted");
       setEditorState(null);
       await loadData();
@@ -376,9 +334,17 @@ export default function SchedulerGridEditor({ shopNumber }: Props) {
         } as Shift;
       });
 
-      const { error } = await supabase.from("employee_shifts").insert(newShifts);
-      if (error) throw error;
-      setMessage(`Pasted ${newShifts.length} shifts`);
+      // Use server endpoint to perform bulk insert (safer for large writes / admin role)
+      const resp = await fetch("/api/pocket-manager/employee-shifts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "bulk_insert", payload: newShifts }),
+      });
+      const json = await resp.json();
+      if (!resp.ok) {
+        throw new Error(json?.error ?? "Bulk insert failed");
+      }
+      setMessage(`Pasted ${json.inserted ?? newShifts.length} shifts`);
       if (pasteWeek === weekStartISO) await loadData();
     } catch (err) {
       console.error("Paste week failed", err);
