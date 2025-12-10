@@ -4,6 +4,7 @@ import Link from "next/link";
 import { ArrowLeft, Home } from "lucide-react";
 import { RetailPills } from "@/app/components/RetailPills";
 import AwardFilesMapperPill from "../recognition/components/AwardFilesMapperPill";
+import UploadFilesMapperPill from "../recognition/components/UploadFilesMapperPill";
 
 interface CaptainsTopBarProps {
   title: string;
@@ -44,7 +45,10 @@ export function CaptainsTopBar({
         </div>
         <div className="flex flex-col items-end gap-2">
           <RetailPills />
-          <AwardFilesMapperPill />
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <AwardFilesMapperPill />
+            <UploadFilesMapperPill />
+          </div>
         </div>
       </div>
     </header>
