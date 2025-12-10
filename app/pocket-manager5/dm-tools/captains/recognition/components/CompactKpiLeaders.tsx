@@ -10,10 +10,14 @@ export default function CompactKpiLeaders({
   getTopEmployeeLeaders,
   getTopShopLeaders,
   defaultOpen = false,
+  qualifiedEmployeesCount = 0,
+  qualifiedShopsCount = 0,
 }: {
   getTopEmployeeLeaders: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
   getTopShopLeaders: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
   defaultOpen?: boolean;
+  qualifiedEmployeesCount?: number;
+  qualifiedShopsCount?: number;
 }) {
   const [openMetric, setOpenMetric] = useState<string | null>(defaultOpen ? RECOGNITION_METRICS[0]?.key ?? null : null);
 
@@ -23,6 +27,20 @@ export default function CompactKpiLeaders({
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Compact leaderboards</p>
           <p className="text-sm font-semibold text-white">Top 10 per KPI</p>
+        </div>
+        <div className="hidden sm:grid sm:grid-cols-3 sm:gap-2">
+          <div className="rounded-md border border-slate-800/60 bg-slate-950/60 px-3 py-2 text-center">
+            <p className="text-[10px] uppercase text-slate-400">Employees</p>
+            <p className="text-sm font-semibold text-white">{qualifiedEmployeesCount}</p>
+          </div>
+          <div className="rounded-md border border-slate-800/60 bg-slate-950/60 px-3 py-2 text-center">
+            <p className="text-[10px] uppercase text-slate-400">Shops</p>
+            <p className="text-sm font-semibold text-white">{qualifiedShopsCount}</p>
+          </div>
+          <div className="rounded-md border border-slate-800/60 bg-slate-950/60 px-3 py-2 text-center">
+            <p className="text-[10px] uppercase text-slate-400">Top</p>
+            <p className="text-sm font-semibold text-white">Top 10</p>
+          </div>
         </div>
       </div>
 

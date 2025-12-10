@@ -29,6 +29,7 @@ export default function OnePagerGrid({
   initialConfirmations,
   onConfirmationsChange,
   fileMapper,
+  uploadMapper,
 }: {
   qualifierPreview?: RecognitionDatasetRow | null;
   getTopEmployeeLeaders: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
@@ -36,6 +37,7 @@ export default function OnePagerGrid({
   initialConfirmations?: any[];
   onConfirmationsChange?: (rows: any[]) => void;
   fileMapper?: any;
+  uploadMapper?: any;
 }) {
   // Fixed, ordered KPI list for the Excel-style one-pager (matches the design image)
   const ONE_PAGER_KPIS: { key: string; label: string }[] = [
@@ -58,6 +60,17 @@ export default function OnePagerGrid({
     { key: "differentials", label: "Differentials" },
     { key: "donations", label: "Donations" },
   ];
+
+  // KPIs for which employee winners are not applicable / should not be editable
+  const NO_EMPLOYEE_EDIT_KEYS = new Set([
+    "powerRanker1",
+    "powerRanker2",
+    "powerRanker3",
+    "carsVsBudget",
+    "carsVsComp",
+    "salesVsBudget",
+    "salesVsComp",
+  ]);
 
   const buildInitial = () => {
     const rows: OnePagerRow[] = ONE_PAGER_KPIS.map((m) => {
@@ -100,6 +113,18 @@ export default function OnePagerGrid({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialConfirmations]);
+
+  // Rebuild the rows when mapping or leader sources change so the one-pager stays in sync
+  useEffect(() => {
+    try {
+      const rebuilt = buildInitial();
+      setRows(rebuilt);
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error('Failed to rebuild one-pager rows on mapper change', e);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fileMapper?.perKpi ? JSON.stringify(fileMapper.perKpi) : null, uploadMapper?.perKpi ? JSON.stringify(uploadMapper.perKpi) : null]);
 
   const handleConfirmToggle = (idx: number) => {
     const next = [...rows];
@@ -224,41 +249,69 @@ export default function OnePagerGrid({
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <colgroup>
-            <col style={{ width: "28%" }} />
-            <col style={{ width: "12%" }} />
-            <col style={{ width: "30%" }} />
-            <col style={{ width: "30%" }} />
+            <col style={{ width: "29%" }} />
+            <col style={{ width: "11%" }} />
+            <col style={{ width: "9%" }} />
+            <col style={{ width: "23%" }} />
+            <col style={{ width: "19%" }} />
+            <col style={{ width: "9%" }} />
           </colgroup>
           <thead>
             <tr style={{ background: "#111827", color: "#cbd5e1", textTransform: "uppercase", fontSize: 11 }}>
               <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>KPI</th>
               <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>District</th>
+              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Shop #</th>
               <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Employee Top Spot</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Shop Top Spot</th>
+              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Shop Manager</th>
+              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, idx) => (
-              <tr key={r.id} style={{ borderTop: "1px solid rgba(255,255,255,0.04)", color: "#e6eef8" }}>
+              <tr
+                key={r.id}
+                style={{
+                  borderTop: "1px solid rgba(255,255,255,0.04)",
+                  color: "#e6eef8",
+                  background: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
+                }}
+              >
                 <td style={{ padding: 4, fontWeight: 600 }}>{r.metricLabel}</td>
                 <td style={{ padding: 4 }}>{r.employeeDistrict ?? ""}</td>
+                <td style={{ padding: 4, fontWeight: 600 }}>{r.shopNumber ?? ''}</td>
                 <td style={{ padding: 4 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
-                      style={{ flex: 1, padding: 6, fontSize: 12, borderRadius: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.04)", color: r.confirmed ? '#16a34a' : undefined }}
-                      value={r.employeeName}
-                      onChange={(e) => {
-                        const next = [...rows];
-                        next[idx].employeeName = e.target.value;
-                        next[idx].confirmed = false;
-                        setRows(next);
-                        onConfirmationsChange?.(next.map(mapToConfirmationRow));
-                      }}
-                    />
-                    {/* actions moved to final column (checkbox first, then Confirm, Reassign) */}
-                  </div>
+                  {NO_EMPLOYEE_EDIT_KEYS.has(r.metricKey) ? (
+                    <div style={{ padding: 6, color: '#94a3b8' }}>{r.employeeName ? r.employeeName : '-'}</div>
+                  ) : (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input
+                        style={{ width: '70%', padding: 6, fontSize: 12, borderRadius: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.04)", color: r.confirmed ? '#16a34a' : undefined, textAlign: 'left' }}
+                        value={r.employeeName}
+                        onChange={(e) => {
+                          const next = [...rows];
+                          next[idx].employeeName = e.target.value;
+                          next[idx].confirmed = false;
+                          setRows(next);
+                          onConfirmationsChange?.(next.map(mapToConfirmationRow));
+                        }}
+                      />
+                    </div>
+                  )}
                 </td>
-                <td style={{ padding: 4 }}>{r.shopNumber ?? ""}</td>
+                <td style={{ padding: 4 }}>
+                  <input
+                    style={{ width: '100%', padding: 6, fontSize: 12, borderRadius: 6, background: 'transparent', border: '1px solid rgba(255,255,255,0.04)' }}
+                    value={r.shopManager ?? ''}
+                    onChange={(e) => {
+                      const next = [...rows];
+                      next[idx].shopManager = e.target.value;
+                      next[idx].confirmed = false;
+                      setRows(next);
+                      onConfirmationsChange?.(next.map(mapToConfirmationRow));
+                    }}
+                  />
+                </td>
+                
                 <td style={{ padding: 4 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
                     <input type="checkbox" checked={Boolean(r.confirmed)} onChange={() => handleConfirmToggle(idx)} />

@@ -28,6 +28,13 @@ import {
   RECOGNITION_METRIC_LOOKUP,
   RECOGNITION_METRICS,
 } from "@/lib/recognition-captain/config";
+
+// KPI keys that drive the Excel-style Rankings one-pager (ensure these are included
+// when building normalized sheets and when computing leaders for the one-pager)
+const ONE_PAGER_KPI_KEYS = [
+  'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
+  'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
+];
 import CompactKpiLeaders from "./CompactKpiLeaders";
 import OnePagerGrid from "./OnePagerGrid";
 import {
@@ -41,7 +48,6 @@ import {
   type ConfirmationRow,
   type ManualAwardEntry,
 } from "@/lib/recognition-captain/types";
-
 const ICON_MAP: Record<string, LucideIcon> = {
   crown: BadgeCheck,
   package: Package,
@@ -82,11 +88,11 @@ type AwardShowStep = {
 };
 
 const AWARD_SHOW_STEPS: AwardShowStep[] = [
-  { id: "qualifiers", label: "Qualifiers & uploads", description: "", icon: Sparkles },
-  { id: "uploads", label: "Reports", description: "", icon: FileSpreadsheet },
-  { id: "manual-awards", label: "Rankings", description: "", icon: NotebookPen },
-  { id: "review", label: "Review", description: "", icon: ShieldCheck },
-  { id: "exports", label: "Generate", description: "", icon: Download },
+  { id: "qualifiers", label: "Qualifiers & uploads", description: "Power Ranker + Period Results", icon: Sparkles },
+  { id: "uploads", label: "Confirm lists and employee names", description: "KPI + EPR data", icon: FileSpreadsheet },
+  { id: "manual-awards", label: "Manual awards", description: "DM & RD selections", icon: NotebookPen },
+  { id: "review", label: "Review", description: "Confirm winners & notes", icon: ShieldCheck },
+  { id: "exports", label: "Generate", description: "Decks & CSV", icon: Download },
 ];
 
 type UploadedFileMeta = {
@@ -228,6 +234,89 @@ export function RecognitionCaptainWorkspace() {
     }
   }, []);
 
+  const [uploadMapperState, setUploadMapperState] = useState<any>(null);
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem('pocketmanager-upload-mapper');
+      if (raw) setUploadMapperState(JSON.parse(raw));
+    } catch (e) {
+      // ignore
+    }
+  }, []);
+
+  // Auto-link KPI -> (source, column) mapping using the upload mapper + sample headers
+  useEffect(() => {
+    try {
+      if (!uploadMapperState) return;
+      const perKpiMapping: Record<string, { source?: string; column?: string | null }> = {};
+      const perKpi = uploadMapperState.perKpi ?? {};
+      const cols = uploadMapperState.columns ?? {};
+      const ONE_PAGER_KPI_KEYS_LOCAL = [
+        'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
+        'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
+      ];
+
+      const mapHeaderToMetricKeyLocal = (header: string | undefined) => {
+        if (!header) return undefined;
+        const norm = String(header).toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+        // quick matches
+        if (norm.includes('nps') || norm.includes('net promoter') || norm.includes('csi')) return 'nps';
+        if (norm.includes('donat') || norm.includes('t5ocf') || norm.includes('donations')) return 'donations';
+        if (norm.includes('email')) return 'emailCollection';
+        if (norm.includes('pmix')) return 'pmix';
+        if (norm.includes('big 4') || norm.includes('big4')) return 'big4';
+        if (norm.includes('fuel')) return 'fuelFilters';
+        if (norm.includes('net aro') || norm.includes('net aro')) return 'netAro';
+        if (norm.includes('coolant')) return 'coolants';
+        if (norm.includes('discount')) return 'discounts';
+        if (norm.includes('differential')) return 'differentials';
+        // power ranker heuristics
+        if (norm.includes('overall ranking') || norm.includes('overall rank') || norm.includes('overall')) return 'overAll';
+        if (norm.includes('power rank') || norm.includes('power ranker') || norm.includes('overall ranking')) return 'powerRanker1';
+        // fallback: check tokens against KPI keys
+        for (const k of ONE_PAGER_KPI_KEYS_LOCAL) {
+          if (norm.includes(k.toLowerCase())) return k;
+        }
+        return undefined;
+      };
+
+      for (const k of Object.keys(perKpi)) {
+        const source = perKpi[k] as string | undefined;
+        let chosen: string | null = null;
+        if (source && cols[source]) {
+          // prefer explicit metricCol set by user
+          chosen = cols[source].metricCol ?? null;
+          // otherwise try to find a sampleHeader that maps to this KPI
+          if (!chosen && Array.isArray(cols[source].sampleHeaders)) {
+            for (const h of cols[source].sampleHeaders) {
+              const mapped = mapHeaderToMetricKeyLocal(h);
+              if (mapped === k) {
+                chosen = h;
+                break;
+              }
+            }
+          }
+        }
+        perKpiMapping[k] = { source, column: chosen };
+      }
+
+      // merge into fileMapperState so OnePagerGrid can read exact column choices
+      setFileMapperState((prev: any) => {
+        const next = { ...(prev ?? {}), perKpiColumns: perKpiMapping };
+        try {
+          window.localStorage.setItem('pocketmanager-award-mapper', JSON.stringify(next));
+        } catch (e) {
+          // ignore
+        }
+        return next;
+      });
+    } catch (err) {
+      // ignore mapping failures
+      // eslint-disable-next-line no-console
+      console.debug('Auto KPI linking failed', err);
+    }
+  }, [uploadMapperState]);
+
   const [activeStep, setActiveStep] = useState<AwardShowStepId>("qualifiers");
   const [qualifierUploadState, setQualifierUploadState] = useState<Record<QualifierUploadKind, ProcessingState>>({
     powerRanker: "idle",
@@ -258,6 +347,46 @@ export function RecognitionCaptainWorkspace() {
   const [uploaderEmail, setUploaderEmail] = useState<string | null>(null);
   const [fileMapperState, setFileMapperState] = useState<any>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
+
+  const parseFileToRows = useCallback(async (file: File) => {
+    const ext = file.name.split('.').pop()?.toLowerCase();
+    if (ext === 'csv' || ext === 'txt') {
+      const text = await file.text();
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      if (!lines.length) return { headers: [], rows: [] };
+      const headers = lines[0].split(',').map((h) => h.trim());
+      const rows = lines.slice(1).map((ln) => {
+        const cols = ln.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map((c) => c.replace(/^\"|\"$/g, '').trim());
+        const obj: Record<string, any> = {};
+        headers.forEach((h, i) => (obj[h] = cols[i] ?? ''));
+        return obj;
+      });
+      return { headers, rows };
+    }
+    if (ext === 'xlsx' || ext === 'xls') {
+      try {
+        const XLSX = await import('xlsx');
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array' });
+        const result: any[] = [];
+        for (const sheetName of workbook.SheetNames) {
+          const sheet = workbook.Sheets[sheetName];
+          const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
+          // attach sheet name to rows so we can preserve which sheet
+          if (json && json.length) {
+            for (const r of json) result.push({ __sheet: sheetName, ...r });
+          }
+        }
+        const headers = result.length ? Object.keys(result[0]).filter((k) => k !== '__sheet') : [];
+        return { headers, rows: result };
+      } catch (err) {
+        console.warn('XLSX parse failed', err);
+        return { headers: [], rows: [] };
+      }
+    }
+    return { headers: [], rows: [] };
+  }, []);
   // Qualification lists (derived from dataset + thresholds)
   const [qualifiedEmployees, setQualifiedEmployees] = useState<RecognitionDatasetRow[]>([]);
   const [disqualifiedEmployees, setDisqualifiedEmployees] = useState<RecognitionDatasetRow[]>([]);
@@ -407,66 +536,131 @@ export function RecognitionCaptainWorkspace() {
     [qualifiersComplete, uploadsComplete, manualAwardsComplete, reviewComplete, exportsComplete],
   );
 
-  // Compute qualified/disqualified employees and shops when dataset or thresholds change
+  // Compute qualified/disqualified employees and shops when dataset, parsed uploads, or thresholds change
   useEffect(() => {
-    if (!dataset || dataset.length === 0) {
-      setQualifiedEmployees([]);
-      setDisqualifiedEmployees([]);
-      setQualifiedShops([]);
-      setDisqualifiedShops([]);
-      return;
+    const rowsFromParsed = (kind: string) => {
+      const parts = parsedUploads ?? {};
+      return Array.isArray(parts[kind]) ? (parts[kind] as any[]) : [];
+    };
+
+    const normalizeNumber = (val: any) => {
+      if (val == null || val === "") return NaN;
+      if (typeof val === 'number') return val;
+      const s = String(val).trim();
+      // handle percent values like "85%" or decimals like "0.85"
+      const cleaned = s.replace(/[,\s%\$]/g, '');
+      const n = Number(cleaned);
+      if (!Number.isFinite(n)) return NaN;
+      // If value looks like a 0..1 decimal, treat as fraction and scale to percent
+      if (n > 0 && n <= 1) return n * 100;
+      return n;
+    };
+
+    const detectManager = (row: any) => {
+      for (const k of Object.keys(row)) {
+        const n = String(k).toLowerCase();
+        if (n.includes('manager') || n.includes('employee') || n.includes('name')) return row[k];
+      }
+      return '';
+    };
+
+    const detectShopNumber = (row: any) => {
+      for (const k of Object.keys(row)) {
+        const n = String(k).toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (n.includes('shop') || n.includes('shopnumber') || n.includes('store') || n.includes('site')) return normalizeNumber(row[k]) || 0;
+      }
+      return 0;
+    };
+
+    // prefer parsedUploads.employee if present, otherwise fall back to dataset employee rows
+    const parsedEmpRows = rowsFromParsed('employee');
+    let employeeRows: RecognitionDatasetRow[] = [];
+    if (parsedEmpRows && parsedEmpRows.length) {
+      employeeRows = parsedEmpRows.map((r: any) => {
+        const managerName = String(detectManager(r) ?? '').trim();
+        const shopNumber = Number(detectShopNumber(r) ?? 0);
+        // Accept common variants: 'Oil Changes', 'Oil Changes' sometimes used in EPR
+        const carCountRaw = r.carCount ?? r.Cars ?? r.CARs ?? r['car count'] ?? r['Cars'] ?? r['CarCount'] ?? r['Oil Changes'] ?? r['OilChange'] ?? r['Oil_Changes'];
+        const npsRaw = r.nps ?? r.NPS ?? r.csi ?? r.CSI ?? r['NPS Score'] ?? r['NPS'] ?? r['Your Score'];
+        const carCount = normalizeNumber(carCountRaw);
+        const nps = normalizeNumber(npsRaw);
+        const metrics: Record<string, number> = {};
+        if (Number.isFinite(carCount)) metrics.carCount = carCount;
+        if (Number.isFinite(nps)) metrics.nps = nps;
+        return { shopNumber: shopNumber ?? 0, managerName, metrics } as RecognitionDatasetRow;
+      });
+    } else {
+      employeeRows = (dataset ?? []).filter((r) => Boolean(r.managerName));
     }
 
+    // determine qualified vs disqualified employees
     const qEmployees: RecognitionDatasetRow[] = [];
     const dEmployees: RecognitionDatasetRow[] = [];
-
-    // Treat rows with a managerName as employee-level rows
-    for (const row of dataset) {
-      const isEmployee = Boolean(row.managerName);
-      if (!isEmployee) continue;
-      const cars = Number(row.metrics?.carCount ?? 0);
-      const nps = Number(row.metrics?.csi ?? 0);
-      if (Number.isFinite(cars) && cars < winnerThresholds.minOilChanges) {
+    for (const row of employeeRows) {
+      const carsRaw = row.metrics?.carCount ?? row.metrics?.cars ?? row.metrics?.CarCount ?? undefined;
+      const npsRaw = row.metrics?.nps ?? row.metrics?.csi ?? row.metrics?.NPS ?? undefined;
+      const cars = normalizeNumber(carsRaw);
+      let npsVal = normalizeNumber(npsRaw);
+      // npsVal may be in 0..1 scale; normalizeNumber already scales decimals up
+      // Only qualify if both metrics are present and meet thresholds
+      const hasCars = Number.isFinite(cars);
+      const hasNps = Number.isFinite(npsVal);
+      if (hasCars && cars < winnerThresholds.minOilChanges) {
         dEmployees.push(row);
-      } else if (Number.isFinite(nps) && nps < winnerThresholds.npsQualifier) {
+      } else if (hasNps && npsVal < winnerThresholds.npsQualifier) {
         dEmployees.push(row);
-      } else {
+      } else if (hasCars && hasNps) {
         qEmployees.push(row);
+      } else {
+        // missing key metrics -> treat as disqualified to be conservative
+        dEmployees.push(row);
       }
     }
 
-    // Build shop-level map (one representative row per shop)
-    const shopMap = new Map<number, RecognitionDatasetRow>();
-    for (const row of dataset) {
-      const existing = shopMap.get(row.shopNumber);
-      if (!existing) {
-        shopMap.set(row.shopNumber, row);
-      } else {
-        // prefer the row with higher car count as representative
-        const existingCars = Number(existing.metrics?.carCount ?? 0);
-        const newCars = Number(row.metrics?.carCount ?? 0);
-        if (newCars > existingCars) {
-          shopMap.set(row.shopNumber, row);
-        }
+    // For shops: prefer parsedUploads.customRegion if present, otherwise derive from dataset
+    const parsedShopRows = rowsFromParsed('customRegion');
+    let shopRepresentativeRows: RecognitionDatasetRow[] = [];
+    if (parsedShopRows && parsedShopRows.length) {
+      shopRepresentativeRows = parsedShopRows.map((r: any) => {
+        const shopNumber = Number(detectShopNumber(r) ?? 0);
+        const managerName = String(detectManager(r) ?? '') || '';
+        const npsRaw = r.nps ?? r.NPS ?? r.csi ?? r.CSI ?? undefined;
+        const nps = normalizeNumber(npsRaw);
+        const metrics: Record<string, number> = {};
+        if (Number.isFinite(nps)) metrics.nps = nps;
+        return { shopNumber: shopNumber ?? 0, managerName, metrics } as RecognitionDatasetRow;
+      });
+    } else {
+      // derive one representative per shop from dataset
+      const shopMap = new Map<number, RecognitionDatasetRow>();
+      for (const r of dataset ?? []) {
+        const existing = shopMap.get(r.shopNumber);
+        if (!existing) shopMap.set(r.shopNumber, r);
+        else if ((r.metrics?.carCount ?? 0) > (existing.metrics?.carCount ?? 0)) shopMap.set(r.shopNumber, r);
       }
+      shopRepresentativeRows = Array.from(shopMap.values());
     }
 
     const qSh: RecognitionDatasetRow[] = [];
     const dSh: RecognitionDatasetRow[] = [];
-    for (const [, shopRow] of shopMap) {
-      const nps = Number(shopRow.metrics?.csi ?? 0);
-      if (Number.isFinite(nps) && nps < winnerThresholds.npsQualifier) {
-        dSh.push(shopRow);
-      } else {
+    for (const shopRow of shopRepresentativeRows) {
+      const npsRaw = shopRow.metrics?.nps ?? shopRow.metrics?.csi ?? undefined;
+      const nps = normalizeNumber(npsRaw);
+      if (Number.isFinite(nps) && nps >= winnerThresholds.npsQualifier) {
         qSh.push(shopRow);
+      } else {
+        dSh.push(shopRow);
       }
     }
 
-    setQualifiedEmployees(qEmployees.sort((a, b) => (b.metrics.csi ?? 0) - (a.metrics.csi ?? 0)));
+    setQualifiedEmployees(qEmployees.sort((a, b) => (Number(b.metrics?.nps ?? 0) - Number(a.metrics?.nps ?? 0))));
     setDisqualifiedEmployees(dEmployees);
-    setQualifiedShops(qSh.sort((a, b) => (b.metrics.csi ?? 0) - (a.metrics.csi ?? 0)));
+    setQualifiedShops(qSh.sort((a, b) => (Number(b.metrics?.nps ?? 0) - Number(a.metrics?.nps ?? 0))));
     setDisqualifiedShops(dSh);
-  }, [dataset, winnerThresholds]);
+    // debug: counts
+    // eslint-disable-next-line no-console
+    console.debug('Qualification results', { parsedEmp: parsedEmpRows.length, parsedShop: parsedShopRows.length, qualifiedEmployees: qEmployees.length, disqualifiedEmployees: dEmployees.length, qualifiedShops: qSh.length, disqualifiedShops: dSh.length });
+  }, [dataset, parsedUploads, winnerThresholds]);
 
   // Compute KPI leaderboards for employees and shops whenever qualified pools change
   useEffect(() => {
@@ -474,17 +668,179 @@ export function RecognitionCaptainWorkspace() {
     const empLeaders: Record<string, RecognitionDatasetRow[]> = {};
     const shopLeaders: Record<string, RecognitionDatasetRow[]> = {};
 
-    for (const metric of RECOGNITION_METRICS) {
-      const key = metric.key;
+    // Ensure leaders are computed for both the canonical recognition metrics
+    // and for the Rankings one-pager KPI keys (these may include derived keys)
+    const metricKeys = Array.from(new Set([...(RECOGNITION_METRICS || []).map((m) => m.key), ...ONE_PAGER_KPI_KEYS]));
+    // Helper: enrich shop metrics from parsedUploads (powerRanker, nps, customRegion, donations)
+    const enrichShopMetrics = (shops: RecognitionDatasetRow[]) => {
+      const parts = parsedUploads || {};
+      const power = Array.isArray(parts.powerRanker) ? parts.powerRanker : [];
+      const npsRows = Array.isArray(parts.nps) ? parts.nps : [];
+      const custom = Array.isArray(parts.customRegion) ? parts.customRegion : [];
+      const donations = Array.isArray(parts.donations) ? parts.donations : [];
 
+      const powerMap = new Map<number, any>();
+      for (const pr of power) {
+        // accept a wider set of shop id field names (e.g. 'Shop Number', 'Store')
+        const shop = Number(
+          pr['shop'] ?? pr['Shop'] ?? pr['Shop #'] ?? pr['Shop Number'] ?? pr['shop_number'] ?? pr['store'] ?? pr['Store'] ?? 0,
+        ) || 0;
+        // accept various ranking field names (e.g. 'Overall Ranking')
+        const rank = Number(
+          pr['rank'] ?? pr['Rank'] ?? pr['position'] ?? pr['Position'] ?? pr['scoreRank'] ?? pr['Overall Ranking'] ?? pr['Overall'] ?? 0,
+        ) || 0;
+        if (shop) powerMap.set(shop, { ...pr, rank });
+      }
+
+      const npsMap = new Map<number, number>();
+      const npsSurveyMap = new Map<number, number>();
+      // prefer explicit survey column mapping from upload mapper if present
+      const npsSurveyCol = (uploadMapperState?.columns?.nps?.surveyCol as string) ?? null;
+      for (const row of npsRows) {
+        const shop = Number(row['shop'] ?? row['Shop'] ?? row['Shop #'] ?? row['Shop Number'] ?? row['store'] ?? 0) || 0;
+
+        // be resilient to many NPS header variants: scan keys for the first match
+        let valRaw: any = null;
+        for (const k of Object.keys(row)) {
+          const kn = String(k).toLowerCase();
+          if (kn.includes('nps') || kn.includes('net promoter') || kn === 'nps - cy' || kn.includes('nps -')) {
+            valRaw = row[k];
+            break;
+          }
+          // also accept short 'score' fields when they look related
+          if (!valRaw && (kn === 'score' || kn.endsWith('score') || kn.includes('rating') || kn.includes('rating - survey'))) {
+            valRaw = valRaw ?? row[k];
+          }
+        }
+        const v = Number(String(valRaw ?? '').replace(/[^0-9.\-]/g, ''));
+        if (shop && Number.isFinite(v)) npsMap.set(shop, v);
+
+        // try to capture survey counts to use as a tie-breaker – scan keys when explicit mapping not provided
+        let surveyRaw: any = null;
+        if (npsSurveyCol && Object.prototype.hasOwnProperty.call(row, npsSurveyCol)) {
+          surveyRaw = row[npsSurveyCol];
+        } else {
+          for (const k of Object.keys(row)) {
+            const kn = String(k).toLowerCase();
+            if (kn.includes('survey') || kn.includes('surveys') || kn.includes('responses') || kn.includes('# of') || kn.includes('response')) {
+              surveyRaw = row[k];
+              break;
+            }
+          }
+        }
+        const s = Number(String(surveyRaw ?? '').replace(/[^0-9\-]/g, '')) || 0;
+        if (shop && Number.isFinite(s)) npsSurveyMap.set(shop, s);
+      }
+
+      const customMap = new Map<number, Record<string, any>>();
+      for (const row of custom) {
+        const shop = Number(row['shop'] ?? row['Shop'] ?? row['Shop #'] ?? row['store'] ?? 0) || 0;
+        if (!shop) continue;
+        customMap.set(shop, row);
+      }
+
+      const donationsMap = new Map<number, number>();
+      for (const row of donations) {
+        const shop = Number(row['shop'] ?? row['Shop'] ?? row['Shop #'] ?? row['Shop Number'] ?? row['store'] ?? 0) || 0;
+        // try common donation column variants and fall back to scanning for 'donat' keywords
+        let valRaw: any = row['donations'] ?? row['Donations'] ?? row['amount'] ?? row['Amount'] ?? row['T5OCF Donations Collected'] ?? row['T5OCF Donations'] ?? null;
+        if (valRaw == null) {
+          for (const k of Object.keys(row)) {
+            const lk = String(k).toLowerCase();
+            if (lk.includes('donat') || lk.includes('t5ocf')) {
+              valRaw = row[k];
+              break;
+            }
+          }
+        }
+        const val = Number(String(valRaw ?? '').replace(/[^0-9.\-]/g, '')) || 0;
+        if (shop && Number.isFinite(val) && val !== 0) donationsMap.set(shop, val);
+      }
+
+      // debug: log parsed parts sizes to help mapping issues
+      // eslint-disable-next-line no-console
+      console.debug('enrichShopMetrics parsed parts sizes', { power: powerMap.size, nps: npsMap.size, npsSurvey: npsSurveyMap.size, custom: customMap.size, donations: donationsMap.size });
+
+      // compute derived metrics for each shop row
+      return shops.map((s) => {
+        const shopNum = Number(s.shopNumber ?? 0) || 0;
+        const metrics = { ...(s.metrics ?? {}) } as Record<string, any>;
+
+        // inject power ranker numeric scores so leaderboard sorting can pick top 1/2/3
+        const p = powerMap.get(shopNum);
+        if (p && Number.isFinite(p.rank)) {
+          // give descending scores for rank 1..3
+          metrics.powerRanker1 = p.rank === 1 ? 1000 : metrics.powerRanker1 ?? 0;
+          metrics.powerRanker2 = p.rank === 2 ? 999 : metrics.powerRanker2 ?? 0;
+          metrics.powerRanker3 = p.rank === 3 ? 998 : metrics.powerRanker3 ?? 0;
+        }
+
+        // nps/email collection
+        const npsVal = npsMap.get(shopNum);
+        const npsSur = npsSurveyMap.get(shopNum) ?? 0;
+        if (Number.isFinite(npsVal)) {
+          metrics.nps = npsVal;
+          // email collection maps to NPS per mapping
+          metrics.emailCollection = npsVal;
+          // capture survey counts for tie-breaking
+          metrics.__npsSurveyCount = npsSur;
+        }
+
+        // donations
+        const dVal = donationsMap.get(shopNum);
+        if (Number.isFinite(dVal)) metrics.donations = dVal;
+
+        // custom region derived KPIs: try to compute cars/sales variances if columns exist
+        const c = customMap.get(shopNum);
+        if (c) {
+          const parseNum = (k: string) => Number(String(c[k] ?? c[k.toUpperCase()] ?? '').replace(/[^0-9.\-]/g, '')) || 0;
+          const actualCars = parseNum('cars') || parseNum('actual_cars') || parseNum('cars_actual');
+          const budgetCars = parseNum('cars_budget') || parseNum('budget_cars') || parseNum('cars_plan');
+          const lyCars = parseNum('cars_ly') || parseNum('cars_lastyear') || parseNum('cars_comp');
+          if (budgetCars) metrics.carsVsBudget = ((actualCars - budgetCars) / Math.max(1, budgetCars)) * 100;
+          if (lyCars) metrics.carsVsComp = ((actualCars - lyCars) / Math.max(1, lyCars)) * 100;
+
+          const actualSales = parseNum('sales') || parseNum('sales_actual');
+          const budgetSales = parseNum('sales_budget') || parseNum('budget_sales');
+          const lySales = parseNum('sales_ly') || parseNum('sales_lastyear');
+          if (budgetSales) metrics.salesVsBudget = ((actualSales - budgetSales) / Math.max(1, budgetSales)) * 100;
+          if (lySales) metrics.salesVsComp = ((actualSales - lySales) / Math.max(1, lySales)) * 100;
+
+          // try other KPI fields copied through
+          const passThroughKeys = ['pmix','big4','fuelFilters','netAro','coolants','discounts','differentials'];
+          for (const k of passThroughKeys) {
+            const v = parseNum(k) || parseNum(k.toUpperCase());
+            if (v) metrics[k] = v;
+          }
+        }
+
+        return { ...s, metrics } as RecognitionDatasetRow;
+      });
+    };
+
+    for (const key of metricKeys) {
       const empSorted = [...qualifiedEmployees]
         .filter((r) => typeof r.metrics?.[key] === 'number' && Number.isFinite(r.metrics?.[key]))
         .sort((a, b) => (b.metrics?.[key] ?? 0) - (a.metrics?.[key] ?? 0))
         .slice(0, topN);
 
-      const shopSorted = [...qualifiedShops]
+      const enrichedShops = enrichShopMetrics(qualifiedShops);
+      const shopSorted = [...enrichedShops]
         .filter((r) => typeof r.metrics?.[key] === 'number' && Number.isFinite(r.metrics?.[key]))
-        .sort((a, b) => (b.metrics?.[key] ?? 0) - (a.metrics?.[key] ?? 0))
+        .sort((a, b) => {
+          const av = Number(a.metrics?.[key] ?? 0);
+          const bv = Number(b.metrics?.[key] ?? 0);
+          if (key === 'nps') {
+            // primary: nps desc
+            if (bv !== av) return bv - av;
+            // tie-breaker: survey counts (more responses preferred)
+            const aSur = Number(a.metrics?.__npsSurveyCount ?? a.metrics?.surveys ?? 0);
+            const bSur = Number(b.metrics?.__npsSurveyCount ?? b.metrics?.surveys ?? 0);
+            if (bSur !== aSur) return bSur - aSur;
+            return (b.shopNumber ?? 0) - (a.shopNumber ?? 0);
+          }
+          return bv - av;
+        })
         .slice(0, topN);
 
       empLeaders[key] = empSorted;
@@ -532,9 +888,145 @@ export function RecognitionCaptainWorkspace() {
 
       try {
         const formData = new FormData();
+
+        // If a file was provided (classic flow), include it. Otherwise, attempt to build
+        // a combined multi-sheet workbook client-side from the parsed upload parts and POST that.
         if (file) {
           formData.append("file", file);
+        } else {
+          // If parsedUploads contains sheets, build workbook with them
+          const parts = parsedUploads || {};
+          const hasParts = Object.keys(parts).some((k) => Array.isArray(parts[k]) && (parts[k] as any[]).length > 0);
+          if (hasParts) {
+            try {
+              const XLSX = await import('xlsx');
+              const wb = XLSX.utils.book_new();
+                  // Debug: report synthesized workbook sheet names and row counts (visible in browser console)
+                  try {
+                    // small safe probe
+                    const sheetSummary: Record<string, number> = {};
+                    for (const sName of wb.SheetNames) {
+                      try {
+                        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sName], { defval: null });
+                        sheetSummary[sName] = Array.isArray(rows) ? rows.length : 0;
+                      } catch (ee) {
+                        sheetSummary[sName] = -1;
+                      }
+                    }
+                    // eslint-disable-next-line no-console
+                    console.debug('Synthesized recognition workbook', sheetSummary);
+                  } catch (ee) {
+                    // ignore
+                  }
+              // create sheets for known parts in a deterministic order
+              const order = ['employee', 'shop', 'customRegion', 'powerRanker', 'nps', 'donations'];
+              for (const key of order) {
+                const rows = parts[key] ?? [];
+                if (!rows || !rows.length) continue;
+                const ws = XLSX.utils.json_to_sheet(rows as any[]);
+                XLSX.utils.book_append_sheet(wb, ws, String(key));
+              }
+              // Also add normalized employee/shop sheets so server always sees the one-pager KPI columns
+              // Define ONE_PAGER_KPI_KEYS (keep in sync with mapper expectations)
+              const ONE_PAGER_KPI_KEYS = [
+                'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
+                'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
+              ];
+
+              // If we have a normalized dataset client-side, include it as a sheet to ensure KPI columns exist
+              if (Array.isArray(dataset) && dataset.length) {
+                const empRows = (dataset as RecognitionDatasetRow[])
+                  .filter((r) => Boolean(r.managerName))
+                  .map((r) => {
+                    const out: Record<string, any> = { shopNumber: r.shopNumber, managerName: r.managerName };
+                    for (const k of ONE_PAGER_KPI_KEYS) {
+                      out[k] = Number(r.metrics?.[k] ?? 0);
+                    }
+                    return out;
+                  });
+                if (empRows.length) {
+                  const wsEmp = XLSX.utils.json_to_sheet(empRows as any[]);
+                  XLSX.utils.book_append_sheet(wb, wsEmp, 'employee_normalized');
+                }
+
+                // build a shop-level representative sheet
+                const shopMap = new Map<number, RecognitionDatasetRow>();
+                for (const r of dataset as RecognitionDatasetRow[]) {
+                  const existing = shopMap.get(r.shopNumber);
+                  if (!existing) shopMap.set(r.shopNumber, r);
+                  else if ((r.metrics?.carCount ?? 0) > (existing.metrics?.carCount ?? 0)) shopMap.set(r.shopNumber, r);
+                }
+                const shopRows = Array.from(shopMap.values()).map((r) => {
+                  const out: Record<string, any> = { shopNumber: r.shopNumber, managerName: r.managerName };
+                  for (const k of ONE_PAGER_KPI_KEYS) {
+                    out[k] = Number(r.metrics?.[k] ?? 0);
+                  }
+                  return out;
+                });
+                if (shopRows.length) {
+                  const wsShop = XLSX.utils.json_to_sheet(shopRows as any[]);
+                  XLSX.utils.book_append_sheet(wb, wsShop, 'shop_normalized');
+                }
+              }
+              // Also, if parsedUploads has raw employee/customRegion parts, build normalized sheets from them too
+              try {
+                const parts = parsedUploads || {};
+                const parsedEmp = Array.isArray(parts.employee) ? parts.employee : [];
+                const parsedCustom = Array.isArray(parts.customRegion) ? parts.customRegion : [];
+                const detectName = (r: any) => r.manager ?? r.Manager ?? r.employee ?? r.Employee ?? r['Manager Name'] ?? Object.values(r).find((v: any, i: number) => typeof v === 'string' && String(v).length > 0 && i < 5) ?? '';
+                const detectShop = (r: any) => Number(r.shop ?? r.Shop ?? r['Shop #'] ?? r['Shop#'] ?? r.store ?? r.Store ?? 0) || 0;
+                const detectNumberMetric = (r: any, candidates: string[]) => {
+                  for (const k of Object.keys(r)) {
+                    const lk = String(k).toLowerCase();
+                    if (candidates.some((c) => lk.includes(c))) {
+                      const n = Number(String(r[k]).replace(/[^0-9.\-]/g, ''));
+                      if (Number.isFinite(n)) return n;
+                    }
+                  }
+                  return 0;
+                };
+
+                if (parsedEmp.length) {
+                  const normEmp = parsedEmp.map((r: any) => {
+                    const out: Record<string, any> = { shopNumber: detectShop(r), managerName: String(detectName(r) ?? '') };
+                    // pick likely metrics
+                    out['carCount'] = detectNumberMetric(r, ['car', 'cars']);
+                    out['nps'] = detectNumberMetric(r, ['nps', 'csi', 'score']);
+                    for (const k of ONE_PAGER_KPI_KEYS) out[k] = Number(r[k] ?? r[k.toUpperCase()] ?? 0) || 0;
+                    return out;
+                  });
+                  if (normEmp.length) {
+                    const ws = XLSX.utils.json_to_sheet(normEmp as any[]);
+                    XLSX.utils.book_append_sheet(wb, ws, 'employee_normalized_parsed');
+                  }
+                }
+
+                if (parsedCustom.length) {
+                  const normShop = parsedCustom.map((r: any) => {
+                    const out: Record<string, any> = { shopNumber: detectShop(r), managerName: String(detectName(r) ?? '') };
+                    out['nps'] = detectNumberMetric(r, ['nps', 'csi', 'score']);
+                    for (const k of ONE_PAGER_KPI_KEYS) out[k] = Number(r[k] ?? r[k.toUpperCase()] ?? 0) || 0;
+                    return out;
+                  });
+                  if (normShop.length) {
+                    const ws = XLSX.utils.json_to_sheet(normShop as any[]);
+                    XLSX.utils.book_append_sheet(wb, ws, 'shop_normalized_parsed');
+                  }
+                }
+              } catch (e) {
+                // non-fatal
+                console.warn('Normalized parse append failed', e);
+              }
+              const arrayBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+              const blob = new Blob([arrayBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+              const generatedFile = new File([blob], 'combined_dataset.xlsx', { type: blob.type });
+              formData.append('file', generatedFile);
+            } catch (err) {
+              console.warn('Failed to synthesize XLSX from parsed uploads; falling back to empty upload', err);
+            }
+          }
         }
+
         const trimmedPeriod = periodValue.trim();
         if (trimmedPeriod) {
           formData.append("period", trimmedPeriod);
@@ -572,7 +1064,7 @@ export function RecognitionCaptainWorkspace() {
         return false;
       }
     },
-    [periodValue, rules],
+    [periodValue, rules, dataset],
   );
   const handleFileChange = useCallback(
     (kind: UploadKind) =>
@@ -624,20 +1116,64 @@ export function RecognitionCaptainWorkspace() {
 
         const mapHeaderToMetricKey = (header: string) => {
           if (!header) return undefined;
-          const norm = header.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const norm = header.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
 
-          // prefer matching against the recognition metrics, but only return keys that appear on the one-pager
+          // alias map for common KPI name variations
+          const aliasMap: Record<string, string[]> = {
+            nps: ['nps', 'customer satisfaction', 'csi', 'net promoter', 'net promoter score'],
+            overAll: ['overall', 'over all', 'total score', 'rank overall'],
+            powerRanker1: ['power rank', 'power ranker', 'powerranker', 'power rank 1', 'rank1', 'rank 1'],
+            powerRanker2: ['power rank 2', 'rank2', 'rank 2'],
+            powerRanker3: ['power rank 3', 'rank3', 'rank 3'],
+            carsVsBudget: ['cars vs budget', 'cars vs plan', 'carsbudget', 'carsbudget%'],
+            carsVsComp: ['cars vs comp', 'cars vs last year', 'carscomp'],
+            salesVsBudget: ['sales vs budget', 'salesbudget', 'sales vs plan'],
+            salesVsComp: ['sales vs comp', 'salescomp', 'sales vs ly'],
+            donations: ['donation', 'donations', 'gifts', 'charity'],
+            emailCollection: ['email', 'email collection', 'email capture'],
+          };
+
+          // check explicit recognition metrics first
           for (const m of RECOGNITION_METRICS) {
-            const lab = (m.label ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            const key = (m.key ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-            if (norm.includes(lab) || norm.includes(key) || lab.includes(norm) || key.includes(norm)) {
-              // map legacy CSI -> NPS for mapper/headers
+            const lab = (m.label ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+            const key = String(m.key ?? '').toLowerCase().replace(/[^a-z0-9\s]/g, ' ').trim();
+            if (!lab && !key) continue;
+            if (norm === lab || norm === key) {
+              const resolved = m.key === 'csi' ? 'nps' : m.key;
+              return ONE_PAGER_KPI_KEYS.includes(resolved) ? resolved : undefined;
+            }
+            if (lab && norm.includes(lab)) {
+              const resolved = m.key === 'csi' ? 'nps' : m.key;
+              return ONE_PAGER_KPI_KEYS.includes(resolved) ? resolved : undefined;
+            }
+            if (key && norm.includes(key)) {
               const resolved = m.key === 'csi' ? 'nps' : m.key;
               return ONE_PAGER_KPI_KEYS.includes(resolved) ? resolved : undefined;
             }
           }
 
-          // fallback: if header text contains 'nps' prefer nps
+          // alias matching
+          for (const [k, aliases] of Object.entries(aliasMap)) {
+            for (const a of aliases) {
+              if (norm.includes(a)) return ONE_PAGER_KPI_KEYS.includes(k) ? k : k;
+            }
+          }
+
+          // token overlap scoring
+          const targetTokens = norm.split(/\s+/).filter(Boolean);
+          let bestScore = 0;
+          let bestKey: string | undefined;
+          for (const k of ONE_PAGER_KPI_KEYS) {
+            const tokens = k.split(/(?=[A-Z])|[_\s]+/).map((t) => t.toLowerCase()).filter(Boolean);
+            const score = tokens.reduce((acc, t) => acc + (targetTokens.includes(t) ? 1 : 0), 0);
+            if (score > bestScore) {
+              bestScore = score;
+              bestKey = k;
+            }
+          }
+          if (bestScore > 0) return bestKey;
+
+          // fallback: if header contains 'nps'
           if (norm.includes('nps')) return 'nps';
           return undefined;
         };
@@ -645,7 +1181,11 @@ export function RecognitionCaptainWorkspace() {
         // Handle custom region uploads locally (no server processing) to avoid server-side parser hang.
         if (kind === 'customRegion') {
           try {
+            const t0 = Date.now();
             const parsed = await parseFileToRows(file);
+            // debug timing for large or slow files
+            // eslint-disable-next-line no-console
+            console.debug('CustomRegion parse time (ms):', Date.now() - t0, 'rows:', (parsed.rows ?? []).length, 'file:', file.name);
             const headers = parsed.headers ?? [];
             const rows = parsed.rows ?? [];
 
@@ -674,6 +1214,8 @@ export function RecognitionCaptainWorkspace() {
             });
 
             setDataset(parsedDataset);
+            // store parsed customRegion rows for multi-sheet export
+            setParsedUploads((p) => ({ ...p, customRegion: rows }));
             const meta: UploadedFileMeta = {
               name: file.name,
               uploadedAt: new Date().toISOString(),
@@ -693,6 +1235,31 @@ export function RecognitionCaptainWorkspace() {
           return;
         }
 
+        // Handle shop KPI uploads locally so parsed sheets are available for synthesis
+        if (kind === 'shop') {
+          try {
+            const parsed = await parseFileToRows(file);
+            const headers = parsed.headers ?? [];
+            const rows = parsed.rows ?? [];
+            // store parsed shop rows for multi-sheet export
+            setParsedUploads((p) => ({ ...p, shop: rows }));
+            const meta: UploadedFileMeta = {
+              name: file.name,
+              uploadedAt: new Date().toISOString(),
+              rows: rows.length,
+            };
+            dispatch({ type: 'setUploadMeta', kind, meta });
+            setUploadState('ready');
+            setStatusMessage(`Processed ${rows.length} shop rows`);
+          } catch (error) {
+            console.error('Shop upload handling failed', error);
+            setUploadError(error instanceof Error ? error.message : 'Shop upload failed');
+          } finally {
+            event.target.value = '';
+          }
+          return;
+        }
+
         // Handle employee uploads locally using the mapper (client-side parsing)
         if (kind === 'employee') {
           try {
@@ -700,19 +1267,34 @@ export function RecognitionCaptainWorkspace() {
             const headers = parsed.headers ?? [];
             const rows = parsed.rows ?? [];
 
-            // load mapper from localStorage (if present)
-            let mapper: any = null;
+            // load mapper from localStorage (award mapper and upload mapper)
+            let awardMapper: any = null;
+            let uploadMapper: any = null;
             try {
               const raw = window.localStorage.getItem('pocketmanager-award-mapper');
-              if (raw) mapper = JSON.parse(raw);
+              if (raw) awardMapper = JSON.parse(raw);
+            } catch (e) {
+              // ignore
+            }
+            try {
+              const rawUpload = window.localStorage.getItem('pocketmanager-upload-mapper');
+              if (rawUpload) uploadMapper = JSON.parse(rawUpload);
             } catch (e) {
               // ignore
             }
 
-            const nameCol = mapper?.columns?.employee?.nameCol;
-            const shopCol = mapper?.columns?.employee?.shopCol;
-            const metricCol = mapper?.columns?.employee?.metricCol;
-            const perKpi = mapper?.perKpi ?? {};
+            // prefer uploadMapper columns if present, otherwise award mapper columns
+            const nameCol = uploadMapper?.columns?.employee?.nameCol ?? awardMapper?.columns?.employee?.nameCol;
+            const shopCol = uploadMapper?.columns?.employee?.shopCol ?? awardMapper?.columns?.employee?.shopCol;
+            const metricCol = uploadMapper?.columns?.employee?.metricCol ?? awardMapper?.columns?.employee?.metricCol;
+
+            // perKpi mapping: prefer uploadMapper.perKpi then awardMapper.perKpi
+            let perKpi = awardMapper?.perKpi ?? {};
+            if (uploadMapper?.perKpi) perKpi = uploadMapper.perKpi;
+
+            // debug: which mapper and columns are being used
+            // eslint-disable-next-line no-console
+            console.debug('Employee parsing mapper', { nameCol, shopCol, metricCol, perKpi: perKpi ?? {}, headers: headers.slice(0, 12) });
 
             const parsedDataset: RecognitionDatasetRow[] = rows.map((r: Record<string, any>) => {
               const metrics: Record<string, number> = {};
@@ -750,6 +1332,8 @@ export function RecognitionCaptainWorkspace() {
             });
 
             setDataset(parsedDataset);
+            // store parsed employee rows for multi-sheet export
+            setParsedUploads((p) => ({ ...p, employee: rows }));
             const meta: UploadedFileMeta = {
               name: file.name,
               uploadedAt: new Date().toISOString(),
@@ -804,10 +1388,39 @@ export function RecognitionCaptainWorkspace() {
         }
         setQualifierUploadState((prev) => ({ ...prev, [kind]: "uploading" }));
         try {
-          const meta: UploadedFileMeta = {
-            name: file.name,
-            uploadedAt: new Date().toISOString(),
-          };
+          const meta: UploadedFileMeta = { name: file.name, uploadedAt: new Date().toISOString() };
+
+          // Parse qualifier files client-side so we can merge them into the combined workbook
+          const parsed = await parseFileToRows(file);
+          const rows = parsed.rows ?? [];
+
+          // store parsed rows under parsedUploads for later merging
+          if (kind === 'powerRanker') {
+            setParsedUploads((p) => ({ ...p, powerRanker: rows }));
+          } else if (kind === 'periodWinner') {
+            // periodWinner is the NPS report
+            setParsedUploads((p) => ({ ...p, nps: rows }));
+            // also put a preview of rows into qualifiers.previewRows so UI can show a sample
+            dispatch({
+              type: 'setQualifierMeta',
+              kind,
+              meta,
+              previewRows: Array.isArray(rows) && rows.length
+                ? (rows as any[]).slice(0, 5).map((r) => ({
+                    shopNumber: Number(r['shop'] ?? r['Shop'] ?? r['Shop #'] ?? r['Shop#'] ?? r['store'] ?? r['Store'] ?? 0),
+                    shopName: String(r['shopName'] ?? r['shop_name'] ?? '') || undefined,
+                    districtName: String(r['district'] ?? r['districtName'] ?? '') || undefined,
+                    regionName: String(r['region'] ?? r['regionName'] ?? '') || undefined,
+                    managerName: (r['manager'] ?? r['Manager'] ?? '') as string,
+                    metrics: r,
+                  } as RecognitionDatasetRow))
+                : undefined,
+            });
+          } else if (kind === 'donations') {
+            setParsedUploads((p) => ({ ...p, donations: rows }));
+          }
+
+          // always persist meta
           dispatch({ type: "setQualifierMeta", kind, meta });
           setQualifierUploadState((prev) => ({ ...prev, [kind]: "ready" }));
         } catch (error) {
@@ -1103,6 +1716,7 @@ export function RecognitionCaptainWorkspace() {
           onEmployeeFileChange={handleFileChange("employee") as any}
           onShopFileChange={handleFileChange("shop") as any}
           onCustomRegionFileChange={handleFileChange("customRegion") as any}
+            parsedUploads={parsedUploads}
           thresholds={winnerThresholds}
           onThresholdChange={handleThresholdChange}
           eligibleShops={periodWinnerInsights.eligibleShops}
@@ -1113,6 +1727,7 @@ export function RecognitionCaptainWorkspace() {
           uploads={draft.uploads}
           onRemoveUpload={handleRemoveUpload}
           onRemoveQualifier={handleRemoveQualifier}
+          uploadMapper={uploadMapperState}
         />
       </StepSection>
 
@@ -1149,6 +1764,10 @@ export function RecognitionCaptainWorkspace() {
           winnerThresholds={winnerThresholds}
           getTopEmployeeLeaders={getTopEmployeeLeaders}
           getTopShopLeaders={getTopShopLeaders}
+          qualifiedEmployees={qualifiedEmployees}
+          disqualifiedEmployees={disqualifiedEmployees}
+          qualifiedShops={qualifiedShops}
+          disqualifiedShops={disqualifiedShops}
         />
         {awards.length ? <AwardsGrid awards={awards} /> : null}
         {dataset.length ? (
@@ -1173,6 +1792,7 @@ export function RecognitionCaptainWorkspace() {
           initialConfirmations={draft.confirmations}
           onConfirmationsChange={(rows) => dispatch({ type: 'setConfirmations', rows })}
           fileMapper={fileMapperState}
+          uploadMapper={uploadMapperState}
         />
       </StepSection>
 
@@ -1359,32 +1979,19 @@ function RecognitionUploadPanel({
             <span className="text-[11px] normal-case tracking-normal text-slate-500">Optional label applied to both uploads.</span>
           </label>
             <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => onProcess()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:opacity-40"
-            >
-              <FileSpreadsheet className="h-4 w-4" />
-              Process uploaded files
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={() => onProcess()}
+                disabled={status === 'uploading'}
+                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:opacity-40"
+              >
+                {status === 'uploading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                {status === 'uploading' ? 'Processing…' : 'Process uploaded files'}
+              </button>
+            </div>
         </div>
       </div>
-      <div className="mt-5">
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4">
-          <p className="text-sm text-slate-300">Uploads for Employee performance and Shop KPI have been centralized to the <strong>Step1 — Qualifiers & uploads</strong> tab. Use that tab to upload your files (Employee Performance, Shop KPI, NPS, Custom Region, Donations, Power Ranker). When ready, come back here and click <strong>Process uploaded files</strong>.</p>
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => onOpenQualifiers?.()}
-              className="inline-flex items-center gap-2 rounded-2xl border border-slate-700/70 px-4 py-2 text-sm font-semibold text-slate-200"
-            >
-              <ArrowUp className="h-4 w-4" />
-              Open Qualifiers & Uploads (Step1)
-            </button>
-          </div>
-        </div>
-      </div>
+      
     </section>
   );
 }
@@ -1423,6 +2030,8 @@ function QualifierUploadsPanel({
   employeeQualifiers,
   uploads,
   qualifierPreview,
+  parsedUploads,
+  uploadMapper,
 }: {
   qualifiers: QualifierUploadResult | null;
   uploadState: Record<QualifierUploadKind, ProcessingState>;
@@ -1440,6 +2049,8 @@ function QualifierUploadsPanel({
   employeeQualifiers: PeriodWinnerQualifier[];
   uploads?: { employee?: UploadedFileMeta; shop?: UploadedFileMeta; customRegion?: UploadedFileMeta };
   qualifierPreview?: RecognitionDatasetRow | null;
+  parsedUploads?: Record<string, any[] | undefined>;
+  uploadMapper?: any;
   
 }) {
   const [activeList, setActiveList] = useState<"shops" | "employees" | null>(null);
@@ -1475,6 +2086,32 @@ function QualifierUploadsPanel({
 
   const [uploading, setUploading] = useState<Record<string, boolean>>({});
 
+  // compute mapping warnings based on upload mapper and parsed uploads
+  const mappingWarnings: string[] = [];
+  try {
+    const mapper = uploadMapper ?? (typeof window !== 'undefined' && window.localStorage ? JSON.parse(window.localStorage.getItem('pocketmanager-upload-mapper') || 'null') : null);
+    const perKpi = mapper?.perKpi ?? {};
+    const usedSources = new Set<string>((Object.values(perKpi).filter(Boolean) as string[]));
+    // for each source mapped, ensure we have either parsed uploads or an uploaded file meta
+    for (const src of Array.from(usedSources)) {
+      if (!src || src === 'none') continue;
+      const partRows = parsedUploads?.[src];
+      const hasRows = Array.isArray(partRows) && partRows.length > 0;
+      const columns = mapper?.columns?.[src] ?? {};
+      const hasSampleHeaders = Array.isArray(columns?.sampleHeaders) && columns.sampleHeaders.length > 0;
+      const hasMeta = (src === 'employee' && uploads?.employee) || (src === 'shop' && uploads?.shop) || (src === 'customRegion' && uploads?.customRegion) || (src === 'nps' && qualifiers?.periodWinner) || (src === 'powerRanker' && qualifiers?.powerRanker) || (src === 'donations' && qualifiers?.donations);
+      const pretty = String(src).replace(/([A-Z])/g, ' $1').replace(/^./, (s) => s.toUpperCase());
+      if (!hasRows && !hasMeta) {
+        mappingWarnings.push(`${pretty} is mapped but no upload is present.`);
+      }
+      if (!hasSampleHeaders) {
+        mappingWarnings.push(`${pretty} has no sample headers; open Upload Mapper to set columns.`);
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
   useEffect(() => {
     // Clear uploading indicators when parent reports uploaded meta
     if (uploads?.employee) setUploading((s) => ({ ...s, employee: false }));
@@ -1498,43 +2135,47 @@ function QualifierUploadsPanel({
   }) => {
     return (
       <div key={item.key} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-            <Paperclip className="h-4 w-4" />
-            <input
-              type="file"
-              accept=".csv,.xlsx,.xls"
-              className="sr-only"
-              onChange={(e) => {
-                setUploading((s) => ({ ...s, [item.key]: true }));
-                item.onChange?.(e as any);
-                onChange?.(e as any);
-              }}
-            />
-          </label>
-          <div className="text-xs text-slate-300 flex items-center gap-3">
-            <div>
-              <div className="font-medium text-slate-200">{item.meta?.name ?? "No file"}</div>
-              {item.meta?.uploadedAt ? <div className="text-xs text-slate-400">Uploaded {new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
-            </div>
-            {uploading ? (
-              <div className="flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
-              </div>
-            ) : item.meta ? (
-              <button
-                type="button"
-                onClick={onRemove}
-                aria-label={`Remove ${item.label}`}
-                className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
-              >
-                ✕
-              </button>
-            ) : null}
-          </div>
+            <div className="flex items-center gap-2 w-full">
+                    <div className="flex-1">
+                      <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{item.label}</p>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-xs text-slate-300 flex items-center gap-3">
+                        <div className="text-center">
+                          <div className="font-medium text-slate-200 mb-1 text-[12px]">{item.meta?.name ?? "No file"}</div>
+                          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
+                            <Paperclip className="h-4 w-4" />
+                            <input
+                              type="file"
+                              accept=".csv,.xlsx,.xls"
+                              className="sr-only"
+                              onChange={(e) => {
+                                setUploading((s) => ({ ...s, [item.key]: true }));
+                                item.onChange?.(e as any);
+                                onChange?.(e as any);
+                              }}
+                            />
+                          </label>
+                          {item.meta?.uploadedAt ? <div className="text-[11px] text-slate-400 mt-1">{new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
+                        </div>
+
+                    {uploading ? (
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+                      </div>
+                    ) : item.meta ? (
+                      <button
+                        type="button"
+                        onClick={onRemove}
+                        aria-label={`Remove ${item.label}`}
+                        className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
+                      >
+                        ✕
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
         </div>
       </div>
     );
@@ -1545,42 +2186,46 @@ function QualifierUploadsPanel({
       <div className="gap-4 lg:flex lg:items-start lg:justify-between">
         <div className="flex-1">
           <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Qualifier uploads</p>
+          {mappingWarnings.length ? (
+            <div className="mt-3 space-y-1">
+              {mappingWarnings.map((m, i) => (
+                <div key={i} className="text-xs text-rose-300">⚠ {m}</div>
+              ))}
+            </div>
+          ) : null}
           <h3 className="text-2xl font-semibold text-white">Step1 set qualifiers / upload Qlik Docs</h3>
           <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
 
-          <div className="mt-4">
-            <p className="text-xs text-slate-400">Thresholds for qualifiers are shown below. Adjust as needed after uploading qualifier files.</p>
+          {/* Placed qualifier threshold inputs immediately under the guidance text per request */}
+          <div className="mt-4 flex gap-3 max-w-xl">
+            {fields.map((field) => (
+              <div key={field.key} className="flex-1 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-center">
+                <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{field.label}</div>
+                <input
+                  type="number"
+                  min={0}
+                  value={thresholds[field.key]}
+                  onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
+                  className="mt-2 w-full max-w-[160px] mx-auto rounded-2xl border border-slate-800/70 bg-slate-900/40 px-3 py-2 text-sm text-white text-center"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Thresholds moved to bottom and evenly spaced */}
-        <div className="mt-6 flex gap-4 w-full">
-          {fields.map((field) => (
-            <div key={field.key} className="flex-1 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-center">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{field.label}</div>
-              <input
-                type="number"
-                min={0}
-                value={thresholds[field.key]}
-                onChange={(event) => onThresholdChange(field.key, Number(event.target.value))}
-                className="mt-2 w-full max-w-[160px] mx-auto rounded-2xl border border-slate-800/70 bg-slate-900/40 px-3 py-2 text-sm text-white text-center"
-              />
-            </div>
-          ))}
-        </div>
+        {/* Thresholds were moved above under the guidance text */}
 
         {/* Upload boxes moved under the qualifier uploads section in a 2x3 grid */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 gap-3 w-full">
+        <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-3 w-full">
           {([
             { key: "employee", label: "Employee performance report", meta: uploads?.employee, onChange: onEmployeeFileChange },
-            { key: "shop", label: "Shop KPI", meta: uploads?.shop, onChange: onShopFileChange },
             { key: "customRegion", label: "Custom Region Report", meta: uploads?.customRegion, onChange: onCustomRegionFileChange },
             { key: "powerRanker", label: "Power Ranker", meta: metaByKind.powerRanker, onChange: onFileChange("powerRanker") },
             { key: "donations", label: "Donations", meta: metaByKind.donations, onChange: onFileChange("donations") },
             { key: "nps", label: "NPS", meta: metaByKind.periodWinner, onChange: onFileChange("periodWinner") },
           ] as Array<{ key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void }>).map((item) => {
             const handleRemove = () => {
-              if (item.key === "employee" || item.key === "customRegion" || item.key === "shop") {
+              if (item.key === "employee" || item.key === "customRegion") {
                 onRemoveUpload?.(item.key as UploadKind);
               } else if (item.key === "powerRanker" || item.key === "donations" || item.key === "nps") {
                 const qKind: QualifierUploadKind = item.key === "nps" ? "periodWinner" : (item.key as QualifierUploadKind);
@@ -1592,6 +2237,25 @@ function QualifierUploadsPanel({
               <UploadBox key={item.key} item={item} uploading={uploading[item.key]} onRemove={handleRemove} />
             );
           })}
+        </div>
+        {/* Small Report Mapper pill showing which files have been parsed */}
+        <div className="mt-4">
+          <div className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm max-w-md">
+            <div className="flex items-center justify-between">
+              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">File Mapper</div>
+              <div className="text-xs text-slate-400">Mapping summary</div>
+            </div>
+            <div className="mt-2 text-sm text-slate-200">
+              <ul className="text-xs text-slate-300">
+                <li>Employee Performance: {uploads?.employee ? uploads.employee.name : 'No file'}</li>
+                <li>Custom Region (shop-level NPS): {uploads?.customRegion ? uploads.customRegion.name : 'No file'}</li>
+                <li>Power Ranker: {qualifiers?.powerRanker ? qualifiers.powerRanker.name : 'No file'}</li>
+                <li>NPS Report: {qualifiers?.periodWinner ? qualifiers.periodWinner.name : 'No file'}</li>
+                <li>Donations: {qualifiers?.donations ? qualifiers.donations.name : 'No file'}</li>
+              </ul>
+              <div className="mt-2 text-xs text-slate-400">Parsed parts: {parsedUploads ? Object.keys(parsedUploads).filter(k => parsedUploads[k]?.length).join(', ') || 'none' : 'none'}</div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -1693,21 +2357,25 @@ type ReadyChecklistItem = {
 };
 
 function ReadyChecklistPanel({ items }: { items: ReadyChecklistItem[] }) {
-  if (!items.length) {
+  if (!items || !items.length) {
     return null;
   }
 
   return (
-    <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-5">
-      <div className="flex flex-col gap-2">
-        <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Run readiness</p>
-        <h3 className="text-2xl font-semibold text-white">Pre-export checklist</h3>
-        <p className="text-sm text-slate-300">Make sure each stage lands before sending decks downstream.</p>
-      </div>
-      <div className="mt-5">
-        <p className="text-sm text-slate-300">File uploads (Employee & Shop KPI) are managed in <strong>Step1 set qualifiers / upload Qlik Docs</strong>. Use that tab to drop your Employee Performance, Shop KPI, NPS, Custom Region, Donations and Power Ranker files. Once uploaded there, come back to this panel to process and create the period rankings show.</p>
-      </div>
-    </section>
+    <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-xs">
+      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Ready checklist</p>
+      <ul className="mt-3 space-y-2">
+        {items.map((it) => (
+          <li key={it.id} className="flex items-start gap-3">
+            <div className={`mt-1 ${it.complete ? 'text-emerald-400' : 'text-slate-500'}`}>{it.complete ? '✔' : '○'}</div>
+            <div>
+              <div className="text-sm text-white font-semibold">{it.label}</div>
+              <div className="text-xs text-slate-400">{it.helper}</div>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -2061,6 +2729,10 @@ function SummaryPanel({
   winnerThresholds,
   getTopEmployeeLeaders,
   getTopShopLeaders,
+  qualifiedEmployees,
+  disqualifiedEmployees,
+  qualifiedShops,
+  disqualifiedShops,
 }: {
   summary?: RecognitionProcessingSummary | null;
   runId: string | null;
@@ -2070,11 +2742,16 @@ function SummaryPanel({
   winnerThresholds: PeriodWinnerThresholds;
   getTopEmployeeLeaders?: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
   getTopShopLeaders?: (metricKey: string, limit?: number) => RecognitionDatasetRow[];
+  qualifiedEmployees?: RecognitionDatasetRow[];
+  disqualifiedEmployees?: RecognitionDatasetRow[];
+  qualifiedShops?: RecognitionDatasetRow[];
+  disqualifiedShops?: RecognitionDatasetRow[];
 }) {
   const rowsProcessed = summary?.rowCount ? summary.rowCount.toLocaleString("en-US") : "—";
   const medianCars = summary?.medianCarCount ? summary.medianCarCount.toLocaleString("en-US") : "—";
   const avgTicket = summary ? formatRecognitionMetricValue("ticket", summary.averageTicket) : "—";
   const reportingPeriod = summary?.reportingPeriod ?? periodLabel ?? "Period";
+  const totalShops = (qualifiedShops?.length ?? 0) + (disqualifiedShops?.length ?? 0);
 
   const cards = [
     { label: "Rows processed", value: rowsProcessed, icon: Table },
@@ -2109,15 +2786,80 @@ function SummaryPanel({
           </div>
         </div>
 
-        <div className="mt-4 flex items-start gap-4">
-          <CompactEligibleCard label="Eligible shops" count={qualifiedShopsCount} hint={`Period Results · ${winnerThresholds.npsQualifier}%+ NPS`} />
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
           <CompactEligibleCard label="Eligible employees" count={qualifiedEmployeesCount} hint={`NPS qualifier + oil change floors`} />
+          <CompactEligibleCard label="Eligible shops" count={qualifiedShopsCount} hint={`Period Results · ${winnerThresholds.npsQualifier}%+ NPS`} />
+          <CompactEligibleCard label="Total shops" count={totalShops} hint={`Total shops in scope`} />
         </div>
-        {getTopEmployeeLeaders && getTopShopLeaders ? (
-          <div className="mt-4">
-            <CompactKpiLeaders getTopEmployeeLeaders={getTopEmployeeLeaders} getTopShopLeaders={getTopShopLeaders} />
-          </div>
-        ) : null}
+          {getTopEmployeeLeaders && getTopShopLeaders ? (
+            <>
+              {/* Qualified Lists card placed above compact leaderboard */}
+              <div className="mt-4">
+                <section className="rounded-2xl border border-slate-900/70 bg-slate-950/60 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Qualified Shops</p>
+                      <h3 className="text-lg font-semibold text-white">Qualifier lists</h3>
+                      <p className="text-sm text-slate-400">Review which employees and shops are qualified / non-qualified based on thresholds.</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <div className="rounded-lg border border-slate-800/60 bg-slate-950/50 p-3">
+                        <details>
+                          <summary className="cursor-pointer text-sm font-semibold text-white">Employees · Qualified ({qualifiedEmployees?.length ?? 0})</summary>
+                          <ul className="mt-2 max-h-48 overflow-auto text-sm text-slate-300">
+                            {qualifiedEmployees && qualifiedEmployees.length ? qualifiedEmployees.map((r) => (
+                              <li key={`qe-${r.shopNumber}-${r.managerName}`} className="py-1">{r.managerName ?? `Shop #${r.shopNumber}`}</li>
+                            )) : <li className="text-xs text-slate-500">No qualified employees</li>}
+                          </ul>
+                        </details>
+                      </div>
+
+                      <div className="mt-3 rounded-lg border border-slate-800/60 bg-slate-950/50 p-3">
+                        <details>
+                          <summary className="cursor-pointer text-sm font-semibold text-white">Employees · Non‑qualified ({disqualifiedEmployees?.length ?? 0})</summary>
+                          <ul className="mt-2 max-h-48 overflow-auto text-sm text-slate-300">
+                            {disqualifiedEmployees && disqualifiedEmployees.length ? disqualifiedEmployees.map((r) => (
+                              <li key={`de-${r.shopNumber}-${r.managerName}`} className="py-1">{r.managerName ?? `Shop #${r.shopNumber}`}</li>
+                            )) : <li className="text-xs text-slate-500">No non-qualified employees</li>}
+                          </ul>
+                        </details>
+                      </div>
+                    </div>
+
+                    <div>
+                      <div className="rounded-lg border border-slate-800/60 bg-slate-950/50 p-3">
+                        <details>
+                          <summary className="cursor-pointer text-sm font-semibold text-white">Shops · Qualified ({qualifiedShops?.length ?? 0})</summary>
+                          <ul className="mt-2 max-h-48 overflow-auto text-sm text-slate-300">
+                            {qualifiedShops && qualifiedShops.length ? qualifiedShops.map((r) => (
+                              <li key={`qs-${r.shopNumber}`} className="py-1">Shop #{r.shopNumber} {r.managerName ? `· ${r.managerName}` : ''}</li>
+                            )) : <li className="text-xs text-slate-500">No qualified shops</li>}
+                          </ul>
+                        </details>
+                      </div>
+
+                      <div className="mt-3 rounded-lg border border-slate-800/60 bg-slate-950/50 p-3">
+                        <details>
+                          <summary className="cursor-pointer text-sm font-semibold text-white">Shops · Non‑qualified ({disqualifiedShops?.length ?? 0})</summary>
+                          <ul className="mt-2 max-h-48 overflow-auto text-sm text-slate-300">
+                            {disqualifiedShops && disqualifiedShops.length ? disqualifiedShops.map((r) => (
+                              <li key={`ds-${r.shopNumber}`} className="py-1">Shop #{r.shopNumber} {r.managerName ? `· ${r.managerName}` : ''}</li>
+                            )) : <li className="text-xs text-slate-500">No non-qualified shops</li>}
+                          </ul>
+                        </details>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+
+              <div className="mt-4">
+                <CompactKpiLeaders getTopEmployeeLeaders={getTopEmployeeLeaders} getTopShopLeaders={getTopShopLeaders} qualifiedEmployeesCount={qualifiedEmployees?.length ?? 0} qualifiedShopsCount={qualifiedShops?.length ?? 0} />
+              </div>
+            </>
+          ) : null}
       </div>
     </section>
   );

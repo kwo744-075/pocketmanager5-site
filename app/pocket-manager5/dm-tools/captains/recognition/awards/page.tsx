@@ -6,7 +6,7 @@ export default function RecognitionAwardsWorkspacePage() {
     <div>
       <CaptainsTopBar
         title="Recognition Captain · Awards"
-        description="Upload KPI exports, auto-build award leaderboards, and push decks for District MVP, Car Count Crusher, Ticket Hawk, and CSI Guardian."
+        description="Upload KPI exports, auto-build award leaderboards, and push decks for District MVP, Region Ranking Car Comp, ARO, and NPS."
       />
       <RecognitionCaptainWorkspace />
     </div>
