@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 
 type ApiBody = {
-  action?: "create" | "update" | "delete";
+  action?: "create" | "update" | "delete" | "bulk_insert";
   payload?: Record<string, unknown>;
 };
 
@@ -21,6 +21,19 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: error.message ?? "Insert failed" }, { status: 500 });
       }
       return NextResponse.json({ ok: true, id: data?.id ?? null });
+    }
+
+    if (action === "bulk_insert") {
+      // payload expected to be an array of shift objects
+      const items = Array.isArray(payload) ? (payload as Record<string, unknown>[]) : [];
+      if (items.length === 0) return NextResponse.json({ error: "No items provided" }, { status: 400 });
+      const { data, error } = await admin.from("employee_shifts").insert(items);
+      if (error) {
+        console.error("employee_shifts bulk insert failed", error);
+        return NextResponse.json({ error: error.message ?? "Bulk insert failed" }, { status: 500 });
+      }
+      const bulkData = data as any;
+      return NextResponse.json({ ok: true, inserted: Array.isArray(bulkData) ? bulkData.length : 0 });
     }
 
     if (action === "update") {

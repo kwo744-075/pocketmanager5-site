@@ -1568,9 +1568,17 @@ export default function PulseCheckPage() {
     };
 
           async function loadScope() {
+          // Local types and mutable scope values used while resolving alignment/district data
+          type DistrictShop = { id: string; shop_name?: string | null; shop_number?: number | null };
+          let shopsInDistrict: DistrictShop[] = [];
+          let hierarchyShopCount: number | null = hierarchy?.shops_in_district ?? null;
+          let districtId: string | null = (selectedScope as any)?.districtId ?? null;
+          let normalizedAlignmentName: string | null = (selectedScope as any)?.alignmentDistrictName ?? hierarchy?.district_name ?? null;
+          let districtLabel: string | null = (selectedScope as any)?.label ?? null;
           try {
+          const rawAlignment = (selectedScope as unknown) as { [key: string]: unknown } | null;
           const mappedAlignment: { shop_number?: number | null; shop_name?: string; fallbackId?: string }[] =
-            Array.isArray((selectedScope as any)?.alignment) ? (selectedScope as any).alignment : [];
+            Array.isArray(rawAlignment?.alignment) ? (rawAlignment.alignment as unknown as { shop_number?: number | null; shop_name?: string; fallbackId?: string }[]) : [];
           const alignmentNumbers = mappedAlignment
               .map((entry) => entry.shop_number)
               .filter((value): value is number => typeof value === "number");
@@ -1597,9 +1605,9 @@ export default function PulseCheckPage() {
               });
             }
 
-            shopsInDistrict = mappedAlignment.map((entry, index) => {
-              if (entry.shop_number !== null && resolvedPulseMap.has(entry.shop_number)) {
-                const resolved = resolvedPulseMap.get(entry.shop_number)!;
+            const shopsInDistrict: DistrictShop[] = mappedAlignment.map((entry, index) => {
+              if (typeof entry.shop_number === "number" && resolvedPulseMap.has(entry.shop_number)) {
+                const resolved = resolvedPulseMap.get(entry.shop_number as number)!;
                 return {
                   ...resolved,
                   shop_name: entry.shop_name ?? resolved.shop_name,
@@ -1612,9 +1620,7 @@ export default function PulseCheckPage() {
               };
             });
 
-            if (!hierarchyShopCount) {
-              hierarchyShopCount = shopsInDistrict.length || null;
-            }
+            const hierarchyShopCount: number | null = hierarchy?.shops_in_district ?? (shopsInDistrict.length || null);
           } catch (alignmentErr) {
             console.error("Alignment fallback error", alignmentErr);
           }
@@ -1906,16 +1912,13 @@ export default function PulseCheckPage() {
       setDistrictGridLoading(true);
       setDistrictGridError(null);
 
-      (async () => {
+          (async () => {
         try {
           if (selectedScope.type === "region" && selectedScope.regionId) {
             await runRegionScope(selectedScope.regionId, selectedScope.label);
           } else if (selectedScope.type === "district") {
-            await runDistrictScope({
-              districtId: selectedScope.districtId,
-              districtLabel: selectedScope.label,
-              alignmentName: selectedScope.alignmentDistrictName ?? hierarchy?.district_name ?? null,
-            });
+            // Use the existing `loadScope` implementation to resolve alignment/district roster
+            await loadScope();
           }
         } catch (err) {
           console.error("district scope load error", err);
@@ -1942,6 +1945,8 @@ export default function PulseCheckPage() {
         }
       })();
 
+    // loadScope is also used as the district roster loader; call it here to ensure
+    // the alignment fallback path runs even if runDistrictScope is not defined.
     loadScope();
 
     return () => {

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import EmployeeProfileModalTrigger from "../../components/EmployeeProfileModalTrigger";
 import type { ReactNode } from "react";
 import { fetchDmSchedulePreview, fetchEmployeeSchedulingPreview, fetchPeopleFeaturePreview } from "@/lib/peopleFeatureData";
+import type { PeopleFeaturePreview } from "@/lib/peopleFeatureData";
 import { DmSchedulePlanner } from "../../components/DmSchedulePlanner";
 import {
   DM_RUNNING_PERIOD_WINDOW,
@@ -605,7 +606,7 @@ function EmployeeManagementFeaturePage({ preview }: EmployeeManagementFeaturePag
   const roster = preview.roster.slice(0, 6);
   const avgTenureMonths = roster.length
     ? Math.round(
-        roster.reduce((sum, teammate) => sum + (teammate.tenureMonths ?? 0), 0) / roster.length
+        roster.reduce((sum: number, teammate: any) => sum + (teammate.tenureMonths ?? 0), 0) / roster.length
       )
     : null;
   const highlight = roster[0];
@@ -768,9 +769,9 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
       </div>
       <div>
         <p className="text-xs uppercase tracking-[0.3em] text-slate-500">In-progress teammates</p>
-        {preview.training.inProgressList.length ? (
+            {preview.training.inProgressList.length ? (
           <ul className="mt-3 space-y-2 text-sm">
-            {preview.training.inProgressList.map((item) => (
+            {preview.training.inProgressList.map((item: any) => (
               <li key={item.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-3">
                 <p className="font-semibold text-white">{item.name}</p>
                 <p className="text-xs text-slate-400">Updated {formatDateLabel(item.updatedAt)}</p>
@@ -787,9 +788,9 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
   const renderMeetings = () => (
     <div>
       <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Upcoming meetings</p>
-      {preview.meetings.length ? (
+          {preview.meetings.length ? (
         <ul className="mt-3 space-y-2 text-sm">
-          {preview.meetings.slice(0, 5).map((meeting) => (
+          {preview.meetings.slice(0, 5).map((meeting: any) => (
             <li key={meeting.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-3">
               <p className="font-semibold text-white">{meeting.meetingType ?? "Meeting"}</p>
               <p className="text-xs text-slate-400">{formatDateLabel(meeting.meetingDate)} · {meeting.meetingTime ?? "--"}</p>
@@ -804,8 +805,8 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
   );
 
   const renderCoaching = () => {
-    const last30 = preview.coaching.histogram.reduce((sum, entry) => sum + entry.count, 0);
-    const last7 = preview.coaching.histogram.slice(-7).reduce((sum, entry) => sum + entry.count, 0);
+    const last30 = preview.coaching.histogram.reduce((sum: number, entry: any) => sum + entry.count, 0);
+    const last7 = preview.coaching.histogram.slice(-7).reduce((sum: number, entry: any) => sum + entry.count, 0);
     return (
       <div className="grid gap-6 lg:grid-cols-2">
         <div>
@@ -819,7 +820,7 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
           <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Recent sessions</p>
           {preview.coaching.recent.length ? (
             <ul className="mt-3 space-y-2 text-sm">
-              {preview.coaching.recent.slice(0, 4).map((log) => (
+              {preview.coaching.recent.slice(0, 4).map((log: any) => (
                 <li key={log.id} className="rounded-2xl border border-slate-800/60 bg-slate-900/50 p-3">
                   <p className="font-semibold text-white">{log.staffName ?? "Teammate"}</p>
                   <p className="text-xs text-slate-400">{formatDateLabel(log.coachedAt)} · {log.reason ?? "Coaching"}</p>
@@ -849,7 +850,7 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
             </tr>
           </thead>
           <tbody>
-            {source.slice(0, 8).map((teammate) => (
+                  {source.slice(0, 8).map((teammate: any) => (
               <tr key={teammate.id} className="border-t border-slate-900/60">
                 <td className="py-2 pr-4">{teammate.name}</td>
                 <td className="py-2 pr-4">{teammate.role ?? "--"}</td>
@@ -864,7 +865,7 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
                   />
                 </td>
               </tr>
-            ))}
+                  ))}
           </tbody>
         </table>
       </div>

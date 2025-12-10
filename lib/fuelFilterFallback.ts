@@ -70,11 +70,18 @@ export const buildTotalsSelectColumns = (
 };
 
 export const runSelectWithFuelFilterFallback = async <T>(
-  factory: (includeFuelFilters: boolean) => Promise<PostgrestResponseShape<T>>,
+  // Accept either a factory that returns a Promise<PostgrestResponseShape<T>>
+  // or a function that returns a Supabase/Postgrest builder (looser typing).
+  factory: (includeFuelFilters: boolean) => Promise<PostgrestResponseShape<T>> | any,
 ): Promise<PostgrestResponseShape<T>> => {
   const attempt = async (includeFuelFilters: boolean): Promise<PostgrestResponseShape<T>> => {
-    const response = await factory(includeFuelFilters);
-    const error = response.error;
+    // Call the factory and coerce its result to the expected response shape.
+    // Many call sites pass a Supabase PostgrestBuilder which is thenable at runtime
+    // but its TypeScript type may not satisfy Promise. Using `as any` here lets
+    // us `await` the result safely while keeping runtime behavior intact.
+    const raw = factory(includeFuelFilters);
+    const response = (await raw) as PostgrestResponseShape<T>;
+    const error = response?.error ?? null;
     if (error && error.code !== "PGRST116") {
       if (includeFuelFilters && isFuelFilterSchemaIssue(error)) {
         throw new FuelFilterSchemaError(error.message);

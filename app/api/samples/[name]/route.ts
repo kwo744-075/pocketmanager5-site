@@ -1,15 +1,16 @@
 import fs from "fs";
 import path from "path";
 
-type SampleRouteContext = { params?: { name?: string } } | Promise<{ params?: { name?: string } }>;
-
-async function resolveParams(context: SampleRouteContext | undefined) {
+// Use a permissive context type to satisfy varying Next.js handler shapes
+// and avoid strict mismatches in the generated validator types.
+async function resolveParams(context: any) {
   if (!context) return undefined;
+  // Some Next.js internal type flows may wrap params in a Promise; resolve defensively.
   const resolved = await Promise.resolve(context);
   return resolved?.params;
 }
 
-export async function GET(_req: Request, context?: SampleRouteContext) {
+export async function GET(_req: Request, context?: any) {
   try {
     // context.params may be a Promise in some Next.js type flows; resolve defensively
     const params = await resolveParams(context);

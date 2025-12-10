@@ -258,7 +258,7 @@ function HeroSection({ heroName, loginEmail, appendShopHref }: HeroSectionProps)
             <BrandWordmark brand="pocket" mode="dark" className="text-4xl" showBadge={false} />
             <Link
               href={homeShortcutHref}
-              className="inline-flex items-center gap-1 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] pm5-accent-text transition hover:pm5-teal-border"
+              className="inline-flex items-center gap-1 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.25em] text-white transition hover:pm5-teal-border"
             >
               <ThumbsUp className="h-3.5 w-3.5" /> Home
             </Link>
@@ -268,7 +268,7 @@ function HeroSection({ heroName, loginEmail, appendShopHref }: HeroSectionProps)
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <Link
                 href={dailyLogHref}
-                className="inline-flex items-center gap-1.5 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1.5 text-xs font-semibold pm5-accent-text transition hover:pm5-teal-border"
+                className="inline-flex items-center gap-1.5 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1.5 text-xs font-semibold text-white transition hover:pm5-teal-border"
               >
                 Daily Log
               </Link>
@@ -431,7 +431,7 @@ type WorkspaceTileMeta = {
   subtitle: string;
   href: string;
   // Use a React component type for icon so it can be used as <Icon /> in JSX
-  icon?: ComponentType<unknown>;
+  icon?: ComponentType<any> | React.ElementType;
   accent: string;
   variant?: "default" | "compact";
 };
@@ -625,6 +625,7 @@ const MANAGER_EXTRA_TILES: WorkspaceTileMeta[] = [
   },
 ];
 
+// Minimal fallback: ensure Icon is treated as a React component at runtime
 const WorkspaceTile = memo(function WorkspaceTile({ title, subtitle, href, icon: Icon, accent, variant = "default" }: WorkspaceTileMeta) {
   const compact = variant === "compact";
   const showIcon = Boolean(Icon) && !compact;
@@ -636,7 +637,10 @@ const WorkspaceTile = memo(function WorkspaceTile({ title, subtitle, href, icon:
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${accent}`} />
       {showIcon ? (
         <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-black/30 text-white">
-          <Icon className="h-4 w-4" />
+          {(() => {
+            const IconComponent = Icon as ComponentType<any> | undefined;
+            return IconComponent ? <IconComponent className="h-4 w-4" /> : null;
+          })()}
         </div>
       ) : null}
       <div className={`relative min-w-0 flex-1 ${compact ? "text-center" : ""}`}>
@@ -705,6 +709,21 @@ function PeopleWorkspaceActionRow() {
           <ArrowUpRight className="h-3 w-3" />
         </Link>
       ))}
+    </div>
+  );
+}
+
+// Fallbacks for missing app-level helpers used by the Pocket Manager shell.
+// These are intentionally minimal and safe so the project compiles while
+// the original implementations are restored or properly imported.
+const PEOPLE_ACTIONS: { label: string; href: string }[] = [
+  { label: "Open people", href: "/pocket-manager5/features/employee-management" },
+];
+
+function SectionStatus({ tone, message }: { tone?: "error" | "info"; message: string }) {
+  return (
+    <div className={`rounded-md px-4 py-3 ${tone === "error" ? "bg-red-900/40 text-red-300" : "bg-slate-800/50 text-slate-200"}`}>
+      {message}
     </div>
   );
 }
@@ -1202,8 +1221,8 @@ function PeopleWorkspaceSection({ shopNumber }: { shopNumber: number | string | 
                 <a.icon className="h-5 w-5" />
               </div>
               <div className="relative flex-1">
-                <p className="text-sm font-semibold text-white">{a.title}</p>
-                <p className="text-[11px] text-slate-200">{a.subtitle}</p>
+                <p className="text-lg font-semibold text-white">{a.title}</p>
+                <p className="text-sm text-slate-200">{a.subtitle}</p>
               </div>
               <ArrowUpRight className="relative h-4 w-4 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
             </Link>

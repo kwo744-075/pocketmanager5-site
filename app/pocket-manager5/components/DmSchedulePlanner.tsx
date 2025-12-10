@@ -1203,7 +1203,6 @@ export function DmSchedulePlanner({
                 dueChecklist={dueChecklist}
                 coverageSummary={coverageSummary}
                 // show tracker anchored to next period
-                // @ts-expect-error - anchorDate intentionally passed into tracker to shift period
                 anchorDate={nextPeriodAnchor}
               />
             </div>
@@ -1221,7 +1220,6 @@ export function DmSchedulePlanner({
               visitMix={visitMix}
               dueChecklist={dueChecklist}
               coverageSummary={coverageSummary}
-              // @ts-expect-error - anchorDate intentionally passed
               anchorDate={yearStartAnchor}
             />
           </div>

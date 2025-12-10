@@ -1,0 +1,10 @@
+node_modules
+.turbo
+.next
+.vercel
+.vscode
+.idea
+.DS_Store
+.env
+.env.*
+*.log

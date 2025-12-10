@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { ArrowLeft, Home } from "lucide-react";
 import { RetailPills } from "@/app/components/RetailPills";
+import AwardFilesMapperPill from "../recognition/components/AwardFilesMapperPill";
 
 interface CaptainsTopBarProps {
   title: string;
@@ -41,7 +42,10 @@ export function CaptainsTopBar({
           </div>
           {description ? <p className="max-w-3xl text-sm text-slate-300">{description}</p> : null}
         </div>
-        <RetailPills />
+        <div className="flex flex-col items-end gap-2">
+          <RetailPills />
+          <AwardFilesMapperPill />
+        </div>
       </div>
     </header>
   );

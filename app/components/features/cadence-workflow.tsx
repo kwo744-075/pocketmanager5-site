@@ -444,7 +444,7 @@ export function CadenceWorkflow() {
             }}
             loading={loadingDm}
             error={dmError}
-            onSelect={(it) => setSelectedItem(it)}
+            onSelect={(it) => setSelectedItem(it as any)}
             onRefresh={() => fetchDmList()}
             page={page}
             setPage={(n) => setPage(n)}
@@ -493,8 +493,8 @@ export function CadenceWorkflow() {
                 <textarea value={editText} onChange={(e) => setEditText(e.target.value)} className="w-full min-h-[120px] bg-slate-900 text-white p-2 rounded-md border border-slate-800" />
                 <div className="mt-2 text-xs text-slate-400">One task per line. Save will persist company-scoped template.</div>
               </div>
-            ) : (
-              <DailyWorkflowSidebar activeDay={activeDay} setActiveDay={setActiveDay} tasks={tasksByDay} />
+              ) : (
+                <DailyWorkflowSidebar activeDay={activeDay} setActiveDay={(d: string) => setActiveDay(d as any)} tasks={tasksByDay} />
             )}
           </div>
         </div>

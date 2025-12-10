@@ -2,8 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { FEATURE_LOOKUP } from "../../featureRegistry";
 import { FormRenderer, type FieldValue } from "../FormRenderer";
-import dynamic from "next/dynamic";
-const EmployeeProfileWizard = dynamic(() => import("../components/EmployeeProfileWizard"), { ssr: false });
+import EmployeeProfileWizardClient from "../components/EmployeeProfileWizardClient";
 import { FORM_LOOKUP, FORM_REGISTRY, type FormSlug } from "../formRegistry";
 import { supabase } from "@/lib/supabaseClient";
 
@@ -40,7 +39,7 @@ export default async function PocketManagerFormPage({
   }
 
   // If a people employee profile id is provided, prefill the form with existing data.
-  const resolvedId = typeof resolvedSearch?.id === "string" ? resolvedSearch.id : undefined;
+  const resolvedId = typeof (resolvedSearch as any)?.id === "string" ? (resolvedSearch as any).id : undefined;
   if (form.slug === "people-employee-profile" && resolvedId) {
     try {
       const { data: staffRow, error } = await supabase.from("shop_staff").select("*").eq("id", resolvedId).maybeSingle();
@@ -66,10 +65,12 @@ export default async function PocketManagerFormPage({
     : null;
 
   // If `wizard=1` was passed for the people profile form, render the client-side wizard
-  const isWizard = form.slug === "people-employee-profile" && (resolvedSearch as any)?.wizard === "1";
+  type SearchParamsShape = { wizard?: string };
+  const resolvedSearchTyped = resolvedSearch as unknown as SearchParamsShape;
+  const isWizard = form.slug === "people-employee-profile" && resolvedSearchTyped.wizard === "1";
 
   if (isWizard) {
-    return <EmployeeProfileWizard shopNumber={resolvedShopParam ?? null} initialValues={Object.keys(initialValues).length ? initialValues : undefined} />;
+    return <EmployeeProfileWizardClient shopNumber={resolvedShopParam ?? null} initialValues={Object.keys(initialValues).length ? initialValues : undefined} />;
   }
 
   return (

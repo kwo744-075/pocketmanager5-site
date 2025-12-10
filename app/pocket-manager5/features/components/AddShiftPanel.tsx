@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabaseClient";
+import { getStaff, createShift } from "@/hooks/useEmployeeScheduling";
 
 type Props = {
   shopNumber: string | null;
@@ -22,8 +22,8 @@ export default function AddShiftPanel({ shopNumber }: Props) {
     let mounted = true;
     (async () => {
       try {
-        const { data } = await supabase.from("shop_staff").select("id, staff_name").eq("shop_id", shopNumber).order("staff_name");
-        if (mounted && Array.isArray(data)) setStaff(data as Array<{ id: string; staff_name?: string }>);
+        const staffList = await getStaff(shopNumber);
+        if (mounted) setStaff(staffList as Array<{ id: string; staff_name?: string }>);
       } catch (err) {
         console.warn("Failed to load staff list", err);
       }
@@ -50,28 +50,16 @@ export default function AddShiftPanel({ shopNumber }: Props) {
     setSaving(true);
     setMessage(null);
     try {
-      const resp = await fetch("/api/pocket-manager/employee-shifts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "create",
-          payload: {
-            shop_id: shopNumber,
-            employee_id: employeeId,
-            date,
-            start_time: startTime,
-            end_time: endTime,
-            break_minutes: breakMinutes,
-            kind: "shift",
-          },
-        }),
+      await createShift({
+        shop_id: shopNumber ?? undefined,
+        employee_id: employeeId,
+        date,
+        start_time: startTime,
+        end_time: endTime,
+        break_minutes: breakMinutes,
+        kind: "shift",
       });
-      const json = await resp.json();
-      if (!resp.ok) {
-        setMessage(json?.error ?? "Unable to save");
-      } else {
-        setMessage("Saved");
-      }
+      setMessage("Saved");
     } catch (err) {
       console.error(err);
       setMessage("Save failed");

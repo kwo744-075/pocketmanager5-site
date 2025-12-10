@@ -126,7 +126,11 @@ export function usePocketHierarchy(redirectPath = "/pocket-manager5"): UsePocket
         if (cancelled) return;
 
         if (!resp.ok) {
-          console.error("usePocketHierarchy /api/hierarchy/summary status", resp.status);
+          // Treat all non-ok responses (including 401) as failures to load the server
+          // summary. Do NOT clear local auth or force a redirect here — prefer a
+          // silent fallback to the cached hierarchy so users aren't unexpectedly
+          // logged out when the API is temporarily unavailable or returns 401.
+          console.debug("usePocketHierarchy /api/hierarchy/summary status", resp.status);
           const fallback = getCachedSummaryForLogin(normalized);
           if (fallback) {
             setHierarchy((fallback as HierarchySummary) ?? null);
