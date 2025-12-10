@@ -20,7 +20,7 @@ const isBypassedPath = (pathname: string) => {
   return STATIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 };
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   if (LOGIN_BYPASS_ENABLED) {
     return NextResponse.next();
   }
