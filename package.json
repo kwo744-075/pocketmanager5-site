@@ -23,7 +23,8 @@
     "formidable": "^3.5.4",
     "framer-motion": "^11.0.17",
     "lucide-react": "^0.453.0",
-    "next": "^16.0.4",
+    "next": "^16.0.8",
+    "papaparse": "^5.5.3",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
@@ -37,7 +38,7 @@
     "@types/react-dom": "^19",
     "baseline-browser-mapping": "^2.9.2",
     "eslint": "^9",
-    "eslint-config-next": "^16.0.4",
+    "eslint-config-next": "^16.0.8",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"
