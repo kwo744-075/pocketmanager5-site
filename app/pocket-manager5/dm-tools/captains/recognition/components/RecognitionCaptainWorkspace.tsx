@@ -348,8 +348,8 @@ export function RecognitionCaptainWorkspace() {
   const [fileMapperState, setFileMapperState] = useState<any>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
-  const [qualifiedEmployees, setQualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
-  const [nonQualifiedEmployees, setNonQualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
+  const [step1QualifiedEmployees, setStep1QualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
+  const [step1NonQualifiedEmployees, setStep1NonQualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
 
   const parseFileToRows = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -1384,8 +1384,8 @@ export function RecognitionCaptainWorkspace() {
               }
             });
 
-            setQualifiedEmployees(qualified);
-            setNonQualifiedEmployees(nonQualified);
+            setStep1QualifiedEmployees(qualified);
+            setStep1NonQualifiedEmployees(nonQualified);
 
             // store parsed employee rows for multi-sheet export
             setParsedUploads((p) => ({ ...p, employee: rows }));
@@ -1788,7 +1788,7 @@ export function RecognitionCaptainWorkspace() {
       </StepSection>
 
       {/* Employee Qualification Lists */}
-      {(qualifiedEmployees.length > 0 || nonQualifiedEmployees.length > 0) && (
+      {(step1QualifiedEmployees.length > 0 || step1NonQualifiedEmployees.length > 0) && (
         <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
           <div className="space-y-4">
             <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Step 1 • Employee Qualification</p>
@@ -1798,7 +1798,7 @@ export function RecognitionCaptainWorkspace() {
             <details className="group">
               <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold text-white">Qualified Employees ({qualifiedEmployees.length})</h4>
+                  <h4 className="text-lg font-semibold text-white">Qualified Employees ({step1QualifiedEmployees.length})</h4>
                   <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -1816,7 +1816,7 @@ export function RecognitionCaptainWorkspace() {
                       </tr>
                     </thead>
                     <tbody>
-                      {qualifiedEmployees.map((employee, index) => (
+                      {step1QualifiedEmployees.map((employee, index) => (
                         <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                           <td className="px-3 py-2 text-slate-200">{employee.name}</td>
                           <td className="px-3 py-2 text-slate-200">{employee.shopNumber}</td>
@@ -1834,7 +1834,7 @@ export function RecognitionCaptainWorkspace() {
             <details className="group">
               <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
                 <div className="flex items-center justify-between">
-                  <h4 className="text-lg font-semibold text-white">Non-Qualified Employees ({nonQualifiedEmployees.length})</h4>
+                  <h4 className="text-lg font-semibold text-white">Non-Qualified Employees ({step1NonQualifiedEmployees.length})</h4>
                   <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                   </svg>
@@ -1852,7 +1852,7 @@ export function RecognitionCaptainWorkspace() {
                       </tr>
                     </thead>
                     <tbody>
-                      {nonQualifiedEmployees.map((employee, index) => (
+                      {step1NonQualifiedEmployees.map((employee, index) => (
                         <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                           <td className="px-3 py-2 text-slate-200">{employee.name}</td>
                           <td className="px-3 py-2 text-slate-200">{employee.shopNumber}</td>
