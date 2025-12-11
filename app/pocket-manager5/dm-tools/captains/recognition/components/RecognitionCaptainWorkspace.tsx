@@ -2127,56 +2127,47 @@ function QualifierUploadsPanel({
     uploading,
     onChange,
     onRemove,
+    showLabel = true,
   }: {
     item: { key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void };
     uploading?: boolean;
     onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
     onRemove?: () => void;
+    showLabel?: boolean;
   }) => {
     return (
-      <div key={item.key} className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm flex items-center justify-between">
-            <div className="flex items-center gap-2 w-full">
-                    <div className="flex-1">
-                      <p className="text-[10px] uppercase tracking-[0.25em] text-slate-400">{item.label}</p>
-                    </div>
+      <div className="flex flex-col items-center gap-2">
+        <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-700/60 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-800/50">
+          <Paperclip className="h-4 w-4" />
+          <input
+            type="file"
+            accept=".csv,.xlsx,.xls"
+            className="sr-only"
+            onChange={(e) => {
+              setUploading((s) => ({ ...s, [item.key]: true }));
+              item.onChange?.(e as any);
+              onChange?.(e as any);
+            }}
+          />
+          Upload
+        </label>
 
-                    <div className="flex items-center gap-3">
-                      <div className="text-xs text-slate-300 flex items-center gap-3">
-                        <div className="text-center">
-                          <div className="font-medium text-slate-200 mb-1 text-[12px]">{item.meta?.name ?? "No file"}</div>
-                          <label className="inline-flex cursor-pointer items-center justify-center gap-2 rounded-md border border-slate-700/60 px-2 py-1 text-xs font-semibold text-slate-200">
-                            <Paperclip className="h-4 w-4" />
-                            <input
-                              type="file"
-                              accept=".csv,.xlsx,.xls"
-                              className="sr-only"
-                              onChange={(e) => {
-                                setUploading((s) => ({ ...s, [item.key]: true }));
-                                item.onChange?.(e as any);
-                                onChange?.(e as any);
-                              }}
-                            />
-                          </label>
-                          {item.meta?.uploadedAt ? <div className="text-[11px] text-slate-400 mt-1">{new Date(item.meta.uploadedAt).toLocaleString()}</div> : null}
-                        </div>
+        {uploading && (
+          <div className="flex items-center gap-2">
+            <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
+          </div>
+        )}
 
-                    {uploading ? (
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-4 w-4 animate-spin text-slate-300" />
-                      </div>
-                    ) : item.meta ? (
-                      <button
-                        type="button"
-                        onClick={onRemove}
-                        aria-label={`Remove ${item.label}`}
-                        className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
-                      >
-                        ✕
-                      </button>
-                    ) : null}
-                  </div>
-                </div>
-        </div>
+        {item.meta && !uploading && (
+          <button
+            type="button"
+            onClick={onRemove}
+            aria-label={`Remove ${item.label}`}
+            className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
+          >
+            ✕
+          </button>
+        )}
       </div>
     );
   };
@@ -2194,9 +2185,8 @@ function QualifierUploadsPanel({
             </div>
           ) : null}
           <h3 className="text-2xl font-semibold text-white">Step1 set qualifiers / upload Qlik Docs</h3>
-          <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
 
-          {/* Placed qualifier threshold inputs immediately under the guidance text per request */}
+          {/* Moved qualifier threshold inputs below the main heading */}
           <div className="mt-4 flex gap-3 max-w-xl">
             {fields.map((field) => (
               <div key={field.key} className="flex-1 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-center">
@@ -2215,8 +2205,8 @@ function QualifierUploadsPanel({
 
         {/* Thresholds were moved above under the guidance text */}
 
-        {/* Upload boxes moved under the qualifier uploads section in a 2x3 grid */}
-        <div className="mt-6 grid grid-cols-1 sm:grid-cols-4 gap-3 w-full">
+        {/* Upload boxes spaced out in a row */}
+        <div className="mt-6 flex justify-between gap-4 w-full max-w-4xl mx-auto">
           {([
             { key: "employee", label: "Employee performance report", meta: uploads?.employee, onChange: onEmployeeFileChange },
             { key: "customRegion", label: "Custom Region Report", meta: uploads?.customRegion, onChange: onCustomRegionFileChange },
@@ -2234,28 +2224,24 @@ function QualifierUploadsPanel({
             };
 
             return (
-              <UploadBox key={item.key} item={item} uploading={uploading[item.key]} onRemove={handleRemove} />
+              <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
+                <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
+                <div className="text-center">
+                  <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
+                    {item.label}
+                  </div>
+                  <div className="text-xs text-slate-300 min-h-[1.2em]">
+                    {item.meta?.name || "No file"}
+                  </div>
+                </div>
+              </div>
             );
           })}
         </div>
-        {/* Small Report Mapper pill showing which files have been parsed */}
-        <div className="mt-4">
-          <div className="rounded-lg border border-slate-800/60 bg-slate-950/60 p-3 text-sm max-w-md">
-            <div className="flex items-center justify-between">
-              <div className="text-xs uppercase tracking-[0.3em] text-slate-400">File Mapper</div>
-              <div className="text-xs text-slate-400">Mapping summary</div>
-            </div>
-            <div className="mt-2 text-sm text-slate-200">
-              <ul className="text-xs text-slate-300">
-                <li>Employee Performance: {uploads?.employee ? uploads.employee.name : 'No file'}</li>
-                <li>Custom Region (shop-level NPS): {uploads?.customRegion ? uploads.customRegion.name : 'No file'}</li>
-                <li>Power Ranker: {qualifiers?.powerRanker ? qualifiers.powerRanker.name : 'No file'}</li>
-                <li>NPS Report: {qualifiers?.periodWinner ? qualifiers.periodWinner.name : 'No file'}</li>
-                <li>Donations: {qualifiers?.donations ? qualifiers.donations.name : 'No file'}</li>
-              </ul>
-              <div className="mt-2 text-xs text-slate-400">Parsed parts: {parsedUploads ? Object.keys(parsedUploads).filter(k => parsedUploads[k]?.length).join(', ') || 'none' : 'none'}</div>
-            </div>
-          </div>
+
+        {/* Moved guidance text to bottom of section */}
+        <div className="mt-4 text-center">
+          <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
         </div>
       </div>
     </section>
