@@ -1763,6 +1763,7 @@ export function RecognitionCaptainWorkspace() {
         title="Qualifiers & uploads"
         description="Upload Power Ranker + Period Results files to build eligible pools."
         active={activeStep === "qualifiers"}
+        collapsible={true}
       >
         <QualifierUploadsPanel
           qualifiers={draft.qualifiers}
@@ -2691,14 +2692,37 @@ function StepSection({
   title,
   description,
   active,
+  collapsible = false,
   children,
 }: {
   id: string;
   title: string;
   description: string;
   active: boolean;
+  collapsible?: boolean;
   children: ReactNode;
 }) {
+  if (collapsible && active) {
+    return (
+      <details id={id} className="group" open>
+        <summary className="cursor-pointer rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 hover:bg-slate-950/80 transition-colors">
+          <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-1">
+              <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">{title}</p>
+              <p className="text-sm text-slate-300">{description}</p>
+            </div>
+            <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </div>
+        </summary>
+        <div className="mt-4 space-y-4">
+          {children}
+        </div>
+      </details>
+    );
+  }
+
   return (
     <section id={id} aria-hidden={!active} className={active ? "space-y-4" : "hidden"}>
       <div className="flex flex-col gap-1">
