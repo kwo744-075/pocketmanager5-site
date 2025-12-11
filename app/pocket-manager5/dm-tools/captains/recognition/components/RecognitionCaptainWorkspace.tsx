@@ -2241,7 +2241,7 @@ function QualifierUploadsPanel({
 
         {/* Moved guidance text to bottom of section */}
         <div className="mt-4 text-center">
-          <p className="text-sm text-slate-300">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
+          <p className="text-xs text-slate-400">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
         </div>
       </div>
     </section>
