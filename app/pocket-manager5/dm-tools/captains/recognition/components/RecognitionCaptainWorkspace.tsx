@@ -348,6 +348,62 @@ export function RecognitionCaptainWorkspace() {
   const [fileMapperState, setFileMapperState] = useState<any>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
+  const [qualifiedEmployees, setQualifiedEmployees] = useState<Array<{
+    name: string;
+    shopNumber: number;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [nonQualifiedEmployees, setNonQualifiedEmployees] = useState<Array<{
+    name: string;
+    shopNumber: number;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [qualifiedShops, setQualifiedShops] = useState<Array<{
+    shopNumber: number;
+    managerName: string;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [nonQualifiedShops, setNonQualifiedShops] = useState<Array<{
+    shopNumber: number;
+    managerName: string;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
 
   const parseFileToRows = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -1332,6 +1388,247 @@ export function RecognitionCaptainWorkspace() {
             });
 
             setDataset(parsedDataset);
+
+            // Process employee and shop qualification logic
+            const qualifiedEmps: Array<{
+              name: string;
+              shopNumber: number;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+            }> = [];
+            const nonQualifiedEmps: Array<{
+              name: string;
+              shopNumber: number;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+            }> = [];
+            const qualifiedShps: Array<{
+              shopNumber: number;
+              managerName: string;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+            }> = [];
+            const nonQualifiedShps: Array<{
+              shopNumber: number;
+              managerName: string;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+            }> = [];
+
+            // Group by employee name and shop to combine metrics
+            const employeeMap = new Map<string, {
+              name: string;
+              shopNumber: number;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+              count: number;
+            }>();
+            const shopMap = new Map<number, {
+              shopNumber: number;
+              managerName: string;
+              nps: number;
+              emailCollection: number;
+              pmix: number;
+              big4: number;
+              fuelFilters: number;
+              netARO: number;
+              coolants: number;
+              discounts: number;
+              differentials: number;
+              donations: number;
+              count: number;
+            }>();
+
+            parsedDataset.forEach((row) => {
+              const name = row.managerName?.trim();
+              const shopNum = row.shopNumber;
+
+              if (name && shopNum) {
+                // Process employee data
+                const empKey = `${name}-${shopNum}`;
+                const empMetrics = row.metrics || {};
+
+                const existingEmp = employeeMap.get(empKey);
+                if (existingEmp) {
+                  // Combine metrics (sum most, max for percentages)
+                  existingEmp.nps = Math.max(existingEmp.nps, empMetrics.nps || 0);
+                  existingEmp.emailCollection = Math.max(existingEmp.emailCollection, empMetrics.email_collection || empMetrics['Email Collection'] || 0);
+                  existingEmp.pmix += empMetrics.pmix || empMetrics['Pmix'] || 0;
+                  existingEmp.big4 += empMetrics.big4 || empMetrics['Big 4'] || 0;
+                  existingEmp.fuelFilters += empMetrics.fuel_filters || empMetrics['Fuel Filters'] || 0;
+                  existingEmp.netARO += empMetrics.net_aro || empMetrics['Net ARO'] || 0;
+                  existingEmp.coolants += empMetrics.coolants || empMetrics['Coolants'] || 0;
+                  existingEmp.discounts += empMetrics.discounts || empMetrics['Discounts'] || 0;
+                  existingEmp.differentials += empMetrics.differentials || empMetrics['Differentials'] || 0;
+                  existingEmp.donations += empMetrics.donations || empMetrics['Donations'] || 0;
+                  existingEmp.count += 1;
+                } else {
+                  employeeMap.set(empKey, {
+                    name,
+                    shopNumber: shopNum,
+                    nps: empMetrics.nps || 0,
+                    emailCollection: empMetrics.email_collection || empMetrics['Email Collection'] || 0,
+                    pmix: empMetrics.pmix || empMetrics['Pmix'] || 0,
+                    big4: empMetrics.big4 || empMetrics['Big 4'] || 0,
+                    fuelFilters: empMetrics.fuel_filters || empMetrics['Fuel Filters'] || 0,
+                    netARO: empMetrics.net_aro || empMetrics['Net ARO'] || 0,
+                    coolants: empMetrics.coolants || empMetrics['Coolants'] || 0,
+                    discounts: empMetrics.discounts || empMetrics['Discounts'] || 0,
+                    differentials: empMetrics.differentials || empMetrics['Differentials'] || 0,
+                    donations: empMetrics.donations || empMetrics['Donations'] || 0,
+                    count: 1,
+                  });
+                }
+
+                // Process shop data
+                const existingShop = shopMap.get(shopNum);
+                if (existingShop) {
+                  existingShop.nps = Math.max(existingShop.nps, empMetrics.nps || 0);
+                  existingShop.emailCollection = Math.max(existingShop.emailCollection, empMetrics.email_collection || empMetrics['Email Collection'] || 0);
+                  existingShop.pmix += empMetrics.pmix || empMetrics['Pmix'] || 0;
+                  existingShop.big4 += empMetrics.big4 || empMetrics['Big 4'] || 0;
+                  existingShop.fuelFilters += empMetrics.fuel_filters || empMetrics['Fuel Filters'] || 0;
+                  existingShop.netARO += empMetrics.net_aro || empMetrics['Net ARO'] || 0;
+                  existingShop.coolants += empMetrics.coolants || empMetrics['Coolants'] || 0;
+                  existingShop.discounts += empMetrics.discounts || empMetrics['Discounts'] || 0;
+                  existingShop.differentials += empMetrics.differentials || empMetrics['Differentials'] || 0;
+                  existingShop.donations += empMetrics.donations || empMetrics['Donations'] || 0;
+                  existingShop.count += 1;
+                } else {
+                  shopMap.set(shopNum, {
+                    shopNumber: shopNum,
+                    managerName: name,
+                    nps: empMetrics.nps || 0,
+                    emailCollection: empMetrics.email_collection || empMetrics['Email Collection'] || 0,
+                    pmix: empMetrics.pmix || empMetrics['Pmix'] || 0,
+                    big4: empMetrics.big4 || empMetrics['Big 4'] || 0,
+                    fuelFilters: empMetrics.fuel_filters || empMetrics['Fuel Filters'] || 0,
+                    netARO: empMetrics.net_aro || empMetrics['Net ARO'] || 0,
+                    coolants: empMetrics.coolants || empMetrics['Coolants'] || 0,
+                    discounts: empMetrics.discounts || empMetrics['Discounts'] || 0,
+                    differentials: empMetrics.differentials || empMetrics['Differentials'] || 0,
+                    donations: empMetrics.donations || empMetrics['Donations'] || 0,
+                    count: 1,
+                  });
+                }
+              }
+            });
+
+            // Separate qualified and non-qualified based on criteria
+            // For this implementation, we'll use NPS >= 80 as qualified criteria
+            employeeMap.forEach((emp) => {
+              if (emp.nps >= 80) {
+                qualifiedEmps.push({
+                  name: emp.name,
+                  shopNumber: emp.shopNumber,
+                  nps: emp.nps,
+                  emailCollection: emp.emailCollection,
+                  pmix: emp.pmix,
+                  big4: emp.big4,
+                  fuelFilters: emp.fuelFilters,
+                  netARO: emp.netARO,
+                  coolants: emp.coolants,
+                  discounts: emp.discounts,
+                  differentials: emp.differentials,
+                  donations: emp.donations,
+                });
+              } else {
+                nonQualifiedEmps.push({
+                  name: emp.name,
+                  shopNumber: emp.shopNumber,
+                  nps: emp.nps,
+                  emailCollection: emp.emailCollection,
+                  pmix: emp.pmix,
+                  big4: emp.big4,
+                  fuelFilters: emp.fuelFilters,
+                  netARO: emp.netARO,
+                  coolants: emp.coolants,
+                  discounts: emp.discounts,
+                  differentials: emp.differentials,
+                  donations: emp.donations,
+                });
+              }
+            });
+
+            shopMap.forEach((shop) => {
+              if (shop.nps >= 80) {
+                qualifiedShps.push({
+                  shopNumber: shop.shopNumber,
+                  managerName: shop.managerName,
+                  nps: shop.nps,
+                  emailCollection: shop.emailCollection,
+                  pmix: shop.pmix,
+                  big4: shop.big4,
+                  fuelFilters: shop.fuelFilters,
+                  netARO: shop.netARO,
+                  coolants: shop.coolants,
+                  discounts: shop.discounts,
+                  differentials: shop.differentials,
+                  donations: shop.donations,
+                });
+              } else {
+                nonQualifiedShps.push({
+                  shopNumber: shop.shopNumber,
+                  managerName: shop.managerName,
+                  nps: shop.nps,
+                  emailCollection: shop.emailCollection,
+                  pmix: shop.pmix,
+                  big4: shop.big4,
+                  fuelFilters: shop.fuelFilters,
+                  netARO: shop.netARO,
+                  coolants: shop.coolants,
+                  discounts: shop.discounts,
+                  differentials: shop.differentials,
+                  donations: shop.donations,
+                });
+              }
+            });
+
+            setQualifiedEmployees(qualifiedEmps);
+            setNonQualifiedEmployees(nonQualifiedEmps);
+            setQualifiedShops(qualifiedShps);
+            setNonQualifiedShops(nonQualifiedShps);
+
             // store parsed employee rows for multi-sheet export
             setParsedUploads((p) => ({ ...p, employee: rows }));
             const meta: UploadedFileMeta = {
@@ -1730,6 +2027,222 @@ export function RecognitionCaptainWorkspace() {
           uploadMapper={uploadMapperState}
         />
       </StepSection>
+
+      {/* Step 1 Qualification Lists */}
+      <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
+        <div className="space-y-4">
+          <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Step 1 • Qualification Results</p>
+          <h3 className="text-2xl font-semibold text-white">Performance Analysis</h3>
+
+          {/* Employees Qualified */}
+          <details className="group">
+            <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-white">Employees Qualified ({qualifiedEmployees.length})</h4>
+                <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </summary>
+            <div className="mt-4">
+              <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900/50">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Name</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Shop</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Email</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Pmix</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Big 4</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Fuel Filters</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Net ARO</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Coolants</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Discounts</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Differentials</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Donations</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qualifiedEmployees.map((employee, index) => (
+                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                        <td className="px-2 py-1 text-slate-200">{employee.name}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.shopNumber}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.nps}%</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.emailCollection}%</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.pmix}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.big4}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.fuelFilters}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.netARO}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.coolants}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.discounts}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.differentials}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.donations}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          {/* Shops Qualified */}
+          <details className="group">
+            <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-white">Shops Qualified ({qualifiedShops.length})</h4>
+                <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </summary>
+            <div className="mt-4">
+              <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900/50">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Shop #</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Manager</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Email</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Pmix</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Big 4</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Fuel Filters</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Net ARO</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Coolants</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Discounts</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Differentials</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Donations</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {qualifiedShops.map((shop, index) => (
+                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                        <td className="px-2 py-1 text-slate-200">{shop.shopNumber}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.managerName}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.nps}%</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.emailCollection}%</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.pmix}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.big4}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.fuelFilters}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.netARO}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.coolants}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.discounts}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.differentials}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.donations}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          {/* Employees Non-Qualified */}
+          <details className="group">
+            <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-white">Employees Non-Qualified ({nonQualifiedEmployees.length})</h4>
+                <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </summary>
+            <div className="mt-4">
+              <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900/50">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Name</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Shop</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Email</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Pmix</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Big 4</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Fuel Filters</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Net ARO</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Coolants</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Discounts</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Differentials</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Donations</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nonQualifiedEmployees.map((employee, index) => (
+                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                        <td className="px-2 py-1 text-slate-200">{employee.name}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.shopNumber}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.nps}%</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.emailCollection}%</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.pmix}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.big4}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.fuelFilters}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.netARO}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.coolants}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.discounts}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.differentials}</td>
+                        <td className="px-2 py-1 text-slate-200">{employee.donations}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+
+          {/* Shops Non-Qualified */}
+          <details className="group">
+            <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+              <div className="flex items-center justify-between">
+                <h4 className="text-lg font-semibold text-white">Shops Non-Qualified ({nonQualifiedShops.length})</h4>
+                <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </div>
+            </summary>
+            <div className="mt-4">
+              <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                <table className="w-full text-xs">
+                  <thead className="bg-slate-900/50">
+                    <tr>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Shop #</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Manager</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Email</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Pmix</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Big 4</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Fuel Filters</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Net ARO</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Coolants</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Discounts</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Differentials</th>
+                      <th className="px-2 py-2 text-left text-slate-300 font-medium">Donations</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {nonQualifiedShops.map((shop, index) => (
+                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                        <td className="px-2 py-1 text-slate-200">{shop.shopNumber}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.managerName}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.nps}%</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.emailCollection}%</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.pmix}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.big4}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.fuelFilters}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.netARO}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.coolants}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.discounts}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.differentials}</td>
+                        <td className="px-2 py-1 text-slate-200">{shop.donations}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </details>
+        </div>
+      </section>
 
       {/* Eligible cards moved to the Uploads (tab 2) processing summary */}
 
@@ -2224,6 +2737,42 @@ function QualifierUploadsPanel({
                   onRemoveQualifier?.(qKind);
                 }
               };
+
+              // Add mini mapper for employee performance report
+              if (item.key === "employee") {
+                return (
+                  <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
+                    {/* Mini Mapper */}
+                    <div className="w-full rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
+                      <div className="text-xs text-slate-400 mb-2 font-medium">Column Mapper</div>
+                      <div className="grid grid-cols-2 gap-2 text-xs">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-slate-300">Name:</label>
+                          <select className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-xs">
+                            <option value="">Auto-detect</option>
+                          </select>
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-slate-300">Shop:</label>
+                          <select className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-xs">
+                            <option value="">Auto-detect</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
+                    <div className="text-center">
+                      <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
+                        {item.label}
+                      </div>
+                      <div className="text-xs text-slate-300 min-h-[1.2em]">
+                        {item.meta?.name || "No file"}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
 
               return (
                 <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
