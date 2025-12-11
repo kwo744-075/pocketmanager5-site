@@ -348,6 +348,8 @@ export function RecognitionCaptainWorkspace() {
   const [fileMapperState, setFileMapperState] = useState<any>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
+  const [qualifiedEmployees, setQualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
+  const [nonQualifiedEmployees, setNonQualifiedEmployees] = useState<Array<{name: string, shopNumber: number, oilChanges: number, nps: number}>>([]);
 
   const parseFileToRows = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -1332,6 +1334,59 @@ export function RecognitionCaptainWorkspace() {
             });
 
             setDataset(parsedDataset);
+
+            // Process employee qualification logic
+            const employeeMap = new Map<string, { name: string; shopNumber: number; oilChanges: number; nps: number; count: number }>();
+            parsedDataset.forEach((row) => {
+              const name = row.managerName?.trim();
+              if (!name) return;
+
+              const oilChanges = row.metrics?.oil_changes || row.metrics?.['Oil Changes'] || 0;
+              const nps = row.metrics?.nps || row.metrics?.['NPS'] || 0;
+
+              const key = `${name}-${row.shopNumber}`;
+              const existing = employeeMap.get(key);
+              if (existing) {
+                // Combine scores if employee appears multiple times
+                existing.oilChanges += oilChanges;
+                existing.nps = Math.max(existing.nps, nps); // Use highest NPS
+                existing.count += 1;
+              } else {
+                employeeMap.set(key, {
+                  name,
+                  shopNumber: row.shopNumber,
+                  oilChanges,
+                  nps,
+                  count: 1,
+                });
+              }
+            });
+
+            // Separate qualified and non-qualified employees
+            const qualified: Array<{name: string, shopNumber: number, oilChanges: number, nps: number}> = [];
+            const nonQualified: Array<{name: string, shopNumber: number, oilChanges: number, nps: number}> = [];
+
+            employeeMap.forEach((employee) => {
+              if (employee.oilChanges >= 100 && employee.nps >= 80) {
+                qualified.push({
+                  name: employee.name,
+                  shopNumber: employee.shopNumber,
+                  oilChanges: employee.oilChanges,
+                  nps: employee.nps,
+                });
+              } else {
+                nonQualified.push({
+                  name: employee.name,
+                  shopNumber: employee.shopNumber,
+                  oilChanges: employee.oilChanges,
+                  nps: employee.nps,
+                });
+              }
+            });
+
+            setQualifiedEmployees(qualified);
+            setNonQualifiedEmployees(nonQualified);
+
             // store parsed employee rows for multi-sheet export
             setParsedUploads((p) => ({ ...p, employee: rows }));
             const meta: UploadedFileMeta = {
@@ -1730,6 +1785,88 @@ export function RecognitionCaptainWorkspace() {
           uploadMapper={uploadMapperState}
         />
       </StepSection>
+
+      {/* Employee Qualification Lists */}
+      {(qualifiedEmployees.length > 0 || nonQualifiedEmployees.length > 0) && (
+        <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
+          <div className="space-y-4">
+            <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Step 1 • Employee Qualification</p>
+            <h3 className="text-2xl font-semibold text-white">Employee Performance Analysis</h3>
+
+            {/* Qualified Employees */}
+            <details className="group">
+              <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-lg font-semibold text-white">Qualified Employees ({qualifiedEmployees.length})</h4>
+                  <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </summary>
+              <div className="mt-4">
+                <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-900/50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Employee Name</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Shop #</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Oil Changes</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {qualifiedEmployees.map((employee, index) => (
+                        <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                          <td className="px-3 py-2 text-slate-200">{employee.name}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.shopNumber}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.oilChanges}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.nps}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+
+            {/* Non-Qualified Employees */}
+            <details className="group">
+              <summary className="cursor-pointer rounded-2xl border border-slate-800/70 bg-slate-950/60 p-4 hover:bg-slate-900/40 transition-colors">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-lg font-semibold text-white">Non-Qualified Employees ({nonQualifiedEmployees.length})</h4>
+                  <svg className="h-5 w-5 text-slate-400 group-open:rotate-180 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </summary>
+              <div className="mt-4">
+                <div className="overflow-x-auto rounded-lg border border-slate-800/50">
+                  <table className="w-full text-xs">
+                    <thead className="bg-slate-900/50">
+                      <tr>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Employee Name</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Shop #</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">Oil Changes</th>
+                        <th className="px-3 py-2 text-left text-slate-300 font-medium">NPS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {nonQualifiedEmployees.map((employee, index) => (
+                        <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                          <td className="px-3 py-2 text-slate-200">{employee.name}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.shopNumber}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.oilChanges}</td>
+                          <td className="px-3 py-2 text-slate-200">{employee.nps}%</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </details>
+          </div>
+        </section>
+      )}
 
       {/* Eligible cards moved to the Uploads (tab 2) processing summary */}
 
