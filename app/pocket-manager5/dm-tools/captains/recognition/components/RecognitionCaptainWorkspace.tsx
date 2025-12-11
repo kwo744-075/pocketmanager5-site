@@ -2205,43 +2205,46 @@ function QualifierUploadsPanel({
 
         {/* Thresholds were moved above under the guidance text */}
 
-        {/* Upload boxes spaced out in a row */}
-        <div className="mt-6 flex justify-between gap-4 w-full max-w-4xl mx-auto">
-          {([
-            { key: "employee", label: "Employee performance report", meta: uploads?.employee, onChange: onEmployeeFileChange },
-            { key: "customRegion", label: "Custom Region Report", meta: uploads?.customRegion, onChange: onCustomRegionFileChange },
-            { key: "powerRanker", label: "Power Ranker", meta: metaByKind.powerRanker, onChange: onFileChange("powerRanker") },
-            { key: "donations", label: "Donations", meta: metaByKind.donations, onChange: onFileChange("donations") },
-            { key: "nps", label: "NPS", meta: metaByKind.periodWinner, onChange: onFileChange("periodWinner") },
-          ] as Array<{ key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void }>).map((item) => {
-            const handleRemove = () => {
-              if (item.key === "employee" || item.key === "customRegion") {
-                onRemoveUpload?.(item.key as UploadKind);
-              } else if (item.key === "powerRanker" || item.key === "donations" || item.key === "nps") {
-                const qKind: QualifierUploadKind = item.key === "nps" ? "periodWinner" : (item.key as QualifierUploadKind);
-                onRemoveQualifier?.(qKind);
-              }
-            };
+        {/* Upload boxes and guidance text in a grid layout */}
+        <div className="mt-6 space-y-4 w-full max-w-4xl mx-auto">
+          {/* Upload boxes row */}
+          <div className="flex justify-between gap-4">
+            {([
+              { key: "employee", label: "Employee performance report", meta: uploads?.employee, onChange: onEmployeeFileChange },
+              { key: "customRegion", label: "Custom Region Report", meta: uploads?.customRegion, onChange: onCustomRegionFileChange },
+              { key: "powerRanker", label: "Power Ranker", meta: metaByKind.powerRanker, onChange: onFileChange("powerRanker") },
+              { key: "donations", label: "Donations", meta: metaByKind.donations, onChange: onFileChange("donations") },
+              { key: "nps", label: "NPS", meta: metaByKind.periodWinner, onChange: onFileChange("periodWinner") },
+            ] as Array<{ key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void }>).map((item) => {
+              const handleRemove = () => {
+                if (item.key === "employee" || item.key === "customRegion") {
+                  onRemoveUpload?.(item.key as UploadKind);
+                } else if (item.key === "powerRanker" || item.key === "donations" || item.key === "nps") {
+                  const qKind: QualifierUploadKind = item.key === "nps" ? "periodWinner" : (item.key as QualifierUploadKind);
+                  onRemoveQualifier?.(qKind);
+                }
+              };
 
-            return (
-              <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
-                <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
-                <div className="text-center">
-                  <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
-                    {item.label}
-                  </div>
-                  <div className="text-xs text-slate-300 min-h-[1.2em]">
-                    {item.meta?.name || "No file"}
+              return (
+                <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
+                  <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
+                  <div className="text-center">
+                    <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
+                      {item.label}
+                    </div>
+                    <div className="text-xs text-slate-300 min-h-[1.2em]">
+                      {item.meta?.name || "No file"}
+                    </div>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
 
-        {/* Moved guidance text to bottom of section, spanning full width */}
-        <div className="mt-4 w-full max-w-4xl mx-auto">
-          <p className="text-xs text-slate-400 text-left">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
+          {/* Guidance text spanning full width at bottom */}
+          <div className="text-center border-t border-slate-800/30 pt-4">
+            <p className="text-xs text-slate-400">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
+          </div>
         </div>
       </div>
     </section>
