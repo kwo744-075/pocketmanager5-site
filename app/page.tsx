@@ -231,6 +231,18 @@ export default function Home() {
           if (resp.ok) {
             const body = await resp.json();
             resolved = (body?.data ?? null) as HierarchySummary | null;
+          } else if (resp.status === 401) {
+            // Session is invalid, clear local login state and redirect to login
+            console.warn("Session expired, redirecting to login");
+            if (typeof window !== "undefined") {
+              window.localStorage.removeItem("loggedIn");
+              window.localStorage.removeItem("loginEmail");
+              window.localStorage.removeItem("userScopeLevel");
+              window.localStorage.removeItem("userDisplayName");
+              window.localStorage.removeItem("shopStore");
+              window.location.href = "/login?redirect=/";
+            }
+            return;
           } else {
             console.error("Home hierarchy API status", resp.status);
           }
@@ -609,7 +621,7 @@ export default function Home() {
     ops: "text-cyan-200",
     manager: "text-amber-200",
     dm: "text-violet-200",
-    contest: "text-amber-200",
+    contest: "text-white",
     rankings: "text-sky-200",
   };
 
