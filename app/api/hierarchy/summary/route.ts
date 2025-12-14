@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { getSupabaseAdmin } from "@/lib/supabaseAdmin";
 import { getServerSession } from "@/lib/auth/session";
 import { loadAlignmentContextForUser } from "@/lib/auth/alignment";
+import { getCachedSummaryForLogin } from "@/lib/hierarchyCache";
 
 type HierarchySummary = {
   login: string;
@@ -29,12 +31,30 @@ type ShopRow = {
 export async function GET(_req: Request) {
   try {
     void _req;
-    const session = await getServerSession();
-    if (!session?.user) return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
-
     const admin = getSupabaseAdmin();
-    const userId = session.user.id;
-    const login = (session.user.email ?? "").toLowerCase();
+    const session = await getServerSession();
+    console.log("API session:", session ? "exists" : "null", session?.user?.email);
+    let login: string;
+    let userId: string | null = null;
+    if (session?.user) {
+      userId = session.user.id;
+      login = (session.user.email ?? "").toLowerCase();
+    } else {
+      // Check for bypass cookie
+      const cookieStore = await cookies();
+      const bypassLogin = cookieStore.get("pm-local-login")?.value;
+      if (!bypassLogin) {
+        return NextResponse.json({ error: "Unauthenticated" }, { status: 401 });
+      }
+      login = bypassLogin.toLowerCase();
+      console.log("Using bypass login:", login);
+      // For bypass, return cached summary
+      const cached = getCachedSummaryForLogin(login);
+      if (cached) {
+        return NextResponse.json({ data: cached });
+      }
+      return NextResponse.json({ error: "No cached data" }, { status: 500 });
+    }
 
     // Load alignment context (memberships + assigned shops)
     const alignment = await loadAlignmentContextForUser(admin, userId);

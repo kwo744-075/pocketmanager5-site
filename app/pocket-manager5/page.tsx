@@ -15,6 +15,7 @@ import {
   Calculator,
   Camera,
   Crown,
+  Gamepad2,
   GraduationCap,
   ThumbsUp,
   CheckSquare,
@@ -30,6 +31,7 @@ import {
   ShieldCheck,
   TicketPercent,
   TrendingUp,
+  Unlock,
   UserCog,
   UserMinus,
   Wallet,
@@ -125,6 +127,8 @@ type SectionCardProps = {
   formSlugs?: FormSlug[] | undefined;
   compact?: boolean;
   children: ReactNode;
+  quickLinkTextClass?: string;
+  formPillTextClass?: string;
 };
 
 function SectionCard({
@@ -137,6 +141,8 @@ function SectionCard({
   formSlugs,
   compact = false,
   children,
+  quickLinkTextClass = "text-slate-200",
+  formPillTextClass = "pm5-accent-text",
 }: SectionCardProps) {
   const accentTheme = SECTION_ACCENTS[accent] ?? SECTION_ACCENTS.default;
 
@@ -166,7 +172,7 @@ function SectionCard({
             <Link
               key={slug}
               href={buildFeatureHref(slug)}
-              className={`inline-flex items-center gap-1 rounded-full border ${accentTheme.quickLinkBorder} bg-slate-900/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-200 transition hover:pm5-teal-border`}
+              className={`inline-flex items-center gap-1 rounded-full border ${accentTheme.quickLinkBorder} bg-slate-900/40 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] ${quickLinkTextClass} transition hover:pm5-teal-border`}
             >
               {formatFeatureLabel(slug)}
             </Link>
@@ -180,7 +186,7 @@ function SectionCard({
             <Link
               key={slug}
               href={`/pocket-manager5/forms/${slug}`}
-              className="inline-flex items-center gap-1 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] pm5-accent-text transition hover:pm5-teal-soft"
+              className={`inline-flex items-center gap-1 rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.3em] ${formPillTextClass} transition hover:pm5-teal-soft`}
             >
               {FORM_TITLE_LOOKUP[slug] ?? formatFeatureLabel(slug)}
               <ArrowUpRight className="h-3 w-3" />
@@ -384,6 +390,7 @@ function DmToolsRail() {
       actionHref="/pocket-manager5/features/dm-schedule"
       actionLabel="Open DM workspace"
       quickLinks={["dm-schedule", "dm-logbook", "cadence"]}
+      
       formSlugs={DM_FORM_SLUGS}
     >
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -407,21 +414,91 @@ function DmToolsRail() {
   );
 }
 
+// Shared tile classes & scale for consistent size + color across sections
+const TILE_SCALE_CLASS = "scale-75";
+const TILE_BASE_CLASS = `group relative transform ${TILE_SCALE_CLASS} flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 text-left transition hover:-translate-y-0.5`;
+
 function DmToolBanner({ title, subtitle, href, icon: Icon, accent }: DmToolCard) {
   return (
     <Link
       href={href}
-      className="group relative flex h-full items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 px-3 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pm5-teal"
+      className={`group relative transform flex h-full items-center gap-2 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 px-2 py-1 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pm5-teal`}
     >
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-r ${accent}`} />
-      <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
-        <Icon className="h-4 w-4" />
+      <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+        <Icon className="h-3 w-3" />
       </div>
       <div className="relative flex-1">
-        <p className="text-lg font-semibold text-white sm:text-xl">{title}</p>
-        <p className="text-sm text-slate-200 sm:text-base">{subtitle}</p>
+        <p className="text-base font-semibold text-white sm:text-lg">{title}</p>
+        <p className="text-xs text-slate-200 sm:text-sm">{subtitle}</p>
       </div>
-      <ArrowUpRight className="relative h-4 w-4 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
+      <ArrowUpRight className="relative h-3 w-3 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
+    </Link>
+  );
+}
+
+function RdToolsRail() {
+  return (
+    <SectionCard
+      title="RD Tools"
+      eyebrow="Regional director • oversight • strategy"
+      accent="emerald"
+      actionHref="/pocket-manager5/features/rd-tools"
+      actionLabel="Open RD workspace"
+      quickLinks={["rd-tools", "regional-reports", "performance-analytics"]}
+      formSlugs={[]} // Add RD form slugs when available
+    >
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {DM_TOOL_CARDS.map((tool) => (
+          <RdToolBanner key={tool.title} {...tool} />
+        ))}
+        {/* Time Lock Release Tool */}
+        <Link
+          href="/pocket-manager5/features/time-lock-release"
+          className="group relative flex h-full items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 px-3 py-2 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-emerald-500"
+        >
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-emerald-500/25 via-slate-950/10 to-slate-950/80" />
+          <div className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+            <Unlock className="h-4 w-4" />
+          </div>
+          <div className="relative flex-1">
+            <p className="text-sm font-semibold text-white">Time Lock Release</p>
+            <p className="text-xs text-slate-400">Override check-in time restrictions</p>
+          </div>
+          <ArrowUpRight className="relative h-4 w-4 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
+        </Link>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-3" aria-label="RD review presenters">
+        {DM_REVIEW_PRESENTERS.map((presenter) => (
+          <Link
+            key={presenter.href}
+            href={presenter.href.replace('/dm-tools/', '/rd-tools/')}
+            className="rounded-xl bg-slate-900/80 border border-slate-700 px-4 py-3 text-sm transition hover:pm5-teal-border hover:bg-slate-900"
+          >
+            <div className="font-semibold text-white">{presenter.title.replace('DM', 'RD')}</div>
+            <div className="text-xs text-slate-300">{presenter.description.replace('RD / leadership', 'executive leadership')}</div>
+          </Link>
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
+function RdToolBanner({ title, subtitle, href, icon: Icon, accent }: DmToolCard) {
+  return (
+    <Link
+      href={href.replace('/dm-tools/', '/rd-tools/')}
+      className={`group relative transform flex h-full items-center gap-2 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 px-2 py-1 text-left transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-pm5-teal`}
+    >
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-r ${accent}`} />
+      <div className="relative flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+        <Icon className="h-3 w-3" />
+      </div>
+      <div className="relative flex-1">
+        <p className="text-base font-semibold text-white">{title.replace('DM', 'RD')}</p>
+        <p className="text-xs text-slate-400">{subtitle}</p>
+      </div>
+      <ArrowUpRight className="relative h-3 w-3 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
     </Link>
   );
 }
@@ -435,51 +512,6 @@ type WorkspaceTileMeta = {
   accent: string;
   variant?: "default" | "compact";
 };
-
-const PEOPLE_TILE_CONFIG: WorkspaceTileMeta[] = [
-  {
-    title: "Scheduling",
-    subtitle: "Weekly rosters & overtime",
-    href: "/pocket-manager5/features/employee-scheduling",
-    icon: CalendarClock,
-    accent: "from-violet-500/30 via-slate-950/10 to-slate-950/80",
-  },
-  {
-    title: "Training",
-    subtitle: "CTT & development",
-    href: "/pocket-manager5/features/employee-training",
-    icon: GraduationCap,
-    accent: "pm5-amber-soft",
-  },
-  {
-    title: "Meetings",
-    subtitle: "Agendas & attendance",
-    href: "/pocket-manager5/features/employee-meetings",
-    icon: NotebookPen,
-    accent: "from-pink-500/30 via-slate-950/10 to-slate-950/80",
-  },
-  {
-    title: "Coaching Log",
-    subtitle: "Feedback + commitments",
-    href: "/pocket-manager5/features/coaching-log",
-    icon: ClipboardCheck,
-    accent: "from-cyan-500/30 via-slate-950/10 to-slate-950/80",
-  },
-  {
-    title: "Staff Mgmt",
-    subtitle: "Pipeline & contacts",
-    href: "/pocket-manager5/features/staff-management",
-    icon: UserCog,
-    accent: "pm5-teal-soft",
-  },
-  {
-    title: "Termed List",
-    subtitle: "Compliance archive",
-    href: "/pocket-manager5/features/termed-list",
-    icon: UserMinus,
-    accent: "from-red-500/30 via-slate-950/10 to-slate-950/80",
-  },
-];
 
 const OPS_TILE_CONFIG: WorkspaceTileMeta[] = [
   {
@@ -1156,6 +1188,33 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
   );
 }
 
+const PEOPLE_TILE_CONFIG: WorkspaceTileMeta[] = [
+  {
+    title: "Employee Management",
+    subtitle: "People directory & roster",
+    href: "/pocket-manager5/features/employee-management",
+    icon: UserCog,
+    accent: "from-emerald-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+  {
+    title: "Training Tracker",
+    subtitle: "CTT completion & progress",
+    href: "/pocket-manager5/features/employee-training",
+    icon: GraduationCap,
+    accent: "from-amber-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+  {
+    title: "Employee Scheduling",
+    subtitle: "Week rosters & coverage",
+    href: "/pocket-manager5/features/employee-scheduling",
+    icon: CalendarClock,
+    accent: "from-violet-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+];
+
 function PeopleWorkspaceContent({ shopNumber }: { shopNumber: number | string }) {
   const snapshot = useSnapshotSuspense(shopNumber) ?? EMPTY_SNAPSHOT;
   const peoplePreview = usePeopleFeaturePreviewSuspense(shopNumber);
@@ -1215,7 +1274,7 @@ function PeopleWorkspaceSection({ shopNumber }: { shopNumber: number | string | 
       <PeopleWorkspaceShell>
         <div className="mt-4 grid gap-3 grid-cols-1 sm:grid-cols-2" aria-label="People workspace banners">
           {BANNER_ACTIONS.map((a) => (
-            <Link key={a.title} href={a.href} className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 p-3 text-left transition hover:-translate-y-0.5">
+            <Link key={a.title} href={a.href} className={`${TILE_BASE_CLASS} p-3`}>
               <div className={`pointer-events-none absolute inset-0 bg-gradient-to-r ${a.accent}`} />
               <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
                 <a.icon className="h-5 w-5" />
@@ -1444,6 +1503,7 @@ function PeopleBannersLarge({ shopNumber }: { shopNumber: number | string | null
   const BANNER_ACTIONS = [
     { title: "Employee Management", href: "/pocket-manager5/features/employee-management", subtitle: "People directory & roster", icon: UserCog, accent: "from-emerald-500/30 via-slate-950/10 to-slate-950/80" },
     { title: "Training Tracker", href: "/pocket-manager5/features/employee-training", subtitle: "CTT completion & progress", icon: GraduationCap, accent: "from-amber-500/30 via-slate-950/10 to-slate-950/80" },
+    { title: "Games", href: "/pocket-manager5/features/games", subtitle: "Interactive training & challenges", icon: Gamepad2, accent: "from-emerald-500/30 via-slate-950/10 to-slate-950/80" },
     { title: "Employee Scheduling", href: "/pocket-manager5/features/employee-scheduling", subtitle: "Week rosters & coverage", icon: CalendarClock, accent: "from-violet-500/30 via-slate-950/10 to-slate-950/80" },
   ];
 
@@ -1451,16 +1511,16 @@ function PeopleBannersLarge({ shopNumber }: { shopNumber: number | string | null
     <SectionCard title="People Workspace" eyebrow="Quick people actions" accent="violet" actionHref="/pocket-manager5/features/employee-management" actionLabel="Open people hub" compact>
       <div className="mt-4 grid gap-3 grid-cols-1 sm:grid-cols-3" aria-label="People workspace banners (large)">
         {BANNER_ACTIONS.map((a) => (
-          <Link key={a.title} href={a.href} className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 p-3 text-left transition hover:-translate-y-0.5">
+          <Link key={a.title} href={a.href} className={`${TILE_BASE_CLASS} p-3`}>
             <div className={`pointer-events-none absolute inset-0 bg-gradient-to-r ${a.accent}`} />
-            <div className="relative flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
-              <a.icon className="h-5 w-5" />
+            <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+              <a.icon className="h-4 w-4" />
             </div>
             <div className="relative flex-1">
-              <p className="text-lg font-semibold text-white">{a.title}</p>
-              <p className="text-sm text-slate-200">{a.subtitle}</p>
+              <p className="text-base font-semibold text-white">{a.title}</p>
+              <p className="text-xs text-slate-200">{a.subtitle}</p>
             </div>
-            <ArrowUpRight className="relative h-5 w-5 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
+            <ArrowUpRight className="relative h-4 w-4 flex-shrink-0 text-slate-200 transition group-hover:text-white" />
           </Link>
         ))}
       </div>
@@ -1482,15 +1542,15 @@ function AdminManagementSection() {
       <div className="space-y-4">
         <Link
           href="/pocket-manager5/admin/alignments"
-          className="group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 p-3 text-left transition hover:-translate-y-0.5"
+          className={`${TILE_BASE_CLASS} p-3`}
         >
           <div className="pointer-events-none absolute inset-0 bg-gradient-to-r from-pink-500/40 via-pink-400/10 to-slate-950/70" />
-          <div className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
+          <div className="relative flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-2xl bg-slate-900/70 text-white">
             <UserCog className="h-5 w-5" />
           </div>
           <div className="relative flex-1">
-            <p className="text-lg font-semibold text-white sm:text-xl">Admin: Alignments</p>
-            <p className="text-sm text-slate-200">Company alignment & user seeds</p>
+            <p className="text-base font-semibold text-white sm:text-lg">Admin: Alignments</p>
+            <p className="text-xs text-slate-200">Company alignment & user seeds</p>
           </div>
           <ArrowUpRight className="relative h-4 w-4 flex-shrink-0 text-slate-200" />
         </Link>
@@ -1638,6 +1698,11 @@ export default function PocketManagerPage() {
         {canSeeDmWorkspace && (
           <section className="space-y-6" aria-label="District manager workspace">
             <DmToolsRail />
+          </section>
+        )}
+        {canSeeDmWorkspace && (
+          <section className="space-y-6" aria-label="Regional director workspace">
+            <RdToolsRail />
           </section>
         )}
       </div>

@@ -285,6 +285,9 @@ export default function OnePagerGrid({
                   ) : (
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <input
+                        aria-label={`Employee name for ${r.metricLabel}`}
+                        title={`Employee name for ${r.metricLabel}`}
+                        placeholder="Employee name"
                         style={{ width: '70%', padding: 6, fontSize: 12, borderRadius: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.04)", color: r.confirmed ? '#16a34a' : undefined, textAlign: 'left' }}
                         value={r.employeeName}
                         onChange={(e) => {
@@ -300,6 +303,9 @@ export default function OnePagerGrid({
                 </td>
                 <td style={{ padding: 4 }}>
                   <input
+                    aria-label={`Shop manager for ${r.metricLabel}`}
+                    title={`Shop manager for ${r.metricLabel}`}
+                    placeholder="Shop manager"
                     style={{ width: '100%', padding: 6, fontSize: 12, borderRadius: 6, background: 'transparent', border: '1px solid rgba(255,255,255,0.04)' }}
                     value={r.shopManager ?? ''}
                     onChange={(e) => {
@@ -314,7 +320,7 @@ export default function OnePagerGrid({
                 
                 <td style={{ padding: 4 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
-                    <input type="checkbox" checked={Boolean(r.confirmed)} onChange={() => handleConfirmToggle(idx)} />
+                    <input type="checkbox" aria-label={`Confirm winner for ${r.metricLabel}`} title={`Confirm winner for ${r.metricLabel}`} checked={Boolean(r.confirmed)} onChange={() => handleConfirmToggle(idx)} />
                     <button
                       type="button"
                       onClick={() => handleConfirmToggle(idx)}

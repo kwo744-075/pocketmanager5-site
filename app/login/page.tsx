@@ -184,6 +184,74 @@ export default function LoginPage() {
         localStorage.removeItem("shopUserName");
       }
 
+      // Load alignment context (alignment_memberships + shop_role_assignments)
+      try {
+        // The canonical key for these tables in the app is the auth `user_id` (UUID).
+        // For legacy logins we only have an email. Try to resolve a profile row
+        // to obtain the canonical user_id, falling back to the email if not found.
+        let queryUserId: string | null = loginEmail;
+        try {
+          const { data: profileRow, error: profileErr } = await supabase
+            .from("profiles")
+            .select("user_id")
+            .eq("email", loginEmail)
+            .maybeSingle();
+
+          if (!profileErr && profileRow?.user_id) {
+            queryUserId = profileRow.user_id;
+          }
+        } catch (profileLookupErr) {
+          console.warn("[Login] profile lookup failed, falling back to email for alignment queries", profileLookupErr);
+        }
+
+        const { data: memberships, error: membersErr } = await supabase
+          .from("alignment_memberships")
+          .select("alignment_id, alignment_name, shop_id, role, is_primary")
+          .eq("user_id", queryUserId as string);
+
+        const shopsFromMemberships = new Set<string>();
+        if (!membersErr && memberships) {
+          (memberships as any[]).forEach((m) => {
+            if (m.shop_id) shopsFromMemberships.add(m.shop_id);
+          });
+        }
+
+        const { data: assignments, error: assignErr } = await supabase
+          .from("shop_role_assignments")
+          .select("shop_id")
+          .eq("user_id", queryUserId as string);
+
+        if (!assignErr && assignments) {
+          (assignments as any[]).forEach((a) => {
+            if (a.shop_id) shopsFromMemberships.add(a.shop_id);
+          });
+        }
+
+        let activeAlignmentId: string | undefined = undefined;
+        if (!activeAlignmentId && memberships && (memberships as any[]).length > 0) {
+          activeAlignmentId = (memberships as any[]).find((m) => m.is_primary)?.alignment_id ?? (memberships as any[])[0]?.alignment_id;
+        }
+
+        const newAlignment = {
+          memberships: memberships ?? [],
+          shops: Array.from(shopsFromMemberships),
+          activeAlignmentId,
+        };
+
+        localStorage.setItem("alignmentContext", JSON.stringify(newAlignment));
+        // Mirror server behavior: set pm-active-alignment cookie when activeAlignmentId exists
+        if (typeof document !== "undefined") {
+          if (activeAlignmentId) {
+            document.cookie = `pm-active-alignment=${encodeURIComponent(activeAlignmentId)}; path=/; SameSite=Lax`;
+          } else {
+            document.cookie = `pm-active-alignment=; path=/; max-age=0; SameSite=Lax`;
+          }
+        }
+        console.log("[Login] alignmentContext saved", newAlignment);
+      } catch (alignErr) {
+        console.warn("[Login] Failed to load alignment context:", alignErr);
+      }
+
       try {
         // NOTE: This uses the same Supabase tables as the Pocket Manager5 & Pulse Check5 apps.
         const summary = await fetchHierarchySummary(loginEmail);

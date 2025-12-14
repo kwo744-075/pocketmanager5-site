@@ -92,7 +92,11 @@ export default function DailyCheckinsViewer({ date }: { date: string }) {
             </thead>
             <tbody>
               {rows.map((r, idx) => (
-                <tr key={idx} className="border-t border-white/6">
+                  <tr
+                    key={idx}
+                    id={r.shop_id ? `shop-${r.shop_id}` : undefined}
+                    className="border-t border-white/6"
+                  >
                   <td className="p-2">{r.shop_id ?? "-"}</td>
                   <td className="p-2">{r.time_slot ?? "-"}</td>
                   <td className="p-2">{r.cars ?? 0}</td>
