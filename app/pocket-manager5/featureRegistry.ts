@@ -131,6 +131,17 @@ export const FEATURE_REGISTRY = [
     status: "live",
   },
   {
+    slug: "games",
+    title: "Games",
+    summary: "Interactive training games and challenges with scoring and leaderboards.",
+    platformRoute: "/(tabs)/enhanced-games",
+    docPath: "docs/GAMES_SYSTEM_IMPLEMENTATION.md",
+    forms: ["Game Results", "Leaderboard"],
+    keyHooks: ["supabase.from('employee_training_games')", "supabase.from('employee_shop_tycoon')"],
+    tags: ["training", "gamification", "engagement"],
+    status: "beta",
+  },
+  {
     slug: "cadence",
     title: "Cadence",
     summary: "Daily + weekly task templates with auto-tracking for DM compliance.",

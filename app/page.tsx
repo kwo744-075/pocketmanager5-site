@@ -751,7 +751,15 @@ export default function Home() {
         )}
 
         <section>
-          <ExecutiveDashboard />
+          <ExecutiveDashboard
+            kpiOnClick={(label) => {
+              if (label === 'Cars' && shopMeta?.id) {
+                router.push(`/pulse-check5/daily/${todayISO()}#shop-${shopMeta.id}`);
+              } else if (label === 'Cars') {
+                router.push('/pulse-check5');
+              }
+            }}
+          />
         </section>
 
       </div>

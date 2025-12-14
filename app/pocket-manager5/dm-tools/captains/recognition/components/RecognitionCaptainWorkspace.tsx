@@ -3,69 +3,34 @@
 import { useCallback, useEffect, useMemo, useReducer, useState, type ChangeEvent, type ReactNode } from "react";
 import {
   ArrowUp,
-  BadgeCheck,
-  CheckCircle2,
-  CircleAlert,
+  Sparkles,
+  FileSpreadsheet,
+  NotebookPen,
+  ShieldCheck,
+  Download,
+  Loader2,
   Cake,
   ChevronDown,
-  Download,
-  FileSpreadsheet,
-  Loader2,
   Paperclip,
-  LucideIcon,
-  NotebookPen,
-  Package,
-  RefreshCw,
-  ShieldCheck,
-  Sparkles,
   Table,
+  BadgeCheck,
+  Package,
+  CircleAlert,
+  RefreshCw,
+  CheckCircle2,
+  type LucideIcon,
 } from "lucide-react";
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
 import { useCaptainRoleGate } from "@/hooks/useCaptainRoleGate";
-import {
-  formatRecognitionMetricValue,
-  RECOGNITION_AWARD_CONFIG,
-  RECOGNITION_METRIC_LOOKUP,
-  RECOGNITION_METRICS,
-} from "@/lib/recognition-captain/config";
-
-// KPI keys that drive the Excel-style Rankings one-pager (ensure these are included
-// when building normalized sheets and when computing leaders for the one-pager)
-const ONE_PAGER_KPI_KEYS = [
-  'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
-  'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
-];
-import CompactKpiLeaders from "./CompactKpiLeaders";
+import { RECOGNITION_AWARD_CONFIG, RECOGNITION_METRIC_LOOKUP, RECOGNITION_METRICS, formatRecognitionMetricValue } from "@/lib/recognition-captain/config";
+import type { RecognitionDatasetRow, ManualAwardEntry, CelebrationEntry, ConfirmationRow, RecognitionRuleDraft, RecognitionProcessingSummary, RecognitionAwardResult, RecognitionProcessResponse, RecognitionExportJob } from "@/lib/recognition-captain/types";
 import OnePagerGrid from "./OnePagerGrid";
-import {
-  type RecognitionAwardResult,
-  type RecognitionDatasetRow,
-  type RecognitionExportJob,
-  type RecognitionProcessResponse,
-  type RecognitionProcessingSummary,
-  type RecognitionRuleDraft,
-  type CelebrationEntry,
-  type ConfirmationRow,
-  type ManualAwardEntry,
-} from "@/lib/recognition-captain/types";
-const ICON_MAP: Record<string, LucideIcon> = {
-  crown: BadgeCheck,
-  package: Package,
-  chart: NotebookPen,
-  "line-chart": NotebookPen,
-  sparkles: Sparkles,
-};
-
-const statusBadgeClassMap: Record<ProcessingState, string> = {
-  idle: "text-slate-400 border-slate-700",
-  uploading: "text-amber-200 border-amber-400/60",
-  ready: "text-emerald-200 border-emerald-400/60",
-  error: "text-rose-200 border-rose-400/60",
-};
-
-type ProcessingState = "idle" | "uploading" | "ready" | "error";
-
-type ExportKind = "summary" | "pptx";
+import CompactKpiLeaders from "./CompactKpiLeaders";
+import UploadMapper from "./UploadMapper";
+import JeopardyEditor from "./JeopardyEditor";
+import JeopardyShow from "./JeopardyShow";
+import ShowBuilderPanel from "./ShowBuilderPanel";
+import ThemePicker from "./ThemePicker";
 
 type UploadKind = "employee" | "shop" | "customRegion";
 
@@ -76,7 +41,8 @@ type ExportResponse = {
   downloadUrl?: string;
 };
 
-type AwardShowStepId = "qualifiers" | "uploads" | "manual-awards" | "review" | "exports";
+ 
+type AwardShowStepId = "qualifiers" | "uploads" | "manual-awards" | "review" | "show" | "exports";
 
 type StepStatus = "complete" | "current" | "upcoming";
 
@@ -92,8 +58,22 @@ const AWARD_SHOW_STEPS: AwardShowStep[] = [
   { id: "uploads", label: "Confirm lists and employee names", description: "KPI + EPR data", icon: FileSpreadsheet },
   { id: "manual-awards", label: "Manual awards", description: "DM & RD selections", icon: NotebookPen },
   { id: "review", label: "Review", description: "Confirm winners & notes", icon: ShieldCheck },
+  { id: "show", label: "Show & Export", description: "Live show and deck tools", icon: Sparkles },
   { id: "exports", label: "Generate", description: "Decks & CSV", icon: Download },
 ];
+
+const ONE_PAGER_KPI_KEYS = [
+  'overAll', 'powerRanker1', 'powerRanker2', 'powerRanker3', 'carsVsBudget', 'carsVsComp', 'salesVsBudget', 'salesVsComp',
+  'nps', 'emailCollection', 'pmix', 'big4', 'fuelFilters', 'netAro', 'coolants', 'discounts', 'differentials', 'donations'
+];
+
+const ICON_MAP: Record<string, LucideIcon> = {
+  crown: BadgeCheck,
+  package: Package,
+  chart: NotebookPen,
+  "line-chart": NotebookPen,
+  sparkles: Sparkles,
+};
 
 type UploadedFileMeta = {
   name: string;
@@ -103,6 +83,7 @@ type UploadedFileMeta = {
 };
 
 type QualifierUploadKind = "powerRanker" | "periodWinner" | "donations";
+	
 
 type QualifierUploadResult = {
   powerRanker?: UploadedFileMeta;
@@ -148,6 +129,10 @@ type AwardShowAction =
   | { type: "reset" };
 
 type MetadataStatus = "idle" | "saving" | "saved" | "error";
+
+type ProcessingState = "idle" | "uploading" | "ready" | "error";
+
+type ExportKind = "summary" | "pptx";
 
 function awardShowReducer(state: AwardShowRunDraft, action: AwardShowAction): AwardShowRunDraft {
   switch (action.type) {
@@ -244,6 +229,73 @@ export function RecognitionCaptainWorkspace() {
     }
   }, []);
 
+  const [exportJobs, setExportJobs] = useState<RecognitionExportJob[]>([]);
+  const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const [activeRunId, setActiveRunId] = useState<string | null>(null);
+  const [uploaderEmail, setUploaderEmail] = useState<string | null>(null);
+  const [fileMapperState, setFileMapperState] = useState<any>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [showTheme, setShowTheme] = useState<import("@/lib/recognitionShowThemes").ShowThemeId>("classic");
+  const [printPreviewOpen, setPrintPreviewOpen] = useState(false);
+  const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
+  const [showMapperPopup, setShowMapperPopup] = useState(false);
+  const [step1QualifiedEmployees, setStep1QualifiedEmployees] = useState<Array<{
+    name: string;
+    shopNumber: number;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [step1NonQualifiedEmployees, setStep1NonQualifiedEmployees] = useState<Array<{
+    name: string;
+    shopNumber: number;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [step1QualifiedShops, setStep1QualifiedShops] = useState<Array<{
+    shopNumber: number;
+    managerName: string;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+  const [step1NonQualifiedShops, setStep1NonQualifiedShops] = useState<Array<{
+    shopNumber: number;
+    managerName: string;
+    nps: number;
+    emailCollection: number;
+    pmix: number;
+    big4: number;
+    fuelFilters: number;
+    netARO: number;
+    coolants: number;
+    discounts: number;
+    differentials: number;
+    donations: number;
+  }>>([]);
+
   // Auto-link KPI -> (source, column) mapping using the upload mapper + sample headers
   useEffect(() => {
     try {
@@ -317,6 +369,8 @@ export function RecognitionCaptainWorkspace() {
     }
   }, [uploadMapperState]);
 
+  
+
   const [activeStep, setActiveStep] = useState<AwardShowStepId>("qualifiers");
   const [qualifierUploadState, setQualifierUploadState] = useState<Record<QualifierUploadKind, ProcessingState>>({
     powerRanker: "idle",
@@ -341,69 +395,6 @@ export function RecognitionCaptainWorkspace() {
     [qualifierDataset, winnerThresholds],
   );
   const anniversaryEntries = useMemo(() => buildAnniversaryEntries(dataset), [dataset]);
-  const [exportJobs, setExportJobs] = useState<RecognitionExportJob[]>([]);
-  const [exportMessage, setExportMessage] = useState<string | null>(null);
-  const [activeRunId, setActiveRunId] = useState<string | null>(null);
-  const [uploaderEmail, setUploaderEmail] = useState<string | null>(null);
-  const [fileMapperState, setFileMapperState] = useState<any>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [parsedUploads, setParsedUploads] = useState<Record<string, any[] | undefined>>({});
-  const [step1QualifiedEmployees, setStep1QualifiedEmployees] = useState<Array<{
-    name: string;
-    shopNumber: number;
-    nps: number;
-    emailCollection: number;
-    pmix: number;
-    big4: number;
-    fuelFilters: number;
-    netARO: number;
-    coolants: number;
-    discounts: number;
-    differentials: number;
-    donations: number;
-  }>>([]);
-  const [step1NonQualifiedEmployees, setStep1NonQualifiedEmployees] = useState<Array<{
-    name: string;
-    shopNumber: number;
-    nps: number;
-    emailCollection: number;
-    pmix: number;
-    big4: number;
-    fuelFilters: number;
-    netARO: number;
-    coolants: number;
-    discounts: number;
-    differentials: number;
-    donations: number;
-  }>>([]);
-  const [step1QualifiedShops, setStep1QualifiedShops] = useState<Array<{
-    shopNumber: number;
-    managerName: string;
-    nps: number;
-    emailCollection: number;
-    pmix: number;
-    big4: number;
-    fuelFilters: number;
-    netARO: number;
-    coolants: number;
-    discounts: number;
-    differentials: number;
-    donations: number;
-  }>>([]);
-  const [step1NonQualifiedShops, setStep1NonQualifiedShops] = useState<Array<{
-    shopNumber: number;
-    managerName: string;
-    nps: number;
-    emailCollection: number;
-    pmix: number;
-    big4: number;
-    fuelFilters: number;
-    netARO: number;
-    coolants: number;
-    discounts: number;
-    differentials: number;
-    donations: number;
-  }>>([]);
 
   const parseFileToRows = useCallback(async (file: File) => {
     const ext = file.name.split('.').pop()?.toLowerCase();
@@ -453,6 +444,8 @@ export function RecognitionCaptainWorkspace() {
   const [kpiLeadersShops, setKpiLeadersShops] = useState<Record<string, RecognitionDatasetRow[]>>({});
   // Global runtime error catcher (shows a visible banner instead of a blank screen)
   const [runtimeError, setRuntimeError] = useState<any>(null);
+  // State for export jobs and parser/UI state
+  
   useEffect(() => {
     const onError = (e: ErrorEvent) => {
       // eslint-disable-next-line no-console
@@ -1799,6 +1792,50 @@ export function RecognitionCaptainWorkspace() {
     setMetadataMessage(null);
   }, [dispatch]);
 
+  const handlePrintSelected = useCallback(async (options: { personId?: string; district?: string; includeCelebrations?: boolean; includeOnePager?: boolean; includeKpis?: boolean }) => {
+    // open print preview modal which will render the slides and call window.print()
+    // Store selection in state or pass via props; here we toggle a flag and rely on ShowBuilderPanel to render preview
+    setPrintPreviewOpen(true);
+    return true;
+  }, []);
+
+  const handleExportPptx = useCallback(async (options: { period?: string; themeId?: string; personId?: string; district?: string; includeCelebrations?: boolean; includeOnePager?: boolean; includeKpis?: boolean }) => {
+    try {
+      const resp = await fetch('/api/recognition/export-ppt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(options),
+      });
+      if (!resp.ok) throw new Error('Export failed');
+      const blob = await resp.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `recognition-show-${options.period ?? 'export'}.pptx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      return true;
+    } catch (e) {
+      console.error(e);
+      return false;
+    }
+  }, []);
+
+  const handleStartBroadcast = useCallback(async (opts?: { themeId?: string; target?: string }) => {
+    try {
+      const r = await fetch('/api/recognition/create-show', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(opts || {}) });
+      const j = await r.json();
+      if (!r.ok) throw new Error(j?.error || 'Failed to create show');
+      const id = j.showId;
+      // redirect host to host page
+      window.location.href = `/pocket-manager5/dm-tools/captains/recognition/live-show/host?showId=${encodeURIComponent(id)}`;
+    } catch (e) {
+      console.error('Start broadcast failed', e);
+    }
+  }, []);
+
   useEffect(() => {
     if (hierarchy.hierarchyLoading) {
       return;
@@ -2025,10 +2062,16 @@ export function RecognitionCaptainWorkspace() {
           onRemoveUpload={handleRemoveUpload}
           onRemoveQualifier={handleRemoveQualifier}
           uploadMapper={uploadMapperState}
+          fileMapperState={fileMapperState}
+          setFileMapperState={setFileMapperState}
+          showMapperPopup={showMapperPopup}
+          setShowMapperPopup={setShowMapperPopup}
+          onRunProcess={processUpload}
         />
       </StepSection>
 
       {/* Step 1 Qualification Lists */}
+      {activeStep === "qualifiers" && (
       <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
         <div className="space-y-4">
           <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">Step 1 • Qualification Results</p>
@@ -2243,6 +2286,7 @@ export function RecognitionCaptainWorkspace() {
           </details>
         </div>
       </section>
+      )}
 
       {/* Eligible cards moved to the Uploads (tab 2) processing summary */}
 
@@ -2315,6 +2359,14 @@ export function RecognitionCaptainWorkspace() {
         description="Confirm qualifiers, DM notes, and celebrations before exporting."
         active={activeStep === "review"}
       >
+        <ShowBuilderPanel
+          theme={showTheme}
+          onThemeChange={(t) => setShowTheme(t)}
+          onPrintSelected={handlePrintSelected}
+          onExportPptx={(opts) => handleExportPptx({ ...opts, period: periodValue, themeId: showTheme })}
+          onStartBroadcast={(opts) => handleStartBroadcast({ ...opts, themeId: showTheme })}
+        />
+
         <ReadyChecklistPanel items={readinessChecklist} />
         <MetadataSyncStatus status={metadataStatus} message={metadataMessage} />
         <ConfirmationGridPanel
@@ -2325,6 +2377,43 @@ export function RecognitionCaptainWorkspace() {
         />
         {anniversaryEntries.length ? <AnniversaryPanel entries={anniversaryEntries} /> : null}
         <BirthdaysPanel entries={draft.birthdays} loading={birthdaysLoading} error={birthdaysError} />
+      </StepSection>
+
+      <StepSection
+        id="show"
+        title="Show & Export"
+        description="Theme, live show links, and export / print tools."
+        active={activeStep === "show"}
+      >
+        <div className="grid grid-cols-1 gap-4">
+          <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-5">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Theme</p>
+                <div className="mt-2">
+                  <select value={showTheme} onChange={(e) => setShowTheme(e.target.value as any)} className="rounded-md bg-slate-900/50 px-3 py-2 text-sm text-white">
+                    {/* Theme ids defined in ShowBuilderPanel / themes list */}
+                    <option value={showTheme}>{showTheme}</option>
+                    <option value="theme1">Theme 1</option>
+                    <option value="theme2">Theme 2</option>
+                    <option value="theme3">Theme 3</option>
+                    <option value="theme4">Theme 4</option>
+                    <option value="theme5">Theme 5</option>
+                    <option value="theme6">Theme 6</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <a href={`./show?mode=host&year=${new Date().getFullYear()}&period_no=${periodValue || ''}`} className="inline-flex items-center gap-2 rounded-md border border-emerald-400/40 px-3 py-2 text-sm font-semibold text-emerald-100">Open Live Show (Host)</a>
+                <a href={`./show?year=${new Date().getFullYear()}&period_no=${periodValue || ''}`} className="inline-flex items-center gap-2 rounded-md border border-slate-700/60 px-3 py-2 text-sm font-semibold text-slate-200">Open Live Show (Audience)</a>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-3">
+              <button onClick={() => void handleExportPptx({ period: periodValue, themeId: showTheme })} className="rounded-2xl bg-emerald-600/20 px-4 py-2 text-emerald-100">Export Full PPTX</button>
+              <button onClick={() => void handlePrintSelected({ includeCelebrations: true })} className="rounded-2xl bg-slate-800/40 px-4 py-2 text-slate-200">Print Current Slide</button>
+            </div>
+          </div>
+        </div>
       </StepSection>
 
       <StepSection
@@ -2352,6 +2441,21 @@ export function RecognitionCaptainWorkspace() {
         />
       </StepSection>
 
+      {/* Jeopardy Admin + Show (admin only) */}
+      {canEditRules ? (
+        <StepSection id="jeopardy" title="Jeopardy Board" description="Edit Jeopardy board and run show breaks." active={false}>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4">
+              <JeopardyEditor year={new Date().getFullYear()} period={periodValue || ''} defaultKind="A" />
+              <JeopardyEditor year={new Date().getFullYear()} period={periodValue || ''} defaultKind="B" />
+              <JeopardyEditor year={new Date().getFullYear()} period={periodValue || ''} defaultKind="FINAL" />
+
+              <JeopardyShow year={new Date().getFullYear()} period={periodValue || ''} participants={qualifiedEmployees.map(e => (e as any).managerName ?? String((e as any).shopNumber ?? ''))} />
+            </div>
+          </div>
+        </StepSection>
+      ) : null}
+
       <StepNavigator
         activeStep={activeStep}
         steps={stepsWithStatus}
@@ -2375,7 +2479,6 @@ type EligibleListCardProps = {
   onToggle: () => void;
   emptyLabel: string;
 };
-
 function EligibleListCard({
   label,
   description,
@@ -2472,6 +2575,22 @@ function RecognitionUploadPanel({
   onOpenQualifiers?: () => void;
   uploads: AwardShowRunDraft["uploads"];
 }) {
+  const handleProcess = useCallback(async () => {
+    if (!onProcess) {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn("RecognitionUploadPanel: onProcess not provided");
+      } catch (e) {}
+      return false;
+    }
+    try {
+      return await onProcess();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("RecognitionUploadPanel: process error", e);
+      return false;
+    }
+  }, [onProcess]);
   return (
     <section className="rounded-3xl border border-slate-900/70 bg-slate-950/80 p-6 shadow-2xl shadow-black/30">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
@@ -2491,17 +2610,6 @@ function RecognitionUploadPanel({
             />
             <span className="text-[11px] normal-case tracking-normal text-slate-500">Optional label applied to both uploads.</span>
           </label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => onProcess()}
-                disabled={status === 'uploading'}
-                className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:opacity-40"
-              >
-                {status === 'uploading' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
-                {status === 'uploading' ? 'Processing…' : 'Process uploaded files'}
-              </button>
-            </div>
         </div>
       </div>
       
@@ -2545,6 +2653,11 @@ function QualifierUploadsPanel({
   qualifierPreview,
   parsedUploads,
   uploadMapper,
+  fileMapperState,
+  setFileMapperState,
+  showMapperPopup,
+  setShowMapperPopup,
+  onRunProcess,
 }: {
   qualifiers: QualifierUploadResult | null;
   uploadState: Record<QualifierUploadKind, ProcessingState>;
@@ -2564,7 +2677,12 @@ function QualifierUploadsPanel({
   qualifierPreview?: RecognitionDatasetRow | null;
   parsedUploads?: Record<string, any[] | undefined>;
   uploadMapper?: any;
+  fileMapperState?: any;
+  setFileMapperState?: (m: any) => void;
   
+  showMapperPopup: boolean;
+  setShowMapperPopup: (v: boolean) => void;
+  onRunProcess?: () => Promise<boolean>;
 }) {
   const [activeList, setActiveList] = useState<"shops" | "employees" | null>(null);
   const cards: Array<{ kind: QualifierUploadKind; title: string; description?: string; helper: string }> = [
@@ -2635,18 +2753,37 @@ function QualifierUploadsPanel({
     if (qualifiers?.donations) setUploading((s) => ({ ...s, donations: false }));
   }, [uploads, qualifiers]);
 
+  const handleRunProcess = useCallback(async () => {
+    if (!onRunProcess) {
+      try {
+        // eslint-disable-next-line no-console
+        console.warn("QualifierUploadsPanel: onRunProcess not provided");
+      } catch (e) {}
+      return false;
+    }
+    try {
+      return await onRunProcess();
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.error("QualifierUploadsPanel: runProcess error", e);
+      return false;
+    }
+  }, [onRunProcess]);
+
   const UploadBox = ({
     item,
     uploading,
     onChange,
     onRemove,
     showLabel = true,
+    showProcessPill = false,
   }: {
     item: { key: string; label: string; meta?: UploadedFileMeta; onChange?: (e: any) => void };
     uploading?: boolean;
     onChange?: (e: ChangeEvent<HTMLInputElement>) => void;
     onRemove?: () => void;
     showLabel?: boolean;
+    showProcessPill?: boolean;
   }) => {
     return (
       <div className="flex flex-col items-center gap-2">
@@ -2679,6 +2816,16 @@ function QualifierUploadsPanel({
             className="rounded-full border border-slate-700/60 px-2 py-1 text-xs text-rose-300 hover:bg-rose-900/10"
           >
             ✕
+          </button>
+        )}
+
+        {showProcessPill && (
+          <button
+            type="button"
+            onClick={() => void handleRunProcess()}
+            className="inline-flex items-center justify-center gap-1 rounded-md border border-slate-600/60 bg-slate-800/40 px-2 py-1 text-xs font-medium text-slate-200 hover:bg-slate-700/60"
+          >
+            Process
           </button>
         )}
       </div>
@@ -2719,7 +2866,46 @@ function QualifierUploadsPanel({
         {/* Thresholds were moved above under the guidance text */}
 
         {/* Upload boxes and guidance text in a grid layout */}
-        <div className="mt-6 space-y-4 w-full max-w-4xl mx-auto">
+          <div className="mt-6 space-y-4 w-full max-w-4xl mx-auto">
+          {/* Mapper pill above employee performance report */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => setShowMapperPopup(!showMapperPopup)}
+              className="inline-flex items-center justify-center gap-2 rounded-md border border-slate-600/60 bg-slate-800/40 px-3 py-2 text-xs font-medium text-slate-200 hover:bg-slate-700/60"
+            >
+              <Table className="h-3 w-3" />
+              Column Mapper
+            </button>
+          </div>
+          <div className="flex justify-center mt-3">
+            <button
+              type="button"
+              onClick={() => void handleRunProcess()}
+              className="inline-flex items-center gap-2 rounded-2xl border border-emerald-400/60 bg-emerald-600/20 px-4 py-2 text-sm font-semibold text-emerald-100 disabled:opacity-40"
+            >
+              <FileSpreadsheet className="h-4 w-4" />
+              Process uploaded files
+            </button>
+          </div>
+
+          {/* Mini popup for mapper */}
+          <UploadMapper
+            visible={showMapperPopup}
+            onClose={() => setShowMapperPopup(false)}
+            headers={Object.keys(qualifierPreview ?? {})}
+            sampleRows={qualifierPreview ? [qualifierPreview] : []}
+            existingMapping={fileMapperState}
+            onSave={(m) => {
+              setFileMapperState?.(m);
+              setShowMapperPopup(false);
+              try {
+                window.localStorage.setItem('pocketmanager-award-mapper', JSON.stringify({ columns: m }));
+              } catch (e) {
+                // ignore
+              }
+            }}
+          />
+
           {/* Upload boxes row */}
           <div className="flex justify-between gap-4">
             {([
@@ -2738,45 +2924,9 @@ function QualifierUploadsPanel({
                 }
               };
 
-              // Add mini mapper for employee performance report
-              if (item.key === "employee") {
-                return (
-                  <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
-                    {/* Mini Mapper */}
-                    <div className="w-full rounded-lg border border-slate-700/60 bg-slate-900/40 p-3">
-                      <div className="text-xs text-slate-400 mb-2 font-medium">Column Mapper</div>
-                      <div className="grid grid-cols-2 gap-2 text-xs">
-                        <div className="flex flex-col gap-1">
-                          <label className="text-slate-300">Name:</label>
-                          <select className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-xs">
-                            <option value="">Auto-detect</option>
-                          </select>
-                        </div>
-                        <div className="flex flex-col gap-1">
-                          <label className="text-slate-300">Shop:</label>
-                          <select className="rounded border border-slate-600 bg-slate-800 px-2 py-1 text-slate-200 text-xs">
-                            <option value="">Auto-detect</option>
-                          </select>
-                        </div>
-                      </div>
-                    </div>
-
-                    <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
-                    <div className="text-center">
-                      <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
-                        {item.label}
-                      </div>
-                      <div className="text-xs text-slate-300 min-h-[1.2em]">
-                        {item.meta?.name || "No file"}
-                      </div>
-                    </div>
-                  </div>
-                );
-              }
-
               return (
                 <div key={item.key} className="flex flex-col items-center gap-3 flex-1">
-                  <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} />
+                  <UploadBox item={item} uploading={uploading[item.key]} onRemove={handleRemove} showLabel={false} showProcessPill={true} />
                   <div className="text-center">
                     <div className="text-xs uppercase tracking-[0.25em] text-slate-400 mb-1">
                       {item.label}
@@ -2792,7 +2942,6 @@ function QualifierUploadsPanel({
 
           {/* Guidance text spanning full width at bottom */}
           <div className="text-center border-t border-slate-800/30 pt-4">
-            <p className="text-xs text-slate-400">Sheets needed from Qlik for the period: EPR report, NPS, Custom Region, Donations, Power Ranker. Have these files ready to be uploaded to create your period rankings show.</p>
           </div>
         </div>
       </div>

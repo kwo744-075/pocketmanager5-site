@@ -16,6 +16,7 @@ import { MiniPosWorkspace } from "../components/MiniPosWorkspace";
 import { EmployeeSchedulingWorkspace } from "../components/EmployeeSchedulingWorkspace";
 import { InventoryWorkspace } from "../components/InventoryWorkspace";
 import { fetchInventoryPreview } from "@/lib/inventoryPreview";
+import { GamesFeaturePage } from "../../components/GamesFeaturePage";
 import { FEATURE_LOOKUP, FEATURE_REGISTRY, getDocUrl, type FeatureMeta, type FeatureSlug } from "../../featureRegistry";
 import { FORM_REGISTRY } from "../../forms/formRegistry";
 import { getServerSession, type ServerSession } from "@/lib/auth/session";
@@ -127,6 +128,10 @@ export default async function FeatureDetailPage({ params, searchParams }: Featur
         preview={inventoryPreview}
       />
     );
+  }
+
+  if (feature.slug === "games") {
+    return <GamesFeaturePage feature={feature} docUrl={docUrl} relatedForms={relatedForms} shopNumber={shopNumber} />;
   }
 
   const inlinePeoplePreview = PEOPLE_INLINE_SLUGS.has(feature.slug) ? peoplePreview ?? (await fetchPeopleFeaturePreview(shopNumber)) : null;
@@ -563,6 +568,13 @@ const EMPLOYEE_SHORTCUTS = [
     description: "Separate workflow for former teammates and rehire notes",
     route: "/(tabs)/(home)/termed-list",
     accent: "from-slate-500/15 via-slate-500/5 to-transparent border-slate-400/40",
+  },
+  {
+    slug: "promotion-workflow",
+    title: "Promotion Workflow",
+    description: "Manage promotions, salary changes, and role transitions",
+    route: "/(tabs)/(home)/promotion-workflow",
+    accent: "from-green-500/15 via-green-500/5 to-transparent border-emerald-400/40",
   },
 ] as const;
 

@@ -2430,6 +2430,16 @@ export default function PulseCheckPage() {
     ];
   }, [resolvedDailyTotals, resolvedWeeklyTotals, manualWorkOrdersDaily, manualWorkOrdersWtd, turnedCarsDaily, turnedCarsWtd, zeroShopsCount, totalShopsInAlignment, metricScope]);
 
+  const bannerMetricsWithClicks = useMemo(() => {
+    if (!shopMeta?.id) return bannerMetrics;
+    const cloned = bannerMetrics.map((m) => ({ ...m }));
+    const idx = cloned.findIndex((m) => m.label === "Cars");
+    if (idx >= 0) {
+      cloned[idx].onClick = () => router.push(`/pulse-check5/daily/${todayISO()}#shop-${shopMeta.id}`);
+    }
+    return cloned;
+  }, [bannerMetrics, router, shopMeta?.id]);
+
   const slotChoices = slotOrder;
   const todayDateISO = useMemo(() => new Date(clock).toISOString().split("T")[0], [clock]);
   const weekDays = useMemo(() => {
@@ -3067,7 +3077,7 @@ export default function PulseCheckPage() {
             <ShopPulseBanner
               title={bannerTitle}
               subtitle={bannerSubtitle}
-              metrics={bannerMetrics}
+              metrics={bannerMetricsWithClicks}
               loading={rollupLoading}
               error={bannerError}
               cadence={{

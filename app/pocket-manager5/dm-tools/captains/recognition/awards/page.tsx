@@ -1,3 +1,5 @@
+"use client";
+
 import { CaptainsTopBar } from "../../components/CaptainsTopBar";
 import { RecognitionCaptainWorkspace } from "../components/RecognitionCaptainWorkspace";
 

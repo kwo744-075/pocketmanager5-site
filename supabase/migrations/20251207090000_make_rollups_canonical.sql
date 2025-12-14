@@ -4,6 +4,10 @@
 -- donations, mobil1, fuel_filters). This migration is idempotent and
 -- defensive: it only creates missing columns/trigger functions when needed.
 
+-- NOTE: Replaced any usage of pg_trigger_drop(...) with explicit
+-- DROP TRIGGER IF EXISTS to keep the migration idempotent and safe
+-- in environments where `regprocedure` signatures may differ.
+
 -- NOTE: This file is intended to be applied to staging first. It contains
 -- backfill steps which may be expensive on large datasets.
 
@@ -220,11 +224,12 @@ BEGIN
       JOIN pg_class c ON t.tgrelid = c.oid
       WHERE c.relname = 'check_ins' AND t.tgname = 'trigger_update_shop_daily_totals'
     ) THEN
-      PERFORM pg_trigger_drop('trigger_update_shop_daily_totals'::regprocedure);
+      -- Drop trigger using safe, idempotent DROP TRIGGER IF EXISTS
+      EXECUTE 'DROP TRIGGER IF EXISTS trigger_update_shop_daily_totals ON public.check_ins';
     END IF;
 
     EXECUTE 'CREATE TRIGGER trigger_update_shop_daily_totals
-      AFTER INSERT OR UPDATE ON check_ins
+      AFTER INSERT OR UPDATE ON public.check_ins
       FOR EACH ROW
       WHEN (NEW.is_submitted = true)
       EXECUTE FUNCTION update_shop_daily_totals();';
@@ -235,11 +240,12 @@ BEGIN
       JOIN pg_class c ON t.tgrelid = c.oid
       WHERE c.relname = 'check_ins' AND t.tgname = 'trigger_update_shop_wtd_totals'
     ) THEN
-      PERFORM pg_trigger_drop('trigger_update_shop_wtd_totals'::regprocedure);
+      -- Drop trigger using safe, idempotent DROP TRIGGER IF EXISTS
+      EXECUTE 'DROP TRIGGER IF EXISTS trigger_update_shop_wtd_totals ON public.check_ins';
     END IF;
 
     EXECUTE 'CREATE TRIGGER trigger_update_shop_wtd_totals
-      AFTER INSERT OR UPDATE ON check_ins
+      AFTER INSERT OR UPDATE ON public.check_ins
       FOR EACH ROW
       WHEN (NEW.is_submitted = true)
       EXECUTE FUNCTION update_shop_wtd_totals();';
