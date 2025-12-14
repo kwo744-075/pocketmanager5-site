@@ -61,14 +61,11 @@ function buildVisitPlanSubmission(
   context: SubmissionContext,
   profile: ProfileRow | null
 ): SubmissionPlan | null {
-  const dmId = profile?.user_id;
+  const dmId = profile?.user_id ?? null;
+  const fallbackCreator = context.loginEmail ?? context.storedShopName ?? "PocketManager5";
   const date = stringValue(data["visitDate"]);
   const visitType = stringValue(data["visitType"]);
   const shopNumberField = stringValue(data["shopNumber"]) ?? normalizeShopNumber(context.shopNumber);
-
-  if (!dmId) {
-    throw new SubmissionValidationError("Unable to resolve DM profile for visit plan submission.");
-  }
 
   if (!date) {
     throw new SubmissionValidationError("Visit date is required.");
@@ -95,6 +92,12 @@ function buildVisitPlanSubmission(
     .filter(Boolean)
     .join("\n\n");
 
+  if (!dmId) {
+    console.warn("PocketManager visit plan submission falling back to login email", {
+      loginEmail: context.loginEmail,
+    });
+  }
+
   return {
     table: "dm_schedule",
     payload: pruneUndefined({
@@ -104,7 +107,7 @@ function buildVisitPlanSubmission(
       location_text: context.shopName ?? shopNumberField,
       visit_type: visitType,
       notes: details || null,
-      created_by: dmId,
+      created_by: dmId ?? fallbackCreator,
     }),
   };
 }
@@ -222,6 +225,8 @@ function buildEmployeeProfileSubmission(data: Record<string, unknown>, context: 
   const staffName = stringValue(data["staffName"]);
   const shopNumber = normalizeShopNumber(context.shopNumber);
   const shopId = context.shopId ?? null;
+  const birthDate = stringValue(data["dateOfBirth"]);
+  const celebrationProfile = buildCelebrationProfilePayload(data);
 
   if (!shopNumber) {
     throw new SubmissionValidationError("Link a shop before creating employee profiles.");
@@ -243,8 +248,25 @@ function buildEmployeeProfileSubmission(data: Record<string, unknown>, context: 
       staff_name: staffName,
       employee_phone_number: stringValue(data["phoneNumber"]),
       date_of_hired: stringValue(data["hireDate"]),
+      birth_date: birthDate,
+      celebration_profile_json: celebrationProfile,
     }),
   };
+}
+
+function buildCelebrationProfilePayload(data: Record<string, unknown>): Record<string, string> | null {
+  const favoriteTreat = stringValue(data["favoriteTreat"]);
+  const celebrationNotes = stringValue(data["celebrationNotes"]);
+
+  const profile: Record<string, string> = {};
+  if (favoriteTreat) {
+    profile.favoriteTreat = favoriteTreat;
+  }
+  if (celebrationNotes) {
+    profile.celebrationNotes = celebrationNotes;
+  }
+
+  return Object.keys(profile).length ? profile : null;
 }
 
 function buildPhoneSheetSubmission(

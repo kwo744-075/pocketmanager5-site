@@ -5,6 +5,7 @@ type BannerMetric = {
   value: string;
   secondaryValue?: string;
   subtitle?: string;
+  onClick?: () => void;
 };
 
 type ScopeToggleValue = "daily" | "weekly";
@@ -146,16 +147,33 @@ export function ShopPulseBanner({
         </div>
       </div>
       {error && <p className="mt-2 text-xs text-rose-300">{error}</p>}
-      <div className="mt-4">
+      <div className="mt-4 flex flex-col items-start space-y-1 text-left">
+        <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/60 bg-emerald-500/10 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.35em] text-emerald-200">
+          <span className="h-2 w-2 rounded-full bg-emerald-300 shadow-[0_0_0_4px_rgba(16,185,129,0.2)] animate-pulse" />
+          LIVE KPIs
+        </div>
         <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">KPI summary</p>
       </div>
       <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4">
         {metrics.map((metric) => {
           const highlightScope = scopeToggle?.value ?? "daily";
+          const MetricContainer: "button" | "div" = metric.onClick ? "button" : "div";
           return (
-            <div
+            <MetricContainer
               key={metric.label}
-              className="flex min-h-[96px] flex-col justify-between rounded-[18px] border border-white/12 bg-gradient-to-br from-[#061229]/92 via-[#050b1d]/94 to-[#02060f]/97 px-3 py-2 text-slate-200 shadow-[0_18px_40px_rgba(1,6,20,0.65)]"
+              type={metric.onClick ? "button" : undefined}
+              onClick={(e) => {
+                e.stopPropagation();
+                metric.onClick?.();
+              }}
+              onKeyDown={(e) => {
+                if (metric.onClick && (e.key === 'Enter' || e.key === ' ')) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  metric.onClick?.();
+                }
+              }}
+              className={`flex min-h-[96px] flex-col justify-between rounded-[18px] border border-white/12 bg-gradient-to-br from-[#061229]/92 via-[#050b1d]/94 to-[#02060f]/97 px-3 py-2 text-slate-200 shadow-[0_18px_40px_rgba(1,6,20,0.65)] ${metric.onClick ? 'cursor-pointer' : ''}`}
             >
               <div className="space-y-0.5">
                 <p className="text-[11px] font-semibold text-white tracking-tight">{metric.label}</p>
@@ -174,7 +192,7 @@ export function ShopPulseBanner({
                   <span className="text-white">{metric.value}</span>
                 )}
               </div>
-            </div>
+            </MetricContainer>
           );
         })}
       </div>

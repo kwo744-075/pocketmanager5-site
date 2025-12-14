@@ -1,6 +1,7 @@
 import { getRetailCalendarInfo } from "@/lib/retailTimestamp";
 
 export const shortDateFormatter = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+export const DAY_MS = 24 * 60 * 60 * 1000;
 export const DM_DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"] as const;
 export const DM_VISIT_BADGES: Record<string, string> = {
   "Plan To Win": "border-cyan-400/40 bg-cyan-500/10 text-cyan-100",
@@ -10,6 +11,7 @@ export const DM_VISIT_BADGES: Record<string, string> = {
   "1 on 1": "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100",
   Admin: "border-slate-500/50 bg-slate-500/10 text-slate-100",
   "Project Day": "border-sky-400/40 bg-sky-500/10 text-sky-100",
+  "Full throttle Friday": "border-rose-400/40 bg-rose-500/10 text-rose-100",
   "Discussion Visit": "border-indigo-400/40 bg-indigo-500/10 text-indigo-100",
   Off: "border-slate-700/60 bg-slate-800/50 text-slate-300",
 };
@@ -29,7 +31,8 @@ export const DM_SCHEDULE_LOCATIONS = {
   home: { label: "Home Office", short: "Home" },
 } as const;
 
-export type ScheduleLocationId = keyof typeof DM_SCHEDULE_LOCATIONS;
+export type StaticScheduleLocationId = keyof typeof DM_SCHEDULE_LOCATIONS;
+export type ScheduleLocationId = StaticScheduleLocationId | (string & {});
 export const DM_COVERAGE_SHOPS: ScheduleLocationId[] = ["1501", "1502", "1503", "1504", "1505"];
 
 export type ScheduleBlueprint = {
@@ -89,10 +92,12 @@ export type SampleScheduleEntry = {
   iso: string;
   visitType: string;
   shopId: ScheduleLocationId;
-  focus: string;
-  status: "planned" | "locked" | "complete";
+  focus?: string | null;
+  status?: "planned" | "locked" | "complete";
   locationLabel: string;
 };
+
+export const DM_RUNNING_PERIOD_WINDOW = 12;
 
 export const getRetailPeriodInfo = (targetDate: Date = new Date()): RetailPeriodInfo => {
   const { period, quarter, weekOfPeriod, weeksInPeriod, periodStart, periodEnd } = getRetailCalendarInfo(targetDate);
@@ -137,7 +142,10 @@ export const buildSampleSchedule = (startDate: Date, weeksInPeriod: number): Sam
     .map((item) => {
       const date = new Date(startDate);
       date.setDate(startDate.getDate() + item.week * 7 + item.weekday);
-      const location = DM_SCHEDULE_LOCATIONS[item.shopId];
+      const location = DM_SCHEDULE_LOCATIONS[item.shopId as StaticScheduleLocationId] ?? {
+        label: `Shop ${String(item.shopId)}`,
+        short: String(item.shopId),
+      };
       return {
         date,
         iso: date.toISOString().split("T")[0],
@@ -160,11 +168,11 @@ export const buildCoverageSummary = (entries: SampleScheduleEntry[]) => {
   const coverageStyles = {
     strong: { container: "border-emerald-400/40 bg-emerald-500/10", badge: "text-emerald-300" },
     watch: { container: "border-amber-400/40 bg-amber-500/10", badge: "text-amber-300" },
-    gap: { container: "border-rose-400/40 bg-rose-500/10", badge: "text-rose-300" },
+    gap: { container: "border-yellow-400/40 bg-yellow-500/10", badge: "text-yellow-200" },
   } as const;
 
   return DM_COVERAGE_SHOPS.map((shopId) => {
-    const shopMeta = DM_SCHEDULE_LOCATIONS[shopId];
+    const shopMeta = DM_SCHEDULE_LOCATIONS[shopId as StaticScheduleLocationId];
     const count = entries.filter((entry) => entry.shopId === shopId).length;
     const tone = count >= 2 ? "strong" : count === 1 ? "watch" : "gap";
     const toneStyles = coverageStyles[tone];
@@ -217,4 +225,54 @@ export const buildDueChecklist = (entries: SampleScheduleEntry[], period: number
     actual: actualCounts[type] ?? 0,
     met: (actualCounts[type] ?? 0) >= required,
   }));
+};
+
+export const getPeriodStorageKey = (info: RetailPeriodInfo) => {
+  const startIso = info.startDate.toISOString().split("T")[0];
+  const endIso = info.endDate.toISOString().split("T")[0];
+  return `period:${info.period}:q${info.quarter}:${startIso}:${endIso}`;
+};
+
+export const buildRetailPeriodSequence = (aroundDate: Date = new Date(), total: number = 12): RetailPeriodInfo[] => {
+  const seed = getRetailPeriodInfo(aroundDate);
+  const seen = new Set<string>();
+  const sequence: RetailPeriodInfo[] = [];
+
+  const append = (info: RetailPeriodInfo, position: "end" | "start") => {
+    const key = getPeriodStorageKey(info);
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    if (position === "start") {
+      sequence.unshift(info);
+    } else {
+      sequence.push(info);
+    }
+    return true;
+  };
+
+  append(seed, "end");
+
+  let forwardCursor = seed;
+  while (sequence.length < total) {
+    const next = getRetailPeriodInfo(new Date(forwardCursor.endDate.getTime() + DAY_MS));
+    const added = append(next, "end");
+    if (!added) {
+      break;
+    }
+    forwardCursor = next;
+  }
+
+  let backwardCursor = seed;
+  while (sequence.length < total) {
+    const previous = getRetailPeriodInfo(new Date(backwardCursor.startDate.getTime() - DAY_MS));
+    const added = append(previous, "start");
+    if (!added) {
+      break;
+    }
+    backwardCursor = previous;
+  }
+
+  return sequence;
 };

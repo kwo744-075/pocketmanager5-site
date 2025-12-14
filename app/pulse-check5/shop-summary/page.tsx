@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import Chip from "@/app/components/Chip";
 import { useRouter, useSearchParams } from "next/navigation";
 import { fetchShopTotals, EMPTY_TOTALS, type PulseTotalsResult } from "@/lib/pulseTotals";
 import { supabase, pulseSupabase } from "@/lib/supabaseClient";
@@ -39,10 +40,10 @@ type ViewMode = "daily" | "weekly";
 export default function ShopPulseSummaryPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [shopId, setShopId] = useState<string | null>(searchParams.get("shopId"));
-  const [shopName, setShopName] = useState<string | null>(searchParams.get("shopName"));
-  const [shopNumber, setShopNumber] = useState<string | null>(searchParams.get("shopNumber"));
-  const [retailLabel] = useState(() => searchParams.get("retailLabel"));
+  const [shopId, setShopId] = useState<string | null>(searchParams?.get("shopId") ?? null);
+  const [shopName, setShopName] = useState<string | null>(searchParams?.get("shopName") ?? null);
+  const [shopNumber, setShopNumber] = useState<string | null>(searchParams?.get("shopNumber") ?? null);
+  const [retailLabel] = useState(() => searchParams?.get("retailLabel") ?? null);
   const [authChecked, setAuthChecked] = useState(false);
   const [view, setView] = useState<ViewMode>("daily");
   const [totals, setTotals] = useState<PulseTotalsResult>({ daily: EMPTY_TOTALS, weekly: EMPTY_TOTALS });
@@ -196,17 +197,17 @@ export default function ShopPulseSummaryPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400"
+            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:pm5-teal-border"
           >
             ← Back
           </button>
-          <Link href="/" className="text-xs text-emerald-300 hover:underline">
+          <Link href="/" className="text-xs text-pm5-teal hover:underline">
             Home
           </Link>
         </div>
 
         <div className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/40">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-emerald-400">Pulse Check summary</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-teal">Pulse Check summary</p>
           <h1 className="text-3xl font-semibold text-white">Pulse Check – {shopName ?? "Shop"}</h1>
           <p className="text-sm text-slate-300">
             {shopNumber ? `Shop #${shopNumber}` : "Resolving shop"}
@@ -216,16 +217,13 @@ export default function ShopPulseSummaryPage() {
 
         <div className="flex gap-2">
           {(["daily", "weekly"] as ViewMode[]).map((mode) => (
-            <button
+            <Chip
               key={mode}
-              type="button"
+              label={mode === "daily" ? "Daily" : "Week to Date"}
               onClick={() => setView(mode)}
-              className={`flex-1 rounded-full px-4 py-2 text-sm font-semibold transition ${
-                view === mode ? "bg-emerald-500 text-emerald-900" : "bg-slate-900/60 text-slate-300 hover:bg-slate-800"
-              }`}
-            >
-              {mode === "daily" ? "Daily" : "Week to Date"}
-            </button>
+              active={view === mode}
+              className="flex-1 px-4 py-2 text-sm"
+            />
           ))}
         </div>
 

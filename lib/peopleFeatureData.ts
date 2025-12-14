@@ -483,7 +483,7 @@ export async function fetchEmployeeSchedulingPreview(shopNumberInput: string | n
 
     const legacyRows: LegacyScheduleRow[] = (legacySchedulesResult.data ?? []).map((row) => ({
       id: row.id,
-      staffName: row.shop_staff?.staff_name ?? "Unnamed",
+      staffName: row.shop_staff?.[0]?.staff_name ?? "Unnamed",
       position: row.position ?? null,
       totalHours: Number(row.total_hours ?? 0),
       overtimeHours: Number(row.overtime_hours ?? 0),

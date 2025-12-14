@@ -102,39 +102,50 @@ export function HierarchyStamp({ align = "right", loginEmail, hierarchy }: Hiera
 
     const run = async () => {
       try {
-        const { data, error } = await supabase
-          .from("hierarchy_summary_vw")
-          .select("*")
-          .eq("login", resolvedLogin)
-          .maybeSingle();
+        // If loginEmail matches the current local login, prefer server API (uses normalized tables)
+        const localLogin = typeof window !== "undefined" ? window.localStorage.getItem("loginEmail") : null;
+        let parsed: HierarchyRow | null = null;
 
-        if (cancelled) {
-          return;
-        }
-
-        if (error) {
-          console.error("hierarchy_summary_vw error", error);
-          if (!cached) {
-            setSummary("Hierarchy unavailable");
-          }
-        } else {
-          const parsed = (data as HierarchyRow | null) ?? null;
-          setSummary(formatSummary(parsed));
-          if (parsed) {
-            writeHierarchySummaryCache(parsed);
+        if (!loginEmail || normalizeLogin(loginEmail) === normalizeLogin(localLogin)) {
+          // current user — call server API
+          try {
+            const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
+            if (resp.ok) {
+              const body = await resp.json();
+              parsed = body?.data ?? null;
+            } else {
+              console.error("HierarchyStamp API status", resp.status);
+            }
+          } catch (apiErr) {
+            console.error("HierarchyStamp API error", apiErr);
           }
         }
+
+        // If we still don't have parsed summary, fall back to the legacy view lookup
+        if (!parsed) {
+          const { data, error } = await supabase
+            .from("hierarchy_summary_vw")
+            .select("*")
+            .eq("login", resolvedLogin)
+            .maybeSingle();
+          if (error) {
+            console.error("hierarchy_summary_vw error", error);
+          } else {
+            parsed = (data as HierarchyRow | null) ?? null;
+          }
+        }
+
+        if (cancelled) return;
+
+        setSummary(formatSummary(parsed));
+        if (parsed) writeHierarchySummaryCache(parsed);
       } catch (err) {
         if (!cancelled) {
           console.error("HierarchyStamp error", err);
-          if (!cached) {
-            setSummary("Hierarchy unavailable");
-          }
+          if (!cached) setSummary("Hierarchy unavailable");
         }
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     };
 

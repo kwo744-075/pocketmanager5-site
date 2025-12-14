@@ -1,0 +1,29 @@
+begin;
+
+create table if not exists public.recognition_runs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+  reporting_period text not null,
+  data_source text not null,
+  file_name text,
+  processed_by text,
+  uploader_user_id uuid,
+  uploader_alignment_id uuid,
+  row_count integer not null default 0,
+  median_car_count integer,
+  average_ticket numeric(12,2),
+  submission_notes text[] not null default '{}',
+  summary_json jsonb not null,
+  awards_json jsonb not null,
+  dataset_json jsonb not null,
+  rule_overrides jsonb,
+  manual_awards_json jsonb,
+  confirmations_json jsonb,
+  birthdays_json jsonb
+);
+
+create index if not exists recognition_runs_period_idx on public.recognition_runs (reporting_period);
+create index if not exists recognition_runs_created_idx on public.recognition_runs (created_at desc);
+create index if not exists recognition_runs_uploader_idx on public.recognition_runs (uploader_user_id);
+
+commit;

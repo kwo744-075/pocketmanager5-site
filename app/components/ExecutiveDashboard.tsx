@@ -33,6 +33,7 @@ type DashboardTile = {
   value: string;
   eyebrow?: string;
   variant?: TileVariant;
+  onClick?: () => void;
 };
 
 type DashboardSectionCardProps = {
@@ -62,17 +63,22 @@ export function DashboardSectionCard({ title, eyebrow, children, footer, headerA
 
 type KpiTileProps = DashboardTile;
 
-export function KpiTile({ label, subtitle, value, eyebrow, variant }: KpiTileProps) {
+export function KpiTile({ label, subtitle, value, eyebrow, variant, onClick }: KpiTileProps) {
   const resolvedVariant = variant ?? getRandomVariant();
+  const Container: "button" | "div" = onClick ? "button" : "div";
   return (
-    <div className={`${tileBaseClasses} ${TILE_VARIANT_CLASSES[resolvedVariant]} space-y-0.5`}>
+    <Container
+      type={onClick ? "button" : undefined}
+      onClick={onClick}
+      className={`${tileBaseClasses} ${TILE_VARIANT_CLASSES[resolvedVariant]} space-y-0.5 ${onClick ? 'cursor-pointer' : ''}`}
+    >
       {eyebrow && <p className="text-[8px] uppercase tracking-[0.35em] text-slate-500">{eyebrow}</p>}
       <div className="space-y-0.5">
         <p className="text-[11px] font-semibold text-white leading-tight">{label}</p>
         {subtitle && <p className="text-[9px] text-slate-400">{subtitle}</p>}
       </div>
       <p className="mt-auto text-base font-semibold text-white tracking-tight">{value}</p>
-    </div>
+    </Container>
   );
 }
 
@@ -119,13 +125,18 @@ const liveKpiTiles: DashboardTile[] = [
   { label: "Diffs", value: "0 / 0%" },
   { label: "Fuel Filters", value: "0" },
   { label: "Mobil1 (Promo)", value: "0" },
+  // Insert additional NPS-related banner tiles between the controllables row and donations
+  { label: "NPS", subtitle: "Guest Score", value: "0%" },
+  { label: "NPS Manager Visit", subtitle: "Visits", value: "0" },
+  { label: "NPS Water", subtitle: "Quality", value: "0%" },
+  { label: "Email Collection", subtitle: "Opt-ins", value: "0" },
   { label: "Donations", value: "$0" },
   { label: "Turned Cars", subtitle: "# / $", value: "0 / $0" },
   { label: "Zero Shops", subtitle: "# / %", value: "0 / 0%" },
   { label: "Manual Work Orders", subtitle: "created today / WTD", value: "0 / $0" },
 ];
 
-export function ExecutiveDashboard() {
+export function ExecutiveDashboard({ kpiOnClick }: { kpiOnClick?: (label: string) => void }) {
   return (
     <section className="grid gap-2.5 lg:grid-cols-[0.85fr_1.15fr]">
       <div className="flex flex-col gap-2.5">
@@ -142,6 +153,13 @@ export function ExecutiveDashboard() {
           </div>
           <div className="grid gap-1.5">
             {adminRowThree.map((tile) => (
+              <KpiTile key={tile.label} {...tile} />
+            ))}
+          </div>
+        </DashboardSectionCard>
+        <DashboardSectionCard title="Admin / Ops">
+          <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
+            {adminOpsTiles.map((tile) => (
               <KpiTile key={tile.label} {...tile} />
             ))}
           </div>
@@ -171,7 +189,11 @@ export function ExecutiveDashboard() {
         >
           <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
             {liveKpiTiles.map((tile) => (
-              <KpiTile key={tile.label} {...tile} />
+              <KpiTile
+                key={tile.label}
+                {...tile}
+                onClick={kpiOnClick ? () => kpiOnClick(tile.label) : tile.onClick}
+              />
             ))}
           </div>
         </DashboardSectionCard>

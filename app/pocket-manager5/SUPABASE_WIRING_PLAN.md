@@ -55,3 +55,38 @@ _Reference implementation source_: `C:\Users\kwo74\Desktop\Take 5\Apps\pocket-ma
 - Port the Expo `usePulseTotals` logic to a shared query powered by `fetchHierarchyRollups()`.
 - Scaffold API routes in `app/api/pocket-manager/*` that proxy sensitive Supabase mutations, starting with DM schedule CRUD.
 - Replace snapshot mocks in `app/pocket-manager5/page.tsx` with the new adapters incrementally, validating each swap against the native implementation in `pocket-manager-app`.
+
+## Mini POS persistence plan (Dec 1)
+
+The new `/pocket-manager5/features/mini-pos` workspace already mirrors the Expo UI, so we can wire the same capture flow into Supabase without rethinking the schema. Proposed tables (all UUID PKs, standard `created_at`/`updated_at`, `shop_id` foreign keys, and `created_by` email fields) keep each concern normalized:
+
+| Table | Purpose | Key columns |
+| --- | --- | --- |
+| `pos_sessions` | One row per checkout session / cart submission. | `shop_id`, `session_status` (`open`/`closed`), `payment_method`, `subtotal`, `discount_amount`, `total_due`, `tendered_amount`, `change_due`, `notes_json` (lane assignments + service notes). |
+| `pos_cart_items` | Line items tied to a session. | `session_id`, `service_key`, `button_id`, `label`, `unit_price`, `quantity`, `sequence` |
+| `pos_customer_capture` | Driver/fleet metadata. | `session_id`, `customer_name`, `phone`, `email`, `fleet_account`, `purchase_order`, `driver_name` |
+| `pos_vehicle_capture` | VIN + inspection data. | `session_id`, `vin`, `year`, `make`, `model`, `mileage`, `license_plate`, `unit_number`, `oil_type`, `vehicle_notes` |
+| `pos_payment_events` | Audit records for cash/card/fleet settlements. | `session_id`, `method`, `amount`, `reference_number`, `recorded_by`, `recorded_at` |
+
+### API / server action surface
+
+1. **Create / update session** — `POST /api/mini-pos/session`
+   - Accepts the entire React payload (`cartItems`, captures, payment block) and upserts a session. New carts call without `sessionId`; suspended carts send the ID to resume editing.
+   - Runs server-side validation (non-negative totals, matching discount math) before calling `supabaseAdmin.from('pos_sessions').upsert()` and batching related inserts via a stored procedure `rpc_save_pos_session(payload jsonb)` to keep transactional integrity.
+
+2. **List historical carts** — `GET /api/mini-pos/session?shop=123&status=closed`
+   - Returns paginated summaries for the Manager's Clipboard and future reporting exports.
+
+3. **Receipt export** — `GET /api/mini-pos/session/:id/receipt`
+   - Generates a PDF/HTML receipt pulling from the same tables so both print + email buttons reuse the API.
+
+### Client wiring plan
+
+| Step | Detail |
+| --- | --- |
+| 1. Persist draft state | On Add-to-cart, call a lightweight `useDebouncedServerAction` that writes the current payload to `pos_sessions` with `session_status = 'open'`. This mirrors the Expo autosave behavior so refreshes don’t lose work. |
+| 2. Close / settle cart | When the user taps “Mark Paid”, run a dedicated `completeMiniPosSession(sessionId, paymentPayload)` action that: (a) asserts totals, (b) inserts a `pos_payment_events` row, (c) flips `session_status` to `closed`, (d) stamps the `tendered_amount` / `change_due`. |
+| 3. Fleet billing exports | Schedule a nightly edge function `pos_export_fleet_invoices()` that selects `payment_method='fleet'` sessions for the day, compiles CSV/PDF, and drops them in Supabase Storage for accounting retrieval. |
+| 4. RLS | Sessions are readable by the owning shop (`shop_id = auth.shop_id`). DMs/RDs get district or region read scopes via policy joins to `hierarchy_summary_vw`. Mutations remain server-only through the API route using the service role key. |
+
+This plan keeps the browser client thin (no direct Supabase writes) while giving parity with the Expo persistence strategy and opening the door for cash reconciliation / reporting without additional refactors.

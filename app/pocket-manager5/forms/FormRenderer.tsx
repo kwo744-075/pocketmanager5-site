@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
 import { pulseSupabase, supabase } from "@/lib/supabaseClient";
 import type { FormConfig, FormField } from "./formRegistry";
@@ -9,7 +9,7 @@ type FormStatus = "idle" | "saving" | "saved" | "error";
 export type FieldValue = string | number | string[] | null | undefined;
 
 const baseInputClasses =
-  "w-full rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-emerald-400 focus:outline-none focus:ring-1 focus:ring-emerald-500";
+  "w-full rounded-2xl border border-slate-800/60 bg-slate-950/60 px-4 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-pm5-teal focus:outline-none focus:ring-1 focus:ring-pm5-teal";
 
 const cn = (...classes: Array<string | false | null | undefined>) => classes.filter(Boolean).join(" ");
 
@@ -32,7 +32,11 @@ type FormRendererProps = {
   onAfterSubmit?: (payload: { values: Record<string, FieldValue>; savedAt: string | null }) => void;
   hideStatusPanel?: boolean;
   submitLabelOverride?: string;
-  sectionHeaderAccessory?: (section: FormConfig["sections"][number]) => ReactNode;
+  sectionHeaderBadges?: Record<string, string>;
+  // Wizard support: when provided, only render the section at this index
+  renderSectionIndex?: number | null;
+  // Optional id to set on the <form> element so external wrappers can submit programmatically
+  formId?: string;
 };
 
 export function FormRenderer({
@@ -44,7 +48,9 @@ export function FormRenderer({
   onAfterSubmit,
   hideStatusPanel = false,
   submitLabelOverride,
-  sectionHeaderAccessory,
+  sectionHeaderBadges,
+  renderSectionIndex = null,
+  formId,
 }: FormRendererProps) {
   const resolvedStorageKey = storageKey ?? `pm-form-${form.slug}`;
   const { loginEmail, hierarchy, shopMeta, storedShopName } = usePocketHierarchy(contextPath ?? `/pocket-manager5/forms/${form.slug}`);
@@ -254,6 +260,33 @@ export function FormRenderer({
     setStatus("saving");
     setServerMessage(null);
     setServerError(null);
+    // Use browser validation for visible inputs
+    try {
+      // event.currentTarget is the form element
+      const formEl = event.currentTarget as HTMLFormElement;
+      if (typeof formEl.reportValidity === "function") {
+        const ok = formEl.reportValidity();
+        if (!ok) {
+          setStatus("error");
+          setServerError("Please fix validation errors before saving.");
+          return;
+        }
+      }
+    } catch (err) {
+      // ignore
+    }
+
+    // For people employee profile, ensure shop link is present client-side
+    if (form.slug === "people-employee-profile") {
+      // Allow creation when either the user's linked shop exists (shopMeta.id)
+      // OR the form payload includes a `shopNumber` (prefilled from the feature page/modal).
+      const payloadShopNumber = (mergedValues as Record<string, FieldValue>)?.shopNumber;
+      if (!shopMeta?.id && !payloadShopNumber) {
+        setStatus("error");
+        setServerError("Link a shop before creating employee profiles.");
+        return;
+      }
+    }
 
     let savedAt: string | null = null;
 
@@ -300,9 +333,10 @@ export function FormRenderer({
       : "Not saved";
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-8">
-      {form.sections.map((section) => {
-        const accessory = sectionHeaderAccessory?.(section);
+    <form id={formId} onSubmit={handleSubmit} className="space-y-8">
+      {form.sections.map((section, idx) => {
+        if (renderSectionIndex !== null && idx !== renderSectionIndex) return null;
+        const sectionBadge = sectionHeaderBadges?.[section.title];
         return (
           <section key={section.title} className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6 shadow-2xl shadow-black/30">
             <header className="mb-5">
@@ -311,7 +345,13 @@ export function FormRenderer({
                   <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">{form.title}</p>
                   <h2 className="text-2xl font-semibold text-white">{section.title}</h2>
                 </div>
-                {accessory && <div className="text-sm text-emerald-200">{accessory}</div>}
+                {sectionBadge && (
+                  <div className="text-sm text-pm5-teal">
+                    <span className="rounded-full border pm5-teal-border pm5-teal-soft px-3 py-1 text-xs font-semibold text-pm5-teal">
+                      {sectionBadge}
+                    </span>
+                  </div>
+                )}
               </div>
               {section.description && <p className="mt-2 text-sm text-slate-400">{section.description}</p>}
             </header>
@@ -337,7 +377,7 @@ export function FormRenderer({
         <div className="flex justify-end">
           <button
             type="submit"
-            className="rounded-full border border-emerald-400/60 bg-emerald-500/10 px-5 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
+            className="rounded-full border pm5-teal-border pm5-teal-soft px-5 py-2 text-sm font-semibold text-pm5-teal transition hover:pm5-teal-soft"
           >
             {submitLabelOverride ?? form.submitLabel ?? "Save"}
           </button>
@@ -347,13 +387,13 @@ export function FormRenderer({
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Status</p>
             <p className="text-sm text-slate-200">{statusLabel}</p>
-            {serverMessage && <p className="text-xs text-emerald-300">{serverMessage}</p>}
+            {serverMessage && <p className="text-xs text-pm5-teal">{serverMessage}</p>}
             {serverError && <p className="text-xs text-rose-300">{serverError}</p>}
           </div>
           <div className="flex flex-wrap items-center gap-3">
             <button
               type="submit"
-              className="rounded-full border border-emerald-400/60 bg-emerald-500/10 px-5 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20"
+              className="rounded-full border pm5-teal-border pm5-teal-soft px-5 py-2 text-sm font-semibold text-pm5-teal transition hover:pm5-teal-soft"
             >
               {submitLabelOverride ?? form.submitLabel ?? "Save"}
             </button>
@@ -381,15 +421,16 @@ function FieldRenderer({
   alignedShopsLoading: boolean;
   alignedShopError: string | null;
 }) {
+  const inputId = `pm-field-${field.name}`;
   if (field.type === "hidden") {
-    return <input type="hidden" name={field.name} value={(value as string) ?? ""} required={field.required} />;
+    return <input type="hidden" id={inputId} name={field.name} value={(value as string) ?? ""} required={field.required} />;
   }
 
   if (field.type === "checklist") {
     const selected = (value as string[]) ?? [];
     return (
       <div>
-        <label className="text-sm font-semibold text-white">{field.label}</label>
+        <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
         {field.helpText && <p className="text-xs text-slate-500">{field.helpText}</p>}
         <div className="mt-3 flex flex-wrap gap-2">
           {field.items.map((item) => {
@@ -402,9 +443,10 @@ function FieldRenderer({
                 className={cn(
                   "rounded-full border px-3 py-1 text-xs font-semibold transition",
                   active
-                    ? "border-emerald-400/70 bg-emerald-500/10 text-emerald-100"
+                    ? "pm5-teal-border pm5-teal-soft text-pm5-teal"
                     : "border-slate-800/70 text-slate-300 hover:border-slate-600"
                 )}
+                aria-pressed={active}
               >
                 {item.label}
               </button>
@@ -421,9 +463,12 @@ function FieldRenderer({
     const isDisabled = usesAlignedShops && (alignedShopsLoading || !selectOptions.length);
     return (
       <div>
-        <label className="text-sm font-semibold text-white">{field.label}</label>
+        <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
         {field.helpText && <p className="text-xs text-slate-500">{field.helpText}</p>}
         <select
+          id={inputId}
+          aria-required={field.required || undefined}
+          aria-invalid={field.required && !value ? true : undefined}
           className={cn(baseInputClasses, "bg-slate-950/80")}
           value={(value as string) ?? ""}
           required={field.required}
@@ -450,15 +495,24 @@ function FieldRenderer({
     placeholder: field.placeholder,
     required: field.required,
     value: (value as string | number | undefined) ?? "",
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onChange(event.target.value),
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      const raw = event.target.value;
+      // Format phone input client-side for `phoneNumber` field
+      if (field.name === "phoneNumber") {
+        const formatted = formatPhoneInput(String(raw));
+        onChange(formatted);
+      } else {
+        onChange(raw);
+      }
+    },
   };
 
   if (field.type === "textarea") {
     return (
       <div>
-        <label className="text-sm font-semibold text-white">{field.label}</label>
+        <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
         {field.helpText && <p className="text-xs text-slate-500">{field.helpText}</p>}
-        <textarea {...inputProps} rows={4} className={cn(baseInputClasses, "min-h-[120px]")} />
+        <textarea id={inputId} {...inputProps} rows={4} className={cn(baseInputClasses, "min-h-[120px]")} aria-required={field.required || undefined} aria-invalid={field.required && !value ? true : undefined} />
       </div>
     );
   }
@@ -466,11 +520,14 @@ function FieldRenderer({
   if (field.type === "date") {
     return (
       <div>
-        <label className="text-sm font-semibold text-white">{field.label}</label>
+        <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
         <input
+          id={inputId}
           {...inputProps}
           type="date"
           className={cn(baseInputClasses, "pr-3")}
+          aria-required={field.required || undefined}
+          aria-invalid={field.required && !value ? true : undefined}
         />
       </div>
     );
@@ -479,14 +536,17 @@ function FieldRenderer({
   if (field.type === "number") {
     return (
       <div>
-        <label className="text-sm font-semibold text-white">{field.label}</label>
+        <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
         {field.helpText && <p className="text-xs text-slate-500">{field.helpText}</p>}
         <input
+          id={inputId}
           {...inputProps}
           type="number"
           min={field.min}
           max={field.max}
           step={field.step}
+          aria-required={field.required || undefined}
+          aria-invalid={field.required && !value ? true : undefined}
         />
       </div>
     );
@@ -494,8 +554,17 @@ function FieldRenderer({
 
   return (
     <div>
-      <label className="text-sm font-semibold text-white">{field.label}</label>
-      <input {...inputProps} type="text" />
+      <label htmlFor={inputId} className="text-sm font-semibold text-white">{field.label}</label>
+      <input id={inputId} {...inputProps} type="text" aria-required={field.required || undefined} aria-invalid={field.required && !value ? true : undefined} />
     </div>
   );
+}
+
+function formatPhoneInput(raw: string) {
+  // Keep digits only, allow up to 10 digits for standard US format
+  const digits = raw.replace(/\D/g, "").slice(0, 10);
+  if (!digits) return "";
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 6) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 6)}-${digits.slice(6)}`;
 }

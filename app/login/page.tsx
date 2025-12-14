@@ -81,6 +81,19 @@ const LOGIN_SCOPES: {
   },
 ];
 
+const LOCAL_LOGIN_COOKIE = "pm-local-login";
+
+const persistLegacyAuthCookie = (login: string | null) => {
+  if (typeof document === "undefined") return;
+  if (login) {
+    const encoded = encodeURIComponent(login);
+    const maxAge = 60 * 60 * 24 * 30; // 30 days
+    document.cookie = `${LOCAL_LOGIN_COOKIE}=${encoded}; path=/; max-age=${maxAge}; SameSite=Lax`;
+  } else {
+    document.cookie = `${LOCAL_LOGIN_COOKIE}=; path=/; max-age=0; SameSite=Lax`;
+  }
+};
+
 export default function LoginPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -131,6 +144,7 @@ export default function LoginPage() {
 
       if (!matchedLogin) {
         setError("Invalid email or password.");
+        persistLegacyAuthCookie(null);
         return;
       }
 
@@ -157,6 +171,7 @@ export default function LoginPage() {
       localStorage.setItem("userDivision", row.Division ?? "");
       localStorage.setItem("userRegion", row.Region ?? "");
       localStorage.setItem("userDistrict", row.District ?? "");
+      persistLegacyAuthCookie(loginEmail);
 
       if (scopeLevel === "SHOP") {
         localStorage.setItem("shopStore", String(row.store ?? ""));
@@ -167,6 +182,74 @@ export default function LoginPage() {
       } else {
         localStorage.removeItem("shopStore");
         localStorage.removeItem("shopUserName");
+      }
+
+      // Load alignment context (alignment_memberships + shop_role_assignments)
+      try {
+        // The canonical key for these tables in the app is the auth `user_id` (UUID).
+        // For legacy logins we only have an email. Try to resolve a profile row
+        // to obtain the canonical user_id, falling back to the email if not found.
+        let queryUserId: string | null = loginEmail;
+        try {
+          const { data: profileRow, error: profileErr } = await supabase
+            .from("profiles")
+            .select("user_id")
+            .eq("email", loginEmail)
+            .maybeSingle();
+
+          if (!profileErr && profileRow?.user_id) {
+            queryUserId = profileRow.user_id;
+          }
+        } catch (profileLookupErr) {
+          console.warn("[Login] profile lookup failed, falling back to email for alignment queries", profileLookupErr);
+        }
+
+        const { data: memberships, error: membersErr } = await supabase
+          .from("alignment_memberships")
+          .select("alignment_id, alignment_name, shop_id, role, is_primary")
+          .eq("user_id", queryUserId as string);
+
+        const shopsFromMemberships = new Set<string>();
+        if (!membersErr && memberships) {
+          (memberships as any[]).forEach((m) => {
+            if (m.shop_id) shopsFromMemberships.add(m.shop_id);
+          });
+        }
+
+        const { data: assignments, error: assignErr } = await supabase
+          .from("shop_role_assignments")
+          .select("shop_id")
+          .eq("user_id", queryUserId as string);
+
+        if (!assignErr && assignments) {
+          (assignments as any[]).forEach((a) => {
+            if (a.shop_id) shopsFromMemberships.add(a.shop_id);
+          });
+        }
+
+        let activeAlignmentId: string | undefined = undefined;
+        if (!activeAlignmentId && memberships && (memberships as any[]).length > 0) {
+          activeAlignmentId = (memberships as any[]).find((m) => m.is_primary)?.alignment_id ?? (memberships as any[])[0]?.alignment_id;
+        }
+
+        const newAlignment = {
+          memberships: memberships ?? [],
+          shops: Array.from(shopsFromMemberships),
+          activeAlignmentId,
+        };
+
+        localStorage.setItem("alignmentContext", JSON.stringify(newAlignment));
+        // Mirror server behavior: set pm-active-alignment cookie when activeAlignmentId exists
+        if (typeof document !== "undefined") {
+          if (activeAlignmentId) {
+            document.cookie = `pm-active-alignment=${encodeURIComponent(activeAlignmentId)}; path=/; SameSite=Lax`;
+          } else {
+            document.cookie = `pm-active-alignment=; path=/; max-age=0; SameSite=Lax`;
+          }
+        }
+        console.log("[Login] alignmentContext saved", newAlignment);
+      } catch (alignErr) {
+        console.warn("[Login] Failed to load alignment context:", alignErr);
       }
 
       try {
@@ -183,6 +266,7 @@ export default function LoginPage() {
     } catch (err) {
       console.error("Unexpected login error:", err);
       setError("Unexpected error – please try again.");
+      persistLegacyAuthCookie(null);
     } finally {
       setLoading(false);
     }

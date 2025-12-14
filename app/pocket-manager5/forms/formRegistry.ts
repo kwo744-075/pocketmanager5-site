@@ -59,7 +59,14 @@ export type FormSlug =
   | "dm-visit-log"
   | "dm-action-plan"
   | "people-employee-profile"
-  | "people-phone-sheet";
+  | "people-phone-sheet"
+  | "employee-meetings"
+  | "training-checklist"
+  | "dm-verbal-checklist"
+  | "performance-report"
+  | "dm-cadence"
+  | "claims-form"
+  | "turnover-log";
 
 const DM_VISIT_TYPES = [
   "Night Visit",
@@ -370,6 +377,33 @@ export const FORM_REGISTRY: FormConfig[] = [
           },
         ],
       },
+      {
+        title: "Celebration profile (optional)",
+        description:
+          "Optional birthday + celebration cues for future Recognition automations. Fill it out when you have details, otherwise skip it for now.",
+        fields: [
+          {
+            type: "date",
+            name: "dateOfBirth",
+            label: "Date of birth",
+            helpText: "Feeds the Recognition Captain birthdays list after Supabase wiring lands.",
+          },
+          {
+            type: "text",
+            name: "favoriteTreat",
+            label: "Favorite treat",
+            placeholder: "Brownies, Dr Pepper, etc.",
+            helpText: "Optional extra context for celebration planning.",
+          },
+          {
+            type: "textarea",
+            name: "celebrationNotes",
+            label: "Celebration notes",
+            placeholder: "Recognition preferences, family shoutouts, surprise ideas…",
+            helpText: "Recognition Captain will surface this alongside DOB once the pipeline is active.",
+          },
+        ],
+      },
     ],
   },
   {
@@ -439,6 +473,161 @@ export const FORM_REGISTRY: FormConfig[] = [
             label: "Notes",
             placeholder: "After-hours gates, service area, escalation order…",
           },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "employee-meetings",
+    title: "Employee Meetings",
+    feature: "employee-management",
+    description: "Capture meeting details, attendees, and agenda for shop meetings.",
+    supabaseTable: "employee_meetings",
+    submitLabel: "Save meeting",
+    successMessage: "Meeting saved successfully.",
+    sections: [
+      {
+        title: "Meeting details",
+        description: "Date, time, type, attendees and agenda.",
+        fields: [
+          { type: "select", name: "meetingType", label: "Meeting type", required: true, options: [
+              { label: "Shop Manager Lead Meeting", value: "shop_manager_lead" },
+              { label: "Newsletter Meeting", value: "newsletter" },
+              { label: "Monthly Planner", value: "monthly_planner" },
+              { label: "General Training", value: "general_training" },
+            ] },
+          { type: "date", name: "meetingDate", label: "Meeting date", required: true },
+          { type: "text", name: "meetingTime", label: "Meeting time" },
+          { type: "textarea", name: "agendaText", label: "Agenda" },
+          { type: "hidden", name: "shopNumber", required: true },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "training-checklist",
+    title: "Training Checklist",
+    feature: "training-tracker",
+    description: "Certified training checklist (CTT) and training completion tracking.",
+    supabaseTable: "employee_training",
+    submitLabel: "Save checklist",
+    successMessage: "Training checklist saved.",
+    sections: [
+      {
+        title: "Checklist",
+        description: "CTT checklist items and completion notes.",
+        fields: [
+          { type: "date", name: "completedDate", label: "Completion date" },
+          { type: "text", name: "trainer", label: "Trainer name" },
+          { type: "textarea", name: "notes", label: "Notes" },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "dm-verbal-checklist",
+    title: "DM Verbal Checklist",
+    feature: "training-tracker",
+    description: "DM verbal checklist form used during coaching visits.",
+    supabaseTable: "dm_verbal_checklists",
+    submitLabel: "Save checklist",
+    successMessage: "DM verbal checklist saved.",
+    sections: [
+      {
+        title: "Checklist",
+        description: "Quick verbal checklist items.",
+        fields: [
+          { type: "date", name: "date", label: "Date" },
+          { type: "select", name: "result", label: "Result", options: [{ label: "Pass", value: "pass" }, { label: "Fail", value: "fail" }] },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "performance-report",
+    title: "Performance Report",
+    feature: "training-tracker",
+    description: "Performance report / evaluation for employees.",
+    supabaseTable: "employee_performance_reports",
+    submitLabel: "Save report",
+    successMessage: "Performance report saved.",
+    sections: [
+      {
+        title: "Report",
+        fields: [
+          { type: "text", name: "employeeId", label: "Employee ID", required: true },
+          { type: "number", name: "score", label: "Score" },
+          { type: "textarea", name: "summary", label: "Summary" },
+        ],
+      },
+    ],
+  },
+  // Auto-stubbed mobile forms
+  {
+    slug: "dm-cadence",
+    title: "DM Cadence Checklist",
+    feature: "dm-schedule",
+    description: "Weekly DM cadence checklist adapted from the mobile app.",
+    submitLabel: "Save cadence",
+    successMessage: "Cadence saved.",
+    sections: [
+      {
+        title: "Cadence items",
+        description: "Checklist items for the weekly cadence.",
+        fields: [{ type: "checklist", name: "items", label: "Items", items: [{ id: "placeholder", label: "Placeholder item" }] }],
+      },
+    ],
+  },
+  {
+    slug: "claims-form",
+    title: "Claims Form",
+    feature: "claims",
+    description: "Capture claim details and attachments from the mobile claims workflow.",
+    submitLabel: "Submit claim",
+    successMessage: "Claim submitted.",
+    sections: [
+      {
+        title: "Claim details",
+        fields: [
+          { type: "text", name: "claimReference", label: "Reference" },
+          { type: "date", name: "claimDate", label: "Date" },
+          { type: "textarea", name: "description", label: "Description" },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "performance-report",
+    title: "Performance Report",
+    feature: "employee-management",
+    description: "Employee performance report form (mobile-origin).",
+    submitLabel: "Save report",
+    successMessage: "Report saved.",
+    sections: [
+      {
+        title: "Report",
+        fields: [
+          { type: "text", name: "employeeId", label: "Employee ID" },
+          { type: "number", name: "score", label: "Score" },
+          { type: "textarea", name: "notes", label: "Notes" },
+        ],
+      },
+    ],
+  },
+  {
+    slug: "turnover-log",
+    title: "Turnover Log",
+    feature: "employee-management",
+    description: "Log for staff turnover events pulled from mobile.",
+    submitLabel: "Log turnover",
+    successMessage: "Turnover logged.",
+    sections: [
+      {
+        title: "Turnover details",
+        fields: [
+          { type: "text", name: "staffName", label: "Staff name" },
+          { type: "date", name: "endDate", label: "End date" },
+          { type: "textarea", name: "reason", label: "Reason" },
         ],
       },
     ],

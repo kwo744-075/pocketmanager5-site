@@ -7,18 +7,28 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "test": "tsx --test tests/form-submission-route.test.ts tests/form-submission-route-smoke.test.ts"
+    "test": "tsx --test tests/form-submission-route.test.ts tests/form-submission-route-smoke.test.ts tests/dm-review-import-route.test.ts tests/dm-schedule-utils.test.ts tests/pulse-check-checkins-sim.test.ts",
+    "sim:sheet": "tsx scripts/rebuild-sim-sheet.ts",
+    "sim:upload": "tsx scripts/upload-sim-sheet.ts",
+    "sim:sync": "pnpm run sim:sheet && pnpm run sim:upload",
+    "copy:weekly-templates": "node scripts/copy-weekly-templates.js"
   },
   "dependencies": {
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.4.2",
     "@supabase/auth-helpers-nextjs": "^0.15.0",
     "@supabase/auth-helpers-react": "^0.15.0",
     "@supabase/supabase-js": "^2.84.0",
+    "cookie": "^1.1.1",
     "formidable": "^3.5.4",
+    "framer-motion": "^11.0.17",
     "lucide-react": "^0.453.0",
-    "next": "16.0.4",
+    "next": "^16.0.8",
+    "papaparse": "^5.5.3",
     "pptxgenjs": "^4.0.1",
     "react": "19.2.0",
     "react-dom": "19.2.0",
+    "three": "^0.181.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -26,11 +36,12 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "baseline-browser-mapping": "^2.8.32",
+    "baseline-browser-mapping": "^2.9.2",
     "eslint": "^9",
-    "eslint-config-next": "16.0.4",
+    "eslint-config-next": "^16.0.8",
     "tailwindcss": "^4",
     "tsx": "^4.19.2",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "pnpm@10.24.0+sha512.01ff8ae71b4419903b65c60fb2dc9d34cf8bb6e06d03bde112ef38f7a34d6904c424ba66bea5cdcf12890230bf39f9580473140ed9c946fef328b6e5238a345a"
 }

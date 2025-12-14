@@ -1,0 +1,36 @@
+name: Deploy PocketManager5-site to Vercel
+
+on:
+  push:
+    branches: [ main, master, feature/**, fix/**, release/** ]
+
+jobs:
+  vercel-deploy:
+    name: Deploy to Vercel
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install dependencies
+        run: |
+          cd PocketManager5-site
+          npm ci
+
+      - name: Build (verify)
+        run: |
+          cd PocketManager5-site
+          npm run build
+
+      - name: Deploy to Vercel
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          npm i -g vercel
+          cd PocketManager5-site
+          vercel --prod --token "$VERCEL_TOKEN" --confirm

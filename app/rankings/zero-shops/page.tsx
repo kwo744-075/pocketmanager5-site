@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import Chip from "@/app/components/Chip";
 import { useRouter, useSearchParams } from "next/navigation";
 
 const metricFormatter = new Intl.DateTimeFormat("en-US", {
@@ -11,18 +12,20 @@ const metricFormatter = new Intl.DateTimeFormat("en-US", {
   minute: "2-digit",
 });
 
-type MetricFilter = "all" | "cars" | "sales" | "big4" | "coolants" | "diffs" | "mobil1" | "donations";
+type MetricFilter = "all" | "coolants" | "diffs" | "fuelFilters";
 
 const metricFilterDefinitions: Array<{ key: MetricFilter; label: string; description: string }> = [
   { key: "all", label: "All metrics", description: "Every shop with at least one zero" },
-  { key: "cars", label: "Cars", description: "No car count recorded" },
-  { key: "sales", label: "Sales", description: "$0 sales in slot" },
-  { key: "big4", label: "Big 4", description: "Big 4 conversion at zero" },
   { key: "coolants", label: "Coolants", description: "Coolant upsells missing" },
   { key: "diffs", label: "Diffs", description: "Diff services at zero" },
-  { key: "mobil1", label: "Mobil 1", description: "Mobil 1 attachment missing" },
-  { key: "donations", label: "Donations", description: "Donation entry not logged" },
+  { key: "fuelFilters", label: "Fuel filters", description: "Fuel filter attachment missing" },
 ];
+
+const metricTint: Record<Exclude<MetricFilter, "all">, string> = {
+  coolants: "#10b981",
+  diffs: "#f97316",
+  fuelFilters: "#f59e0b",
+};
 
 type ZeroShopRow = {
   shopNumber: string;
@@ -42,33 +45,11 @@ const zeroShopsSeed: ZeroShopRow[] = [
     shopName: "Bluebonnet",
     district: "Baton Rouge South",
     region: "Gulf Coast",
-    metric: "cars",
+    metric: "coolants",
     missedSlots: "5 PM, 8 PM",
     consecutiveZeros: 2,
     lastEntry: "2025-03-14T20:00:00",
     note: "Closing manager out sick; coverage pending",
-  },
-  {
-    shopNumber: "07",
-    shopName: "Airline",
-    district: "Baton Rouge North",
-    region: "Gulf Coast",
-    metric: "donations",
-    missedSlots: "12 PM, 2:30 PM",
-    consecutiveZeros: 3,
-    lastEntry: "2025-03-14T14:30:00",
-    note: "Donation iPad offline — needs reboot",
-  },
-  {
-    shopNumber: "34",
-    shopName: "Uptown",
-    district: "New Orleans",
-    region: "Gulf Coast",
-    metric: "big4",
-    missedSlots: "5 PM",
-    consecutiveZeros: 1,
-    lastEntry: "2025-03-14T17:00:00",
-    note: "Big 4 form left blank (coaching today)",
   },
   {
     shopNumber: "42",
@@ -82,17 +63,6 @@ const zeroShopsSeed: ZeroShopRow[] = [
     note: "Tech turnover — refresher scheduled",
   },
   {
-    shopNumber: "55",
-    shopName: "Lake Charles",
-    district: "Acadiana",
-    region: "Gulf Coast",
-    metric: "mobil1",
-    missedSlots: "2:30 PM",
-    consecutiveZeros: 2,
-    lastEntry: "2025-03-14T14:30:00",
-    note: "Mobil 1 tote empty — delivery ETA noon",
-  },
-  {
     shopNumber: "63",
     shopName: "Hammond",
     district: "Northshore",
@@ -103,27 +73,31 @@ const zeroShopsSeed: ZeroShopRow[] = [
     lastEntry: "2025-03-13T20:00:00",
     note: "Diff machine pressure alert",
   },
+  {
+    shopNumber: "55",
+    shopName: "Lake Charles",
+    district: "Acadiana",
+    region: "Gulf Coast",
+    metric: "fuelFilters",
+    missedSlots: "2:30 PM",
+    consecutiveZeros: 2,
+    lastEntry: "2025-03-14T14:30:00",
+    note: "Fuel filter tote empty — delivery ETA noon",
+  },
 ];
 
 const metricLabels: Record<Exclude<MetricFilter, "all">, string> = {
-  cars: "Cars",
-  sales: "Sales",
-  big4: "Big 4",
   coolants: "Coolants",
   diffs: "Diffs",
-  mobil1: "Mobil 1",
-  donations: "Donations",
+  fuelFilters: "Fuel filters",
 };
 
-const metricSeverity: Record<Exclude<MetricFilter, "all">, string> = {
-  cars: "bg-rose-500/20 text-rose-100",
-  sales: "bg-rose-500/20 text-rose-100",
-  big4: "bg-amber-400/20 text-amber-100",
+const _metricSeverity: Record<Exclude<MetricFilter, "all">, string> = {
   coolants: "bg-sky-500/20 text-sky-100",
   diffs: "bg-indigo-500/20 text-indigo-100",
-  mobil1: "bg-emerald-500/20 text-emerald-100",
-  donations: "bg-purple-500/20 text-purple-100",
+  fuelFilters: "pm5-teal-soft pm5-accent-text",
 };
+void _metricSeverity;
 
 const isMetricFilter = (value: string | null): value is MetricFilter =>
   metricFilterDefinitions.some((filter) => filter.key === value);
@@ -163,17 +137,17 @@ export default function ZeroShopsPage() {
           <button
             type="button"
             onClick={() => router.back()}
-            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:border-emerald-400"
+            className="rounded-full border border-slate-700 px-3 py-1 text-xs font-semibold text-slate-200 transition hover:pm5-teal-border"
           >
             ← Back
           </button>
-          <Link href="/rankings/detail" className="text-xs text-emerald-300 hover:underline">
+          <Link href="/rankings/detail" className="text-xs text-pm5-teal hover:underline">
             Rankings detail
           </Link>
         </div>
 
         <section className="rounded-3xl border border-slate-900 bg-slate-950/70 p-5 shadow-inner shadow-black/40">
-          <p className="text-[10px] uppercase tracking-[0.3em] text-amber-300">Zero shops list</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-pm5-amber">Zero shops list</p>
           <h1 className="text-3xl font-semibold text-white">Shops with zeros in key KPIs</h1>
           <p className="text-sm text-slate-300">
             {filteredRows.length} shop{filteredRows.length === 1 ? "" : "s"} • filter to focus your follow-ups
@@ -188,14 +162,12 @@ export default function ZeroShopsPage() {
               onClick={() => setFilter(option.key)}
               className={`rounded-full border px-4 py-2 text-sm font-semibold transition ${
                 filter === option.key
-                  ? "border-amber-400 bg-amber-500/10 text-amber-50"
+                  ? "pm5-amber-border pm5-amber-soft pm5-accent-text"
                   : "border-slate-800 bg-slate-900/60 text-slate-300 hover:border-slate-600"
               }`}
             >
               <span>{option.label}</span>
-              <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs text-slate-300">
-                {metricCounts[option.key] ?? 0}
-              </span>
+              <Chip className="ml-2 px-2 py-0.5 text-xs" label={String(metricCounts[option.key] ?? 0)} disabled />
             </button>
           ))}
         </div>
@@ -221,13 +193,9 @@ export default function ZeroShopsPage() {
                 </p>
               </div>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2 text-xs">
-              <span className={`rounded-full px-3 py-1 ${metricSeverity[primaryShop.metric]}`}>
-                {metricLabels[primaryShop.metric]}
-              </span>
-              <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                Missed slots: {primaryShop.missedSlots}
-              </span>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+              <Chip label={metricLabels[primaryShop.metric]} className="px-3 py-1" tintColor={metricTint[primaryShop.metric]} active />
+              <Chip label={`Missed slots: ${primaryShop.missedSlots}`} className="px-3 py-1" />
             </div>
           </div>
         )}
@@ -257,18 +225,10 @@ export default function ZeroShopsPage() {
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2 text-xs">
-                  <span className={`rounded-full px-3 py-1 ${metricSeverity[row.metric]}`}>
-                    {metricLabels[row.metric]}
-                  </span>
-                  <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                    Missed: {row.missedSlots}
-                  </span>
-                  <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                    {row.consecutiveZeros} zero slot{row.consecutiveZeros === 1 ? "" : "s"}
-                  </span>
-                  <span className="rounded-full bg-slate-800 px-3 py-1 text-slate-200">
-                    Last • {metricFormatter.format(new Date(row.lastEntry))}
-                  </span>
+                  <Chip label={metricLabels[row.metric]} className="px-3 py-1" tintColor={metricTint[row.metric]} active />
+                  <Chip label={`Missed: ${row.missedSlots}`} className="px-3 py-1" />
+                  <Chip label={`${row.consecutiveZeros} zero slot${row.consecutiveZeros === 1 ? "" : "s"}`} className="px-3 py-1" />
+                  <Chip label={`Last • ${metricFormatter.format(new Date(row.lastEntry))}`} className="px-3 py-1" />
                 </div>
               </button>
             ))}

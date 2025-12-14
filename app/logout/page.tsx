@@ -19,6 +19,8 @@ export default function LogoutPage() {
       localStorage.removeItem(key)
     );
 
+    document.cookie = "pm-local-login=; path=/; max-age=0; SameSite=Lax";
+
     router.replace("/login");
   }, [router]);
 

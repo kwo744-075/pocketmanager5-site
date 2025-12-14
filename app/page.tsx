@@ -42,7 +42,7 @@ type ContestHighlight = {
   endsOn: string | null;
 };
 
-type HeroQuickActionVariant = "contest" | "rankings";
+type HeroQuickActionVariant = "contest" | "rankings" | "people" | "ops" | "manager" | "dm";
 
 type HeroQuickAction = {
   key: HeroQuickActionVariant;
@@ -53,6 +53,9 @@ type HeroQuickAction = {
   href: string;
   variant: HeroQuickActionVariant;
 };
+
+const HERO_QUICK_LEFT_KEYS: HeroQuickActionVariant[] = ["people", "ops", "manager"];
+const HERO_QUICK_RIGHT_KEYS: HeroQuickActionVariant[] = ["dm", "contest", "rankings"];
 
 
 const integerFormatter = new Intl.NumberFormat("en-US");
@@ -221,37 +224,61 @@ export default function Home() {
 
     const run = async () => {
       try {
-        const { data, error } = await supabase
-          .from("hierarchy_summary_vw")
-          .select("*")
-          .eq("login", normalized)
-          .maybeSingle();
-
-        if (cancelled) {
-          return;
+        // Prefer server API which reads normalized tables; fall back to the legacy view
+        let resolved: HierarchySummary | null = null;
+        try {
+          const resp = await fetch("/api/hierarchy/summary", { credentials: "same-origin" });
+          if (resp.ok) {
+            const body = await resp.json();
+            resolved = (body?.data ?? null) as HierarchySummary | null;
+          } else if (resp.status === 401) {
+            // Session is invalid, clear local login state and redirect to login
+            console.warn("Session expired, redirecting to login");
+            if (typeof window !== "undefined") {
+              window.localStorage.removeItem("loggedIn");
+              window.localStorage.removeItem("loginEmail");
+              window.localStorage.removeItem("userScopeLevel");
+              window.localStorage.removeItem("userDisplayName");
+              window.localStorage.removeItem("shopStore");
+              window.location.href = "/login?redirect=/";
+            }
+            return;
+          } else {
+            console.error("Home hierarchy API status", resp.status);
+          }
+        } catch (apiErr) {
+          console.error("Home hierarchy API error", apiErr);
         }
 
-        if (error) {
-          console.error("Home hierarchy_summary_vw error", error);
-          if (!getCachedSummaryForLogin(normalized)) {
+        if (!resolved) {
+          // fallback to legacy view
+          const { data, error } = await supabase
+            .from("hierarchy_summary_vw")
+            .select("*")
+            .eq("login", normalized)
+            .maybeSingle();
+
+          if (error) {
+            console.error("Home hierarchy_summary_vw error", error);
+          } else {
+            resolved = (data as HierarchySummary | null) ?? null;
+          }
+        }
+
+        if (cancelled) return;
+
+        if (resolved) {
+          setHierarchy(resolved);
+          setHierarchyError(null);
+          writeHierarchySummaryCache(resolved);
+        } else {
+          const fallback = getCachedSummaryForLogin(normalized);
+          if (fallback) {
+            setHierarchy((fallback as HierarchySummary) ?? null);
+            setHierarchyError(null);
+          } else {
             setHierarchy(null);
             setHierarchyError("Unable to load your hierarchy scope.");
-          }
-        } else {
-          const resolved = (data as HierarchySummary | null) ?? null;
-          if (resolved) {
-            setHierarchy(resolved);
-            setHierarchyError(null);
-            writeHierarchySummaryCache(resolved);
-          } else {
-            const fallback = getCachedSummaryForLogin(normalized);
-            if (fallback) {
-              setHierarchy((fallback as HierarchySummary) ?? null);
-              setHierarchyError(null);
-            } else {
-              setHierarchy(null);
-              setHierarchyError("Unable to load your hierarchy scope.");
-            }
           }
         }
       } catch (err) {
@@ -263,9 +290,7 @@ export default function Home() {
           }
         }
       } finally {
-        if (!cancelled) {
-          setHierarchyLoading(false);
-        }
+        if (!cancelled) setHierarchyLoading(false);
       }
     };
     run();
@@ -513,6 +538,42 @@ export default function Home() {
   const heroQuickActions = useMemo<HeroQuickAction[]>(
     () => [
       {
+        key: "people",
+        title: "People portal",
+        eyebrow: "Staffing + dev",
+        primary: "Keep schedules, coaching, and training synced",
+        secondary: "Scheduling • Training • Coaching",
+        href: "/pocket-manager5/features/employee-scheduling",
+        variant: "people",
+      },
+      {
+        key: "ops",
+        title: "OPS portal",
+        eyebrow: "Operations grid",
+        primary: "Checkbooks, crash kits, and alerts in one spot",
+        secondary: "Mini POS • Ops hub • Alerts",
+        href: "/pocket-manager5/features/ops",
+        variant: "ops",
+      },
+      {
+        key: "manager",
+        title: "Manager portal",
+        eyebrow: "Clipboard stack",
+        primary: "Supply ordering, KPIs, and wage guardrails",
+        secondary: "Clipboard • Supplies • KPIs",
+        href: "/pocket-manager5/features/managers-clipboard",
+        variant: "manager",
+      },
+      {
+        key: "dm",
+        title: "DM portal",
+        eyebrow: "District toolkit",
+        primary: "Cadence, visits, and review decks",
+        secondary: "Schedules • Visits • Reviews",
+        href: "/pocket-manager5/dm-tools",
+        variant: "dm",
+      },
+      {
         key: "contest",
         title: "Contest portal",
         eyebrow: contestHighlight.activeCount ? `${contestHighlight.activeCount} live` : "Launch push",
@@ -533,18 +594,34 @@ export default function Home() {
     ],
     [contestHighlight.activeCount, contestHighlight.leadTitle, contestEndsLabel, rankingHighlight],
   );
+  const heroQuickLeftActions = useMemo(
+    () => heroQuickActions.filter((action) => HERO_QUICK_LEFT_KEYS.includes(action.variant)),
+    [heroQuickActions],
+  );
+  const heroQuickRightActions = useMemo(
+    () => heroQuickActions.filter((action) => HERO_QUICK_RIGHT_KEYS.includes(action.variant)),
+    [heroQuickActions],
+  );
   const brandTileClasses =
     "inline-flex items-center justify-center gap-1.5 rounded-[18px] border border-white/5 bg-gradient-to-br from-[#0c1a36]/90 via-[#07142d]/90 to-[#030a18]/95 px-3 py-2 text-[10px] font-semibold text-slate-100 shadow-[0_12px_30px_rgba(1,6,20,0.75)] backdrop-blur transition hover:border-emerald-400/60 min-w-[120px]";
   const heroQuickBaseClasses =
     "relative flex min-w-[150px] max-w-[230px] flex-col gap-1 rounded-2xl border px-3 py-2 text-left text-sm shadow-[0_20px_45px_rgba(3,10,22,0.65)] transition hover:-translate-y-0.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-emerald-300";
   const heroQuickVariantClasses: Record<HeroQuickActionVariant, string> = {
+    people: "border-emerald-400/50 bg-gradient-to-br from-emerald-500/20 via-emerald-500/5 to-[#050b1b]/90",
+    ops: "border-cyan-400/50 bg-gradient-to-br from-cyan-500/20 via-cyan-500/5 to-[#050b1b]/90",
+    manager: "border-amber-400/50 bg-gradient-to-br from-amber-500/20 via-amber-500/5 to-[#050b1b]/90",
+    dm: "border-violet-400/50 bg-gradient-to-br from-violet-500/20 via-violet-500/5 to-[#050b1b]/90",
     contest: "border-amber-400/50 bg-gradient-to-br from-amber-500/20 via-amber-500/5 to-[#050b1b]/90",
     rankings: "border-sky-400/50 bg-gradient-to-br from-sky-500/20 via-sky-500/5 to-[#050b1b]/90",
   };
   const heroQuickScaleClasses =
     "transform-gpu scale-[0.85] hover:scale-[0.9] focus-visible:scale-[0.9] transition-transform";
   const heroQuickCtaClasses: Record<HeroQuickActionVariant, string> = {
-    contest: "text-amber-200",
+    people: "text-emerald-200",
+    ops: "text-cyan-200",
+    manager: "text-amber-200",
+    dm: "text-violet-200",
+    contest: "text-white",
     rankings: "text-sky-200",
   };
 
@@ -627,23 +704,42 @@ export default function Home() {
                 <HierarchyStamp align="left" hierarchy={hierarchy} loginEmail={loginEmail} />
               )}
             </div>
-            <div className="flex w-full flex-wrap items-stretch gap-3 pt-2 md:flex-nowrap md:items-center md:justify-between">
-              {heroQuickActions.map((action) => {
-                const ariaLabelParts = [action.title, action.primary, action.secondary].filter(Boolean);
-                const ariaLabel = ariaLabelParts.length ? ariaLabelParts.join(". ") : `Open ${action.title}`;
-
-                return (
-                  <Link
-                    key={action.key}
-                    href={action.href}
-                    className={`${heroQuickBaseClasses} ${heroQuickVariantClasses[action.variant]} ${heroQuickScaleClasses} flex-none w-full md:w-auto`}
-                    aria-label={ariaLabel}
-                  >
-                    <p className="text-sm font-semibold text-white">{action.title}</p>
-                    <span className={`text-xs font-semibold ${heroQuickCtaClasses[action.variant]}`}>Open →</span>
-                  </Link>
-                );
-              })}
+            <div className="grid w-full gap-3 pt-2 lg:grid-cols-[0.85fr_1.15fr]">
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {heroQuickLeftActions.map((action) => {
+                  const ariaLabelParts = [action.title, action.primary, action.secondary].filter(Boolean);
+                  const ariaLabel = ariaLabelParts.length ? ariaLabelParts.join(". ") : `Open ${action.title}`;
+                  return (
+                    <Link
+                      key={action.key}
+                      href={action.href}
+                      className={`${heroQuickBaseClasses} ${heroQuickVariantClasses[action.variant]} ${heroQuickScaleClasses}`}
+                      aria-label={ariaLabel}
+                    >
+                      <p className="text-sm font-semibold text-white">{action.title}</p>
+                      <span className={`text-xs font-semibold ${heroQuickCtaClasses[action.variant]}`}>Open →</span>
+                    </Link>
+                  );
+                })}
+              </div>
+              <div className="grid w-full grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <span aria-hidden="true" className="hidden lg:block" />
+                {heroQuickRightActions.map((action) => {
+                  const ariaLabelParts = [action.title, action.primary, action.secondary].filter(Boolean);
+                  const ariaLabel = ariaLabelParts.length ? ariaLabelParts.join(". ") : `Open ${action.title}`;
+                  return (
+                    <Link
+                      key={action.key}
+                      href={action.href}
+                      className={`${heroQuickBaseClasses} ${heroQuickVariantClasses[action.variant]} ${heroQuickScaleClasses}`}
+                      aria-label={ariaLabel}
+                    >
+                      <p className="text-sm font-semibold text-white">{action.title}</p>
+                      <span className={`text-xs font-semibold ${heroQuickCtaClasses[action.variant]}`}>Open →</span>
+                    </Link>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </header>
@@ -655,7 +751,15 @@ export default function Home() {
         )}
 
         <section>
-          <ExecutiveDashboard />
+          <ExecutiveDashboard
+            kpiOnClick={(label) => {
+              if (label === 'Cars' && shopMeta?.id) {
+                router.push(`/pulse-check5/daily/${todayISO()}#shop-${shopMeta.id}`);
+              } else if (label === 'Cars') {
+                router.push('/pulse-check5');
+              }
+            }}
+          />
         </section>
 
       </div>

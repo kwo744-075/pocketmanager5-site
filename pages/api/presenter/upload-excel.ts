@@ -1,8 +1,16 @@
 import type { NextApiRequest, NextApiResponse } from "next";
-import formidable, { File } from "formidable";
+import formidable from "formidable";
 import * as XLSX from "xlsx";
 
 type WorkbookRow = Record<string, string | number | null | undefined>;
+type ParsedFields = Record<string, string | string[] | undefined>;
+type ParsedFile = {
+  filepath?: string;
+  originalFilename?: string | null;
+  mimetype?: string | null;
+  size?: number;
+};
+type ParsedFiles = Record<string, ParsedFile | ParsedFile[]>;
 
 export const config = {
   api: {
@@ -10,12 +18,10 @@ export const config = {
   },
 };
 
-function parseForm(
-  req: NextApiRequest
-): Promise<{ fields: formidable.Fields; files: formidable.Files }> {
+function parseForm(req: NextApiRequest): Promise<{ fields: ParsedFields; files: ParsedFiles }> {
   const form = formidable({ multiples: false });
   return new Promise((resolve, reject) => {
-    form.parse(req, (err, fields, files) => {
+    form.parse(req, (err: unknown, fields: ParsedFields, files: ParsedFiles) => {
       if (err) reject(err);
       else resolve({ fields, files });
     });
@@ -53,7 +59,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const { files } = await parseForm(req);
     const uploaded = files.file;
-    const file: File | undefined = Array.isArray(uploaded) ? uploaded[0] : (uploaded as File | undefined);
+    const file: ParsedFile | undefined = Array.isArray(uploaded) ? uploaded[0] : uploaded;
 
     if (!file || !file.filepath) {
       return res.status(400).json({ error: "No file uploaded" });

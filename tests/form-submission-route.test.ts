@@ -21,6 +21,21 @@ const profile: Profile = {
   full_name: "Pocket DM",
 };
 
+test("dm-visit-plan falls back when DM profile missing", async () => {
+  const data = {
+    visitDate: "2026-01-10",
+    visitType: "Standard Visit",
+    shopNumber: "1501",
+  };
+
+  const plan = await buildSubmissionPlan("dm-visit-plan", data, contextBase, null);
+  assert.ok(plan);
+  const payload = plan?.payload as Record<string, unknown>;
+  assert.equal(payload.dm_id, null);
+  assert.equal(payload.created_by, contextBase.loginEmail);
+  assert.equal(payload.location_id, "1501");
+});
+
 test("dm-30-60-90 maps to dm_visit_playbooks", async () => {
   const data = {
     shopNumber: "447",
@@ -87,6 +102,9 @@ test("people-employee-profile maps to shop_staff", async () => {
     staffName: "Jordan Sample",
     phoneNumber: "555-123-4567",
     hireDate: "2024-05-01",
+    dateOfBirth: "1994-03-15",
+    favoriteTreat: "Brownies",
+    celebrationNotes: "Loves handwritten notes",
   };
 
   const plan = await buildSubmissionPlan("people-employee-profile", data, contextBase, null);
@@ -99,6 +117,12 @@ test("people-employee-profile maps to shop_staff", async () => {
   assert.equal(payload.staff_name, "Jordan Sample");
   assert.equal(payload.employee_phone_number, "555-123-4567");
   assert.equal(payload.date_of_hired, "2024-05-01");
+  assert.equal(payload.birth_date, "1994-03-15");
+
+  const celebrationProfile = payload.celebration_profile_json as Record<string, string> | null;
+  assert.ok(celebrationProfile);
+  assert.equal(celebrationProfile?.favoriteTreat, "Brownies");
+  assert.equal(celebrationProfile?.celebrationNotes, "Loves handwritten notes");
 });
 
 test("people-employee-profile enforces name", async () => {
