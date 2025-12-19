@@ -26,7 +26,7 @@ export default function JeopardyEditor({ year, period, defaultKind = 'A' }: { ye
       if (!mounted) return;
       if (data && data.length) {
         try {
-          const payload = data[0].payload as any;
+          const payload = data[0].payload as { categories?: Category[] };
           setCategories(payload.categories ?? categories);
         } catch (e) {
           // ignore
@@ -59,7 +59,7 @@ export default function JeopardyEditor({ year, period, defaultKind = 'A' }: { ye
       </div>
       <div className="mt-3">
         <label className="text-xs text-slate-400">Board kind</label>
-        <select value={kind} onChange={(e) => setKind(e.target.value)} className="ml-2 rounded bg-slate-900 px-2 py-1 text-slate-200 text-sm">
+        <select aria-label="Board kind" value={kind} onChange={(e) => setKind(e.target.value)} className="ml-2 rounded bg-slate-900 px-2 py-1 text-slate-200 text-sm">
           <option value="A">A</option>
           <option value="B">B</option>
           <option value="FINAL">FINAL</option>
@@ -67,13 +67,13 @@ export default function JeopardyEditor({ year, period, defaultKind = 'A' }: { ye
       </div>
       <div className="mt-3 space-y-3">
         {categories.map((cat, ci) => (
-          <div key={cat.id} className="rounded-md border border-slate-800/50 p-3">
-            <input className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cat.title} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci] = { ...copy[ci], title: e.target.value }; return copy; })} />
+          <div key={`${cat.id}-${ci}`} className="rounded-md border border-slate-800/50 p-3">
+            <input aria-label={`Category title ${ci + 1}`} placeholder={`Category ${ci + 1}`} className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cat.title} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci] = { ...copy[ci], title: e.target.value }; return copy; })} />
             <div className="mt-2 grid grid-cols-2 gap-2">
               {cat.cluesA.map((cl, idx) => (
-                <div key={cl.id} className="space-y-1">
-                  <input placeholder={`A Q${idx + 1}`} className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cl.question} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci].cluesA[idx] = { ...copy[ci].cluesA[idx], question: e.target.value }; return copy; })} />
-                  <input placeholder={`A A${idx + 1}`} className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cl.answer} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci].cluesA[idx] = { ...copy[ci].cluesA[idx], answer: e.target.value }; return copy; })} />
+                <div key={`${cat.id}-A-${cl.id}-${idx}`} className="space-y-1">
+                  <input aria-label={`A Q${idx + 1} for ${cat.title}`} placeholder={`A Q${idx + 1}`} className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cl.question} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci].cluesA[idx] = { ...copy[ci].cluesA[idx], question: e.target.value }; return copy; })} />
+                  <input aria-label={`A A${idx + 1} for ${cat.title}`} placeholder={`A A${idx + 1}`} className="w-full rounded bg-slate-900 px-2 py-1 text-sm text-slate-200" value={cl.answer} onChange={(e) => setCategories((s) => { const copy = [...s]; copy[ci].cluesA[idx] = { ...copy[ci].cluesA[idx], answer: e.target.value }; return copy; })} />
                 </div>
               ))}
             </div>

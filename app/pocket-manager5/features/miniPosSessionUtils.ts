@@ -13,6 +13,9 @@ import type {
 export type MiniPosTotalsSnapshot = {
   subtotal: number;
   discountAmount?: number;
+  taxRate?: number | null;
+  taxAmount?: number | null;
+  taxableSubtotal?: number | null;
   totalDue: number;
   tenderedAmount: number;
   changeDue: number;
@@ -119,11 +122,19 @@ export const hydrateMiniPosSession = (
     return null;
   }
 
+  const taxRate = typeof session.notes_json?.tax?.rate === "number" ? session.notes_json?.tax?.rate ?? 0 : 0;
+  const taxAmount = typeof session.notes_json?.tax?.amount === "number" ? session.notes_json?.tax?.amount ?? 0 : 0;
+  const taxableSubtotal =
+    typeof session.notes_json?.tax?.taxableSubtotal === "number" ? session.notes_json?.tax?.taxableSubtotal ?? 0 : 0;
+
   return {
     sessionId: session.id,
     sessionStatus: session.session_status,
     cartItems: (session.cart ?? []).map(mapCartRecordToLine),
     discountAmount: session.discount_amount ?? 0,
+    taxRate,
+    taxAmount,
+    taxableSubtotal,
     paymentMethod: session.payment_method ?? "cash",
     tenderedAmount: session.tendered_amount ?? 0,
     changeDue: session.change_due ?? 0,
@@ -176,6 +187,9 @@ export const buildMiniPosSessionPayload = (
   const normalizedTotals: MiniPosTotalsSnapshot = {
     subtotal: clampCurrency(totals.subtotal, 0),
     discountAmount: clampCurrency(totals.discountAmount ?? 0, 0, totals.subtotal),
+    taxRate: typeof totals.taxRate === "number" ? Math.max(0, totals.taxRate) : null,
+    taxAmount: typeof totals.taxAmount === "number" ? clampCurrency(totals.taxAmount, 0) : null,
+    taxableSubtotal: typeof totals.taxableSubtotal === "number" ? clampCurrency(totals.taxableSubtotal, 0) : null,
     totalDue: clampCurrency(totals.totalDue, 0),
     tenderedAmount: clampCurrency(totals.tenderedAmount, 0),
     changeDue: clampCurrency(totals.changeDue ?? 0, 0),
@@ -188,6 +202,9 @@ export const buildMiniPosSessionPayload = (
     shopNumber: context.shopNumber ?? null,
     subtotal: normalizedTotals.subtotal,
     discountAmount: normalizedTotals.discountAmount ?? 0,
+    taxRate: normalizedTotals.taxRate ?? null,
+    taxAmount: normalizedTotals.taxAmount ?? null,
+    taxableSubtotal: normalizedTotals.taxableSubtotal ?? null,
     totalDue: normalizedTotals.totalDue,
     paymentMethod: context.paymentMethod,
     tenderedAmount: normalizedTotals.tenderedAmount,

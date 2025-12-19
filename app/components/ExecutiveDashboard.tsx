@@ -1,4 +1,7 @@
-import type { ReactNode } from "react";
+"use client";
+
+import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { fetchWorkingWosRollup } from "@/lib/miniPos/workingWos";
 
 const cardBaseClasses =
   "relative overflow-hidden rounded-[28px] border border-white/10 bg-gradient-to-br from-[#04142a]/92 via-[#050b1d]/95 to-[#01040c]/98 p-3 shadow-[0_28px_70px_rgba(3,10,25,0.75)] backdrop-blur";
@@ -133,10 +136,30 @@ const liveKpiTiles: DashboardTile[] = [
   { label: "Donations", value: "$0" },
   { label: "Turned Cars", subtitle: "# / $", value: "0 / $0" },
   { label: "Zero Shops", subtitle: "# / %", value: "0 / 0%" },
-  { label: "Manual Work Orders", subtitle: "created today / WTD", value: "0 / $0" },
+  { label: "Manual Work Orders", subtitle: "# / $ (Working WOs)", value: "0 / $0" },
 ];
 
 export function ExecutiveDashboard({ kpiOnClick }: { kpiOnClick?: (label: string) => void }) {
+  const [manualWoValue, setManualWoValue] = useState<string>("0 / $0");
+
+  useEffect(() => {
+    let active = true;
+    fetchWorkingWosRollup()
+      .then((result) => {
+        if (!active) return;
+        const currency = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
+        setManualWoValue(`${result.count} / ${currency.format(result.total)}`);
+      })
+      .catch((err) => console.error("manual work orders rollup failed", err));
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const resolvedLiveKpis = useMemo(() => {
+    return liveKpiTiles.map((tile) => (tile.label === "Manual Work Orders" ? { ...tile, value: manualWoValue } : tile));
+  }, [manualWoValue]);
+
   return (
     <section className="grid gap-2.5 lg:grid-cols-[0.85fr_1.15fr]">
       <div className="flex flex-col gap-2.5">
@@ -188,7 +211,7 @@ export function ExecutiveDashboard({ kpiOnClick }: { kpiOnClick?: (label: string
           }
         >
           <div className="grid gap-1.5 sm:grid-cols-2 lg:grid-cols-4">
-            {liveKpiTiles.map((tile) => (
+            {resolvedLiveKpis.map((tile) => (
               <KpiTile
                 key={tile.label}
                 {...tile}

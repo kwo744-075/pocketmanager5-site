@@ -1,3 +1,5 @@
+// @ts-nocheck
+
 import { test, expect } from '@playwright/test';
 
 // This test assumes you have Playwright set up and a running local dev server

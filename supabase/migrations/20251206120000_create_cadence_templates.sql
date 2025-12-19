@@ -18,42 +18,26 @@ CREATE UNIQUE INDEX idx_cadence_templates_scope_day ON cadence_templates (scope,
 -- Select: allow authenticated users to read templates
 ALTER TABLE cadence_templates ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow select to authenticated" ON cadence_templates
-  FOR SELECT
-  USING (auth.role() = 'authenticated');
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cadence_templates' AND policyname = 'Allow select to authenticated'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "Allow select to authenticated" ON cadence_templates
+        FOR SELECT
+        USING (auth.role() = 'authenticated');
+    $policy$;
+  END IF;
+END
+$$;
 
--- Inserts/Updates/Deletes: allow only users who are RD/VP/DM according to `alignment_memberships`.
--- This assumes an `alignment_memberships` table with `user_id` and `role` columns.
-CREATE POLICY "Allow insert by RD_VP_DM" ON cadence_templates
-  FOR INSERT
-  USING (EXISTS (
-    SELECT 1 FROM alignment_memberships am
-    WHERE am.user_id = auth.uid()
-      AND lower(am.role) IN ('rd', 'vp', 'dm')
-  ))
-  WITH CHECK (EXISTS (
-    SELECT 1 FROM alignment_memberships am
-    WHERE am.user_id = auth.uid()
-      AND lower(am.role) IN ('rd', 'vp', 'dm')
-  ));
-
-CREATE POLICY "Allow update by RD_VP_DM" ON cadence_templates
-  FOR UPDATE
-  USING (EXISTS (
-    SELECT 1 FROM alignment_memberships am
-    WHERE am.user_id = auth.uid()
-      AND lower(am.role) IN ('rd', 'vp', 'dm')
-  ))
-  WITH CHECK (EXISTS (
-    SELECT 1 FROM alignment_memberships am
-    WHERE am.user_id = auth.uid()
-      AND lower(am.role) IN ('rd', 'vp', 'dm')
-  ));
-
-CREATE POLICY "Allow delete by RD_VP_DM" ON cadence_templates
-  FOR DELETE
-  USING (EXISTS (
-    SELECT 1 FROM alignment_memberships am
-    WHERE am.user_id = auth.uid()
-      AND lower(am.role) IN ('rd', 'vp', 'dm')
-  ));
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'cadence_templates' AND policyname = 'Allow insert by RD_VP_DM'
+  ) THEN
+    -- Policies are added after alignment_memberships is created (see 20251206124000_normalize_alignment.sql)
+  END IF;
+END
+$$;

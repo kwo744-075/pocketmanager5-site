@@ -52,6 +52,9 @@ export type MiniPosSessionPayload = {
 	shopNumber: number | null;
 	subtotal: number;
 	discountAmount: number;
+	taxRate?: number | null;
+	taxAmount?: number | null;
+	taxableSubtotal?: number | null;
 	totalDue: number;
 	paymentMethod: PaymentMethod;
 	tenderedAmount: number;
@@ -120,6 +123,11 @@ export type PersistedMiniPosSession = {
 	notes_json: {
 		techAssignments?: MiniPosTechAssignments;
 		serviceNotes?: string;
+		tax?: {
+			rate?: number | null;
+			amount?: number | null;
+			taxableSubtotal?: number | null;
+		};
 	} | null;
 	cart: MiniPosCartItemRecord[];
 	customer: MiniPosCustomerRecord | null;
@@ -135,6 +143,9 @@ export type MiniPosHydratedDraft = {
 	sessionStatus: "open" | "closed";
 	cartItems: MiniPosCartLine[];
 	discountAmount: number;
+	taxRate: number;
+	taxAmount: number;
+	taxableSubtotal: number;
 	paymentMethod: PaymentMethod;
 	tenderedAmount: number;
 	changeDue: number;

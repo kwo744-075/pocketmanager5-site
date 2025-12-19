@@ -11,9 +11,13 @@ type Props = {
   defaultKind?: string;
 };
 
+type Clue = { question?: string; answer?: string };
+type Category = { id?: string; title?: string; cluesA?: Clue[]; cluesB?: Clue[]; cluesFinal?: Clue[] };
+type JeopardyPayload = { categories?: Category[] };
+
 export default function JeopardyShow({ year: propYear, period: propPeriod, participants, defaultKind = "A" }: Props) {
   const [kind, setKind] = useState<string>(defaultKind);
-  const [setPayload, setSetPayload] = useState<any>(null);
+  const [setPayload, setSetPayload] = useState<JeopardyPayload | null>(null);
   const [used, setUsed] = useState<string[]>([]);
   const [sequence, setSequence] = useState<Array<string>>([]);
 
@@ -75,10 +79,10 @@ export default function JeopardyShow({ year: propYear, period: propPeriod, parti
     (async () => {
       const { data } = await supabase.from("jeopardy_sets").select("kind,payload").eq("year", year).eq("period", period).eq("kind", kind);
       if (!mounted) return;
-      if (data && data.length) setSetPayload(data[0].payload);
+      if (data && data.length) setSetPayload(data[0].payload as JeopardyPayload);
 
       const s = await supabase.from("jeopardy_show_state").select("used_clue_ids").eq("year", year).eq("period", period).eq("kind", kind).maybeSingle();
-      if (s && (s.data as any)) setUsed((s.data as any).used_clue_ids ?? []);
+      if (s && s.data) setUsed((s.data as { used_clue_ids?: string[] }).used_clue_ids ?? []);
     })();
     return () => { mounted = false; };
   }, [year, period, kind]);
@@ -118,6 +122,7 @@ export default function JeopardyShow({ year: propYear, period: propPeriod, parti
       if ((i + 1) % 2 === 0) seq.push(`Jeopardy Break ${Math.ceil((i + 1) / 2)}`);
     }
     seq.push("Final Jeopardy");
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setSequence(seq);
   }, [participants]);
 
@@ -188,6 +193,7 @@ export default function JeopardyShow({ year: propYear, period: propPeriod, parti
           <div className="text-xs text-slate-400">Year / Period</div>
           <div className="mt-1">
             <select
+              aria-label="Select year and period"
               value={year && period ? `${year}-${period}` : ""}
               onChange={(e) => {
                 const v = e.target.value;
@@ -291,11 +297,11 @@ export default function JeopardyShow({ year: propYear, period: propPeriod, parti
         <details>
           <summary className="cursor-pointer text-sm text-slate-300">Editor / Admin (advanced)</summary>
           <div className="mt-3 grid grid-cols-2 gap-3">
-            {(setPayload.categories ?? []).map((cat: any, ci: number) => (
-              <div key={ci} className="rounded border border-slate-800/50 p-3">
+            {(setPayload?.categories ?? []).map((cat: Category, ci: number) => (
+              <div key={cat?.id ?? `category-${ci}`} className="rounded border border-slate-800/50 p-3">
                 <div className="text-sm font-medium text-slate-200">{cat.title}</div>
                 <div className="mt-2 space-y-1">
-                  {(cat.cluesA ?? []).map((cl: any, idx: number) => {
+                  {(cat.cluesA ?? []).map((cl: Clue, idx: number) => {
                     const id = `cat${ci}-A-${idx}`;
                     const isUsed = used.includes(id);
                     return (

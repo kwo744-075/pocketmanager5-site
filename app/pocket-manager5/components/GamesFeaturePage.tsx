@@ -454,7 +454,7 @@ export function GamesFeaturePage({ feature, docUrl, relatedForms }: GamesFeature
             {gameStats.recentActivity.length > 0 ? (
               <div className="space-y-4">
                 {gameStats.recentActivity.map((activity, index) => (
-                  <div key={index} className="flex items-center justify-between border-b border-slate-800/40 pb-3 last:border-b-0 last:pb-0">
+                  <div key={`${activity.timestamp}-${activity.player}-${index}`} className="flex items-center justify-between border-b border-slate-800/40 pb-3 last:border-b-0 last:pb-0">
                     <div className="flex items-center gap-3">
                       <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-800">
                         <Trophy className="h-4 w-4 text-yellow-400" />
@@ -499,7 +499,7 @@ export function GamesFeaturePage({ feature, docUrl, relatedForms }: GamesFeature
             ))}
           </div>
 
-          <div className="mt-8 grid gap-6 sm:grid-cols-2">
+          <dl className="mt-8 grid gap-6 sm:grid-cols-2">
             <div>
               <dt className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Native route</dt>
               <dd className="mt-2 font-mono text-sm text-emerald-200">{feature.platformRoute}</dd>
@@ -545,7 +545,7 @@ export function GamesFeaturePage({ feature, docUrl, relatedForms }: GamesFeature
                 )}
               </dd>
             </div>
-          </div>
+          </dl>
         </section>
       </div>
     </main>

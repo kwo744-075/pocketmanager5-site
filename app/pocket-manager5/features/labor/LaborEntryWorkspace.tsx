@@ -629,6 +629,8 @@ function EntryGrid({ rows, updateRow, totals, comparisonMap, lockShopIdentity = 
                     data-grid-cell="labor"
                     data-grid-col="label"
                     data-grid-row={rowIndex}
+                    aria-label={`Label for row ${rowIndex + 1}`}
+                    placeholder="Label"
                     value={row.label}
                     onChange={(event) => updateRow(row.id, (curr) => ({ ...curr, label: event.target.value }))}
                     onKeyDown={handleKeyDown}
@@ -641,6 +643,8 @@ function EntryGrid({ rows, updateRow, totals, comparisonMap, lockShopIdentity = 
                     data-grid-cell="labor"
                     data-grid-col="store"
                     data-grid-row={rowIndex}
+                    aria-label={`Store for row ${rowIndex + 1}`}
+                    placeholder="Shop #"
                     value={row.store ?? ""}
                     onChange={(event) => updateRow(row.id, (curr) => ({ ...curr, store: event.target.value }))}
                     onKeyDown={handleKeyDown}
@@ -660,6 +664,7 @@ function EntryGrid({ rows, updateRow, totals, comparisonMap, lockShopIdentity = 
                         type="number"
                         min="0"
                         step="0.25"
+                        aria-label={`${day} hours for row ${rowIndex + 1}`}
                         value={row.hours[day] ?? ""}
                         onChange={(event) =>
                           updateRow(row.id, (curr) => ({
@@ -668,9 +673,9 @@ function EntryGrid({ rows, updateRow, totals, comparisonMap, lockShopIdentity = 
                           }))
                         }
                         onKeyDown={handleKeyDown}
-                        className={`w-full appearance-none rounded-lg border px-2 py-1 text-white transition ${tone}`}
-                        style={{ MozAppearance: "textfield" }}
+                        className={`w-full appearance-none rounded-lg border px-2 py-1 text-white transition ${tone} lab-moz-textfield`}
                       />
+                      <style>{`.lab-moz-textfield::-moz-focus-inner { border: 0; } .lab-moz-textfield { -moz-appearance: textfield; }`}</style>
                     </td>
                   );
                 })}

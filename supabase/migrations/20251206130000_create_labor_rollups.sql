@@ -1,6 +1,16 @@
 -- Migration: labor scope rollups + district compliance helpers
 -- Provides RPC helpers so Pocket Manager can power region/district/shop labor dashboards.
 
+-- Ensure shops has the columns expected by these rollup functions
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'shops') THEN
+    EXECUTE 'ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS shop_name text';
+    EXECUTE 'ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS district_name text';
+    EXECUTE 'ALTER TABLE public.shops ADD COLUMN IF NOT EXISTS region_name text';
+  END IF;
+END$$;
+
 CREATE OR REPLACE FUNCTION public.labor_scope_rollup(
   p_scope text DEFAULT 'district',
   p_region text DEFAULT NULL,

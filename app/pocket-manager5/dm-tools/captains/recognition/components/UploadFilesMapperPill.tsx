@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { RECOGNITION_METRICS } from "@/lib/recognition-captain/config";
+import styles from './UploadFilesMapperPill.module.css';
 
 type SourceKey = "employee" | "powerRanker" | "customRegion" | "nps" | "donations" | "none";
 
@@ -103,7 +104,7 @@ export default function UploadFilesMapperPill() {
     : ONE_PAGER_KPI_KEYS.map((k) => ({ key: k, label: k }));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+    <div className={styles.root}>
       <button
         onClick={() => setOpen(true)}
         className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 bg-slate-800/30"
@@ -112,35 +113,36 @@ export default function UploadFilesMapperPill() {
       </button>
 
       {open ? (
-        <div role="dialog" aria-modal style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-          <div style={{ width: "100%", maxWidth: 900, maxHeight: "96vh", overflow: "auto", padding: 16, background: '#0f172a', borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h3 style={{ color: '#fff', fontSize: 16, fontWeight: 700 }}>Upload Mapper</h3>
+        <div role="dialog" aria-modal className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.header}>
+              <h3 className={styles.title}>Upload Mapper</h3>
               <div>
                 <button onClick={() => setOpen(false)} className="rounded bg-rose-600/80 px-3 py-1 text-xs font-semibold text-white">Close</button>
               </div>
             </div>
 
-            <p style={{ color: '#94a3b8', marginBottom: 12 }}>Map each KPI to the uploaded file source that should provide the KPI values.</p>
+            <p className={styles.muted}>Map each KPI to the uploaded file source that should provide the KPI values.</p>
 
-            <div style={{ color: '#cbd5e1' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className={styles.content}>
+              <div className={styles.twoColGrid}>
                 {(() => {
                   const left: typeof metrics = [] as any;
                   const right: typeof metrics = [] as any;
                   metrics.forEach((m, i) => (i % 2 === 0 ? left : right).push(m));
                   return (
                     <>
-                      <div style={{ display: 'grid', gap: 8 }}>
+                      <div className={styles.columnStack}>
                         {left.map((m) => (
-                          <div key={m.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.01)' }}>
-                            <div style={{ flex: '0 0 42%', color: '#e6eef8', fontSize: 13 }}>{m.label}</div>
-                            <div style={{ flex: '1 1 auto' }}>
+                          <div key={m.key} className={styles.metricItem}>
+                            <div className={styles.metricLabel}>{m.label}</div>
+                            <div className={styles.metricSelectWrap}>
                               <select
+                                aria-label={`Select source for ${m.label}`}
+                                title={`Select source for ${m.label}`}
                                 value={mapper.perKpi[m.key] ?? 'none'}
                                 onChange={(e) => setMapper({ ...mapper, perKpi: { ...mapper.perKpi, [m.key]: e.target.value as SourceKey } })}
-                                className="rounded border bg-slate-900/40 p-2 text-sm"
-                                style={{ width: '100%' }}
+                                className={`rounded border bg-slate-900/40 p-2 text-sm ${styles.selectFull}`}
                               >
                                 <option value="none">(none)</option>
                                 <option value="employee">{SOURCE_LABELS.employee}</option>
@@ -153,16 +155,17 @@ export default function UploadFilesMapperPill() {
                           </div>
                         ))}
                       </div>
-                      <div style={{ display: 'grid', gap: 8 }}>
+                      <div className={styles.columnStack}>
                         {right.map((m) => (
-                          <div key={m.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.01)' }}>
-                            <div style={{ flex: '0 0 42%', color: '#e6eef8', fontSize: 13 }}>{m.label}</div>
-                            <div style={{ flex: '1 1 auto' }}>
+                          <div key={m.key} className={styles.metricItem}>
+                            <div className={styles.metricLabel}>{m.label}</div>
+                            <div className={styles.metricSelectWrap}>
                               <select
+                                aria-label={`Select source for ${m.label}`}
+                                title={`Select source for ${m.label}`}
                                 value={mapper.perKpi[m.key] ?? 'none'}
                                 onChange={(e) => setMapper({ ...mapper, perKpi: { ...mapper.perKpi, [m.key]: e.target.value as SourceKey } })}
-                                className="rounded border bg-slate-900/40 p-2 text-sm"
-                                style={{ width: '100%' }}
+                                className={`rounded border bg-slate-900/40 p-2 text-sm ${styles.selectFull}`}
                               >
                                 <option value="none">(none)</option>
                                 <option value="employee">{SOURCE_LABELS.employee}</option>
@@ -180,15 +183,15 @@ export default function UploadFilesMapperPill() {
                 })()}
               </div>
 
-              <div style={{ marginTop: 12 }}>
-                <h4 style={{ color: '#e6eef8', marginBottom: 8 }}>Column mapper (per source)</h4>
-                <p style={{ color: '#94a3b8', marginBottom: 8 }}>Upload a sample file per source or enter which columns map to employee name, shop #, and KPI value.</p>
+              <div className={styles.spacedTop}>
+                <h4 className={styles.columnHeader}>Column mapper (per source)</h4>
+                <p className={styles.columnDesc}>Upload a sample file per source or enter which columns map to employee name, shop #, and KPI value.</p>
                 <ColumnSourceMapper
                   mapper={mapper}
                   onChange={(next) => setMapper(next)}
                 />
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <div className={styles.buttonRow}>
                   <button onClick={reset} className="rounded border px-3 py-1 text-xs text-slate-200">Reset Defaults</button>
                   <button onClick={save} className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Save Upload Mapper</button>
                 </div>
@@ -238,42 +241,41 @@ function ColumnSourceMapper({ mapper, onChange }: { mapper: any; onChange: (next
   const sampleRows = cols.sampleRows ?? [];
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div className={styles.columnStack}>
+      <div className={styles.flexRowWrap}>
         {(['employee','powerRanker','customRegion','nps','donations'] as const).map((s) => (
           <button key={s} onClick={() => setActiveSource(s)} className={`rounded px-3 py-1 text-xs ${activeSource===s? 'bg-slate-700 text-white':'bg-slate-900/30 text-slate-300'}`}>
             {SOURCE_LABELS[s]}
           </button>
         ))}
       </div>
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="file" accept=".csv,.xlsx,.xls,.txt" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
-        <div style={{ color: '#94a3b8', fontSize: 12 }}>{headers.length ? `Detected ${headers.length} columns` : 'No sample loaded'}</div>
+      <div className={styles.rowCenter}>
+        <input aria-label={`Upload sample file for ${SOURCE_LABELS[activeSource]}`} type="file" accept=".csv,.xlsx,.xls,.txt" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
+        <div className={styles.infoText}>{headers.length ? `Detected ${headers.length} columns` : 'No sample loaded'}</div>
       </div>
 
       {headers.length ? (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className={styles.columnStack}>
           <label className="text-sm text-slate-300">Employee name column</label>
-          <select value={cols.nameCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, nameCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="Employee name column" value={cols.nameCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, nameCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
-            {headers.map((h: string) => <option key={h} value={h}>{h}</option>)}
+            {headers.map((h: string, idx: number) => <option key={`${h}-${idx}`} value={h}>{h}</option>)}
           </select>
 
           <label className="text-sm text-slate-300">Shop # column</label>
-          <select value={cols.shopCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, shopCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="Shop number column" value={cols.shopCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, shopCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
-            {headers.map((h: string) => <option key={h} value={h}>{h}</option>)}
+            {headers.map((h: string, idx: number) => <option key={`${h}-${idx}`} value={h}>{h}</option>)}
           </select>
 
           <label className="text-sm text-slate-300">KPI value column (if applicable)</label>
-          <select value={cols.metricCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, metricCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="KPI value column" value={cols.metricCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, metricCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
-            {headers.map((h: string) => <option key={h} value={h}>{h}</option>)}
+            {headers.map((h: string, idx: number) => <option key={`${h}-${idx}`} value={h}>{h}</option>)}
           </select>
 
           <label className="text-sm text-slate-300">Survey count column (NPS uploads)</label>
-          <select value={cols.surveyCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, surveyCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="Survey count column" value={cols.surveyCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, surveyCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
             {headers.map((h: string) => <option key={h} value={h}>{h}</option>)}
           </select>
@@ -281,25 +283,25 @@ function ColumnSourceMapper({ mapper, onChange }: { mapper: any; onChange: (next
       ) : null}
 
       {sampleRows && sampleRows.length ? (
-        <div style={{ marginTop: 8 }}>
+        <div className={styles.spacedTop}>
           <p className="text-xs text-slate-400">Sample rows (first {sampleRows.length})</p>
-          <div style={{ overflowX: 'auto', border: '1px solid rgba(255,255,255,0.03)', borderRadius: 6, marginTop: 6 }}>
-            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+          <div className={styles.tableWrapper}>
+            <table className={styles.sampleTable}>
               <thead>
                 <tr>
-                  {headers.map((h: string) => (
-                    <th key={h} style={{ padding: 6, textAlign: 'left', fontSize: 11, color: '#94a3b8' }}>{h}</th>
+                  {headers.map((h: string, idx: number) => (
+                    <th key={`${h}-${idx}`} className={styles.sampleTh}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {sampleRows.map((r: any, i: number) => (
-                  <tr key={i} style={{ borderTop: '1px solid rgba(255,255,255,0.02)' }}>
-                    {headers.map((h: string) => (
-                      <td key={h} style={{ padding: 6, color: '#e6eef8' }}>{String(r[h] ?? '')}</td>
-                    ))}
-                  </tr>
-                ))}
+                  {sampleRows.map((r: any, i: number) => (
+                    <tr key={`sr-${i}-${headers.map((h: string) => String(r[h] ?? '')).join('-').slice(0,40)}`} className={styles.sampleTr}>
+                      {headers.map((h: string, idx: number) => (
+                        <td key={`${h}-${idx}`} className={styles.sampleTd}>{String(r[h] ?? '')}</td>
+                      ))}
+                    </tr>
+                  ))}
               </tbody>
             </table>
           </div>

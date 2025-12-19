@@ -3,6 +3,7 @@
 import React, { useEffect, useState } from "react";
 import ColumnSourceMapper from "./ColumnSourceMapper";
 import { RECOGNITION_METRICS } from "@/lib/recognition-captain/config";
+import styles from './AwardFilesMapperPill.module.css';
 
 type SourceKey = "employee" | "powerRanker" | "customRegion" | "nps" | "donations" | "none";
 
@@ -125,7 +126,7 @@ export default function AwardFilesMapperPill() {
     : ONE_PAGER_KPI_KEYS.map((k) => ({ key: k, label: k }));
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+    <div className={styles.root}>
       <button
         onClick={() => setOpen(true)}
         className="inline-flex items-center gap-2 rounded-full border border-slate-700/70 px-3 py-1 text-xs font-semibold text-slate-200 bg-slate-800/30"
@@ -134,32 +135,19 @@ export default function AwardFilesMapperPill() {
       </button>
 
       {open ? (
-        <div
-          role="dialog"
-          aria-modal
-          style={{
-            position: "fixed",
-            inset: 0,
-            background: "rgba(0,0,0,0.6)",
-            zIndex: 60,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            padding: 20,
-          }}
-        >
-          <div style={{ width: "100%", maxWidth: 900, maxHeight: "96vh", overflow: "auto", padding: 16, background: '#0f172a', borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h3 style={{ color: '#fff', fontSize: 16, fontWeight: 700 }}>KPI File Mapper</h3>
+        <div role="dialog" aria-modal className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.header}>
+              <h3 className={styles.title}>KPI File Mapper</h3>
               <div>
                 <button onClick={() => setOpen(false)} className="rounded bg-rose-600/80 px-3 py-1 text-xs font-semibold text-white">Close</button>
               </div>
             </div>
 
-            <p style={{ color: '#94a3b8', marginBottom: 12 }}>Map each KPI to the source report type. These mappings are used to determine which uploaded file provides the KPI data.</p>
+            <p className={styles.muted}>Map each KPI to the source report type. These mappings are used to determine which uploaded file provides the KPI data.</p>
 
-            <div style={{ color: '#cbd5e1' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className={styles.content}>
+              <div className={styles.twoColGrid}>
                 {/** split metrics into two columns for a denser layout */}
                 {(() => {
                   const left: typeof metrics = [] as any;
@@ -167,16 +155,17 @@ export default function AwardFilesMapperPill() {
                   metrics.forEach((m, i) => (i % 2 === 0 ? left : right).push(m));
                   return (
                     <>
-                      <div style={{ display: 'grid', gap: 8 }}>
+                          <div className={styles.columnStack}>
                         {left.map((m) => (
-                          <div key={m.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.01)' }}>
-                            <div style={{ flex: '0 0 42%', color: '#e6eef8', fontSize: 13 }}>{m.label}</div>
-                            <div style={{ flex: '1 1 auto' }}>
+                          <div key={m.key} className={styles.metricItem}>
+                            <div className={styles.metricLabel}>{m.label}</div>
+                            <div className={styles.metricSelectWrap}>
                               <select
                                 value={mapper.perKpi[m.key] ?? 'none'}
                                 onChange={(e) => setMapper({ ...mapper, perKpi: { ...mapper.perKpi, [m.key]: e.target.value as SourceKey } })}
-                                className="rounded border bg-slate-900/40 p-2 text-sm"
-                                style={{ width: '100%' }}
+                                className={`rounded border bg-slate-900/40 p-2 text-sm ${styles.selectFull}`}
+                                aria-label={`Select source for ${m.label}`}
+                                title={`Select source for ${m.label}`}
                               >
                                 <option value="none">(none)</option>
                                 <option value="employee">{SOURCE_LABELS.employee}</option>
@@ -189,16 +178,17 @@ export default function AwardFilesMapperPill() {
                           </div>
                         ))}
                       </div>
-                      <div style={{ display: 'grid', gap: 8 }}>
+                      <div className={styles.columnStack}>
                         {right.map((m) => (
-                          <div key={m.key} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.01)' }}>
-                            <div style={{ flex: '0 0 42%', color: '#e6eef8', fontSize: 13 }}>{m.label}</div>
-                            <div style={{ flex: '1 1 auto' }}>
+                          <div key={m.key} className={styles.metricItem}>
+                            <div className={styles.metricLabel}>{m.label}</div>
+                            <div className={styles.metricSelectWrap}>
                               <select
                                 value={mapper.perKpi[m.key] ?? 'none'}
                                 onChange={(e) => setMapper({ ...mapper, perKpi: { ...mapper.perKpi, [m.key]: e.target.value as SourceKey } })}
-                                className="rounded border bg-slate-900/40 p-2 text-sm"
-                                style={{ width: '100%' }}
+                                className={`rounded border bg-slate-900/40 p-2 text-sm ${styles.selectFull}`}
+                                aria-label={`Select source for ${m.label}`}
+                                title={`Select source for ${m.label}`}
                               >
                                 <option value="none">(none)</option>
                                 <option value="employee">{SOURCE_LABELS.employee}</option>
@@ -215,15 +205,15 @@ export default function AwardFilesMapperPill() {
                   );
                 })()}
               </div>
-              <div style={{ marginTop: 12 }}>
-                <h4 style={{ color: '#e6eef8', marginBottom: 8 }}>Column mapper (per source)</h4>
-                <p style={{ color: '#94a3b8', marginBottom: 8 }}>Upload a sample file per source or enter which columns map to employee name, shop #, and KPI value.</p>
+              <div className={styles.spacedTop}>
+                <h4 className={styles.columnHeader}>Column mapper (per source)</h4>
+                <p className={styles.columnDesc}>Upload a sample file per source or enter which columns map to employee name, shop #, and KPI value.</p>
                 <ColumnSourceMapper
                   mapper={mapper}
                   onChange={(next) => setMapper(next)}
                 />
 
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 12 }}>
+                <div className={styles.buttonRow}>
                   <button onClick={reset} className="rounded border px-3 py-1 text-xs text-slate-200">Reset Defaults</button>
                   <button onClick={save} className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Save Mapper</button>
                 </div>

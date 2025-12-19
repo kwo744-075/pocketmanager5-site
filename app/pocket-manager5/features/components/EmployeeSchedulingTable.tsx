@@ -204,7 +204,67 @@ export default function EmployeeSchedulingTable() {
         {loading ? (
           <div className="text-sm text-slate-400">Loading…</div>
         ) : rows.length === 0 ? (
-          <div className="text-sm text-slate-400">No saved schedules for this week.</div>
+          <div className="space-y-4">
+            <div className="text-sm text-slate-400">No saved schedules for this week.</div>
+            <div className="rounded-2xl border border-slate-800/60 bg-slate-950/40 p-4">
+              <p className="text-sm text-slate-300">You can use the template below to create schedules for this week. Download the CSV, fill with your team data, and import through your admin tools.</p>
+              <div className="mt-3 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    // build a simple template CSV with header + one sample row
+                    const dayCols = Array.from({ length: 7 }).map((_, i) => addDaysISO(weekStart, i));
+                    const header = ["Employee","Position",...dayCols.map((d)=>d),"Total Hours","Overtime Hours"];
+                    const sample = ["John Doe","Technician",...dayCols.map(()=>""),"",""];
+                    const lines = [header.join(","), sample.map((c)=>`"${String(c).replace(/"/g,'""')}"`).join(",")];
+                    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `schedules_template_${shopNumber ?? "site"}_${weekStart}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    URL.revokeObjectURL(url);
+                  }}
+                  className="rounded-md border border-emerald-400/70 bg-emerald-500/10 px-3 py-1 text-sm font-semibold text-emerald-100"
+                >
+                  Download schedule template (CSV)
+                </button>
+                <div className="text-sm text-slate-400">or</div>
+                <a href="/pocket-manager5/features/employee-scheduling/table" className="rounded-md border border-slate-700/70 px-3 py-1 text-sm text-slate-200">Open table route</a>
+              </div>
+
+              <div className="mt-4 overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">
+                    <tr>
+                      <th className="px-3 py-2 text-left">Employee</th>
+                      <th className="px-3 py-2 text-left">Position</th>
+                      {Array.from({ length: 7 }).map((_, i) => (
+                        <th key={i} className="px-3 py-2 text-center">{addDaysISO(weekStart, i)}</th>
+                      ))}
+                      <th className="px-3 py-2 text-right">Total Hours</th>
+                      <th className="px-3 py-2 text-right">OT</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-800/60 text-slate-200">
+                    {Array.from({ length: 5 }).map((_, idx) => (
+                      <tr key={idx}>
+                        <td className="px-3 py-2 font-semibold text-white">—</td>
+                        <td className="px-3 py-2 text-slate-400">—</td>
+                        {Array.from({ length: 7 }).map((__, d) => (
+                          <td key={d} className="px-3 py-2 text-center text-slate-400">—</td>
+                        ))}
+                        <td className="px-3 py-2 text-right">0.0h</td>
+                        <td className="px-3 py-2 text-right text-amber-300">0.0h</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         ) : (
           <table className="min-w-full text-sm">
             <thead className="text-xs uppercase tracking-[0.2em] text-slate-400">

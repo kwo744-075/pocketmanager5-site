@@ -378,7 +378,7 @@ async function DmScheduleFeaturePage({ feature, shopNumber, plannerPrefill }: Dm
 
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-6xl px-4 py-12">
+      <div className="mx-auto w-full max-w-7xl px-4 py-12 xl:max-w-[110rem]">
         <Link
           href="/pocket-manager5"
           className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
@@ -770,7 +770,8 @@ function PeopleFeatureInlinePreview({ slug, preview, shopNumber }: { slug: Featu
       <div>
         <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Completion</p>
         <div className="mt-3 h-2 rounded-full bg-slate-800">
-          <div className="h-full rounded-full bg-emerald-400" style={{ width: `${preview.training.completionPct}%` }} />
+          <style>{`.pm-feature-tr-${Math.round(preview.training.completionPct)}{width:${preview.training.completionPct}%}`}</style>
+          <div className={`h-full rounded-full bg-emerald-400 pm-feature-tr-${Math.round(preview.training.completionPct)}`} />
         </div>
         <p className="mt-2 text-sm text-slate-400">{preview.training.completionPct}% complete</p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">

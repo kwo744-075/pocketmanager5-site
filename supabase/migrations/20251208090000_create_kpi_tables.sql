@@ -54,11 +54,53 @@ group by day, shop;
 
 -- Enable simple RLS scaffolding. NOTE: adjust policies for stricter access in production.
 alter table public.kpi_uploads enable row level security;
-create policy kpi_uploads_insert_auth on public.kpi_uploads for insert to authenticated using (true) with check (true);
-create policy kpi_uploads_select_auth on public.kpi_uploads for select to authenticated using (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='kpi_uploads' AND policyname='kpi_uploads_insert_auth'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY kpi_uploads_insert_auth ON public.kpi_uploads FOR INSERT TO authenticated WITH CHECK (true);
+    $policy$;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='kpi_uploads' AND policyname='kpi_uploads_select_auth'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY kpi_uploads_select_auth ON public.kpi_uploads FOR SELECT TO authenticated USING (true);
+    $policy$;
+  END IF;
+END
+$$;
 
 alter table public.kpi_shop_metrics enable row level security;
-create policy kpi_shop_metrics_insert_auth on public.kpi_shop_metrics for insert to authenticated using (true) with check (true);
-create policy kpi_shop_metrics_select_auth on public.kpi_shop_metrics for select to authenticated using (true);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='kpi_shop_metrics' AND policyname='kpi_shop_metrics_insert_auth'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY kpi_shop_metrics_insert_auth ON public.kpi_shop_metrics FOR INSERT TO authenticated WITH CHECK (true);
+    $policy$;
+  END IF;
+END
+$$;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname='public' AND tablename='kpi_shop_metrics' AND policyname='kpi_shop_metrics_select_auth'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY kpi_shop_metrics_select_auth ON public.kpi_shop_metrics FOR SELECT TO authenticated USING (true);
+    $policy$;
+  END IF;
+END
+$$;
 
 -- End migration

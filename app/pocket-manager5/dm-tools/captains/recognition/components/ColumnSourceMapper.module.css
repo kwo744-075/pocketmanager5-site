@@ -1,0 +1,44 @@
+.columnStack {
+  display: grid;
+  gap: 10px;
+}
+
+.flexRowWrap {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.rowCenter {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.infoText {
+  color: #94a3b8;
+  font-size: 12px;
+}
+
+.metricItem {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.01);
+}
+
+.metricLabel {
+  flex: 0 0 42%;
+  color: #e6eef8;
+  font-size: 13px;
+}
+
+.metricSelectWrap {
+  flex: 1 1 auto;
+}
+
+.selectFull {
+  width: 100%;
+}

@@ -1,3 +1,5 @@
+"use client";
+
 import { CalendarClock, GraduationCap, LayoutList, Users } from "lucide-react";
 import { CaptainsTopBar } from "../components/CaptainsTopBar";
 import { CaptainLanding, type CaptainLandingCard } from "../components/CaptainLanding";

@@ -73,7 +73,10 @@ export default function UploadMapper({ visible, onClose, headers, sampleRows = [
             </thead>
             <tbody>
               {sampleRows.slice(0, 10).map((r, i) => (
-                <tr key={i} className="odd:bg-slate-950/30 even:bg-transparent">
+                <tr
+                  key={`sr-${i}-${headers.map((h) => String(r[h] ?? '')).join('-').slice(0, 40)}`}
+                  className="odd:bg-slate-950/30 even:bg-transparent"
+                >
                   {headers.map((h) => (
                     <td key={h} className="px-2 py-1 text-slate-200">{String(r[h] ?? "")}</td>
                   ))}

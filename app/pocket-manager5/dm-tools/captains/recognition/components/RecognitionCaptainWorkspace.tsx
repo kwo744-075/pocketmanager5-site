@@ -219,6 +219,51 @@ export function RecognitionCaptainWorkspace() {
     }
   }, []);
 
+  // Expose global handlers so lightweight UI (CaptainLanding) can call Add to Show / Edit Slide
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    // lazy import to avoid client/server mismatch
+    let mounted = true;
+    async function setup() {
+      try {
+        const mod = await import('@/lib/show/addToShow');
+        const addToShow = mod.addToShow ?? mod.default;
+        (window as any).__onAddToShow = async (title: string, awardKey?: string) => {
+          try {
+            await addToShow({ title, awardKey });
+            // small visual feedback could be added here
+            console.info('Added to show:', title, awardKey);
+          } catch (err) {
+            console.error('Add to show failed', err);
+          }
+        };
+        (window as any).__onEnterSlide = async (title: string, awardKey?: string) => {
+          // For now, open the ShowBuilderPanel and pre-populate a draft manual award entry
+          // Hook into local draft state: dispatch a manual award entry with minimal fields
+          try {
+            const id = `manual-${Date.now()}`;
+            const entry = { id, title: title ?? 'Slide', awardId: awardKey ?? null } as any;
+            dispatch({ type: 'setManualAward', entry });
+            console.info('Prepared slide entry for edit', entry);
+          } catch (e) {
+            console.error('Enter slide failed', e);
+          }
+        };
+      } catch (e) {
+        // ignore setup errors
+        console.warn('Failed to set global show handlers', e);
+      }
+    }
+    if (mounted) setup();
+    return () => {
+      mounted = false;
+      try {
+        delete (window as any).__onAddToShow;
+        delete (window as any).__onEnterSlide;
+      } catch (_) {}
+    };
+  }, [dispatch]);
+
   const [uploadMapperState, setUploadMapperState] = useState<any>(null);
   useEffect(() => {
     try {
@@ -400,11 +445,18 @@ export function RecognitionCaptainWorkspace() {
     const ext = file.name.split('.').pop()?.toLowerCase();
     if (ext === 'csv' || ext === 'txt') {
       const text = await file.text();
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      const cleaned = text.replace(/^\uFEFF/, ''); // strip BOM if present
+      const lines = cleaned.split(/\r?\n/).filter((l) => l.trim().length > 0);
       if (!lines.length) return { headers: [], rows: [] };
-      const headers = lines[0].split(',').map((h) => h.trim());
+      // detect delimiter: prefer comma, but accept tab or semicolon
+      const headerLine = lines[0];
+      let delimiter = ',';
+      if (headerLine.indexOf('\t') >= 0 && headerLine.split('\t').length > headerLine.split(',').length) delimiter = '\t';
+      else if (headerLine.indexOf(';') >= 0 && headerLine.split(';').length > headerLine.split(',').length) delimiter = ';';
+      const headers = headerLine.split(delimiter).map((h) => h.trim().replace(/^\"|\"$/g, ''));
+      const csvSplitRegex = delimiter === ',' ? /,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/ : new RegExp(`${delimiter}(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)`);
       const rows = lines.slice(1).map((ln) => {
-        const cols = ln.split(/,(?=(?:[^\"]*\"[^\"]*\")*[^\"]*$)/).map((c) => c.replace(/^\"|\"$/g, '').trim());
+        const cols = ln.split(csvSplitRegex).map((c) => c.replace(/^\"|\"$/g, '').trim());
         const obj: Record<string, any> = {};
         headers.forEach((h, i) => (obj[h] = cols[i] ?? ''));
         return obj;
@@ -416,17 +468,24 @@ export function RecognitionCaptainWorkspace() {
         const XLSX = await import('xlsx');
         const buffer = await file.arrayBuffer();
         const workbook = XLSX.read(buffer, { type: 'array' });
-        const result: any[] = [];
-        for (const sheetName of workbook.SheetNames) {
-          const sheet = workbook.Sheets[sheetName];
-          const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
-          // attach sheet name to rows so we can preserve which sheet
-          if (json && json.length) {
-            for (const r of json) result.push({ __sheet: sheetName, ...r });
+          // Prefer the first non-empty sheet to avoid accidentally merging unrelated tabs.
+          let chosenSheetName: string | null = null;
+          for (const sheetName of workbook.SheetNames) {
+            const sheet = workbook.Sheets[sheetName];
+            const json = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
+            if (json && json.length) {
+              chosenSheetName = sheetName;
+              break;
+            }
           }
-        }
-        const headers = result.length ? Object.keys(result[0]).filter((k) => k !== '__sheet') : [];
-        return { headers, rows: result };
+          if (!chosenSheetName) {
+            // no populated sheets
+            return { headers: [], rows: [] };
+          }
+          const sheet = workbook.Sheets[chosenSheetName];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: '' }) as any[];
+          const headers = rows.length ? Object.keys(rows[0]) : [];
+          return { headers, rows };
       } catch (err) {
         console.warn('XLSX parse failed', err);
         return { headers: [], rows: [] };
@@ -2108,7 +2167,7 @@ export function RecognitionCaptainWorkspace() {
                   </thead>
                   <tbody>
                     {step1QualifiedEmployees.map((employee, index) => (
-                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                      <tr key={`${employee.shopNumber ?? 'shop'}-${employee.name ?? 'emp'}-${index}`} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                         <td className="px-2 py-1 text-slate-200">{employee.name}</td>
                         <td className="px-2 py-1 text-slate-200">{employee.shopNumber}</td>
                         <td className="px-2 py-1 text-slate-200">{employee.nps}%</td>
@@ -2160,7 +2219,7 @@ export function RecognitionCaptainWorkspace() {
                   </thead>
                   <tbody>
                     {step1QualifiedShops.map((shop, index) => (
-                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                      <tr key={`${shop.shopNumber ?? 'shop'}-${index}`} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                         <td className="px-2 py-1 text-slate-200">{shop.shopNumber}</td>
                         <td className="px-2 py-1 text-slate-200">{shop.managerName}</td>
                         <td className="px-2 py-1 text-slate-200">{shop.nps}%</td>
@@ -2212,7 +2271,7 @@ export function RecognitionCaptainWorkspace() {
                   </thead>
                   <tbody>
                     {step1NonQualifiedEmployees.map((employee, index) => (
-                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                      <tr key={`${employee.shopNumber ?? 'shop'}-${employee.name ?? 'emp'}-${index}`} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                         <td className="px-2 py-1 text-slate-200">{employee.name}</td>
                         <td className="px-2 py-1 text-slate-200">{employee.shopNumber}</td>
                         <td className="px-2 py-1 text-slate-200">{employee.nps}%</td>
@@ -2264,7 +2323,7 @@ export function RecognitionCaptainWorkspace() {
                   </thead>
                   <tbody>
                     {step1NonQualifiedShops.map((shop, index) => (
-                      <tr key={index} className="border-t border-slate-800/30 hover:bg-slate-900/20">
+                      <tr key={`${shop.shopNumber ?? 'shop'}-${index}`} className="border-t border-slate-800/30 hover:bg-slate-900/20">
                         <td className="px-2 py-1 text-slate-200">{shop.shopNumber}</td>
                         <td className="px-2 py-1 text-slate-200">{shop.managerName}</td>
                         <td className="px-2 py-1 text-slate-200">{shop.nps}%</td>
@@ -2391,7 +2450,7 @@ export function RecognitionCaptainWorkspace() {
               <div>
                 <p className="text-xs uppercase tracking-[0.3em] text-slate-400">Theme</p>
                 <div className="mt-2">
-                  <select value={showTheme} onChange={(e) => setShowTheme(e.target.value as any)} className="rounded-md bg-slate-900/50 px-3 py-2 text-sm text-white">
+                  <select aria-label="Show theme" value={showTheme} onChange={(e) => setShowTheme(e.target.value as any)} className="rounded-md bg-slate-900/50 px-3 py-2 text-sm text-white">
                     {/* Theme ids defined in ShowBuilderPanel / themes list */}
                     <option value={showTheme}>{showTheme}</option>
                     <option value="theme1">Theme 1</option>
@@ -2840,7 +2899,7 @@ function QualifierUploadsPanel({
           {mappingWarnings.length ? (
             <div className="mt-3 space-y-1">
               {mappingWarnings.map((m, i) => (
-                <div key={i} className="text-xs text-rose-300">⚠ {m}</div>
+                <div key={`${m ?? 'warn'}-${i}`} className="text-xs text-rose-300">⚠ {m}</div>
               ))}
             </div>
           ) : null}
@@ -2852,6 +2911,7 @@ function QualifierUploadsPanel({
               <div key={field.key} className="flex-1 rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3 text-center">
                 <div className="text-xs uppercase tracking-[0.3em] text-slate-400">{field.label}</div>
                 <input
+                  aria-label={`Threshold for ${field.label}`}
                   type="number"
                   min={0}
                   value={thresholds[field.key]}
@@ -3260,8 +3320,20 @@ function StepSection({
   active: boolean;
   children: ReactNode;
 }) {
+  if (!active) {
+    return (
+      <section id={id} aria-hidden="true" className="hidden">
+        <div className="flex flex-col gap-1">
+          <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">{title}</p>
+          <p className="text-sm text-slate-300">{description}</p>
+        </div>
+        {children}
+      </section>
+    );
+  }
+
   return (
-    <section id={id} aria-hidden={!active} className={active ? "space-y-4" : "hidden"}>
+    <section id={id} aria-hidden="false" className="space-y-4">
       <div className="flex flex-col gap-1">
         <p className="text-[11px] uppercase tracking-[0.4em] text-slate-500">{title}</p>
         <p className="text-sm text-slate-300">{description}</p>
@@ -3303,10 +3375,11 @@ function StepNavigator({
         </div>
         <div className="flex items-center gap-3">
           <div className="hidden sm:block">
-            <div className="mt-0 w-56">
-              <div className="h-2 w-full rounded-full bg-slate-900/50">
-                <div className={`h-2 rounded-full bg-emerald-500`} style={{ width: `${pct}%` }} />
-              </div>
+                <div className="mt-0 w-56">
+                <style>{`.pc-pct-${pct} { width: ${pct}% }`}</style>
+                <div className="h-2 w-full rounded-full bg-slate-900/50">
+                  <div className={`h-2 rounded-full bg-emerald-500 pc-pct-${pct}`} />
+                </div>
               <p className="mt-1 text-xs text-slate-400">{completeCount}/{total} stages complete · {pct}%</p>
             </div>
           </div>

@@ -74,10 +74,17 @@ function CoverageCard({
       </div>
       <div className="mt-3 text-xs text-slate-400">Allowed: {formatNumber(allowedHours ?? 0)} hrs</div>
       <div className="mt-2 h-2 rounded-full bg-slate-800">
-        <div
-          className="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-400"
-          style={{ width: barWidth(hours, allowedHours) }}
-        />
+        {(() => {
+          const w = barWidth(hours, allowedHours);
+          const pct = parseInt(String(w), 10) || 0;
+          const cls = `esw_bar_${pct}`;
+          return (
+            <>
+              <style>{`.${cls}{width:${w}}`}</style>
+              <div className={`h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-sky-400 ${cls}`} />
+            </>
+          );
+        })()}
       </div>
     </div>
   );

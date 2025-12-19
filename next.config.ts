@@ -26,6 +26,7 @@ const nextConfig: NextConfig = {
     externalDir: true,
   },
   turbopack: {
+    root: __dirname,
     resolveAlias: {
       "@shared": path.resolve(__dirname, "../shared"),
     },

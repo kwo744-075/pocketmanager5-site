@@ -43,13 +43,13 @@ export function CaptainsTopBar({
           </div>
           {description ? <p className="max-w-3xl text-sm text-slate-300">{description}</p> : null}
         </div>
-        <div className="flex flex-col items-end gap-2">
-          <RetailPills />
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <AwardFilesMapperPill />
-            <UploadFilesMapperPill />
+          <div className="flex flex-col items-end gap-2">
+            <RetailPills />
+            <div className="flex gap-2 items-center">
+              <AwardFilesMapperPill />
+              <UploadFilesMapperPill />
+            </div>
           </div>
-        </div>
       </div>
     </header>
   );

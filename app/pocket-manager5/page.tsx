@@ -147,7 +147,7 @@ function SectionCard({
   const accentTheme = SECTION_ACCENTS[accent] ?? SECTION_ACCENTS.default;
 
   return (
-    <section className={`${compact ? "text-[80%]" : ""} rounded-3xl border ${accentTheme.border} bg-slate-950/80 p-6 shadow-xl shadow-black/20`}>
+    <section className={`rounded-3xl border ${accentTheme.border} bg-slate-950/80 p-6 shadow-xl shadow-black/20`}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           {eyebrow && (
@@ -414,9 +414,8 @@ function DmToolsRail() {
   );
 }
 
-// Shared tile classes & scale for consistent size + color across sections
-const TILE_SCALE_CLASS = "scale-75";
-const TILE_BASE_CLASS = `group relative transform ${TILE_SCALE_CLASS} flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 text-left transition hover:-translate-y-0.5`;
+// Shared tile classes for consistent size + color across sections
+const TILE_BASE_CLASS = `group relative flex items-center gap-3 overflow-hidden rounded-2xl border border-white/5 bg-slate-950/40 text-left transition hover:-translate-y-0.5`;
 
 function DmToolBanner({ title, subtitle, href, icon: Icon, accent }: DmToolCard) {
   return (
@@ -571,19 +570,46 @@ const OPS_TILE_CONFIG: WorkspaceTileMeta[] = [
     variant: "compact",
   },
   {
-    title: "Contact List",
-    subtitle: "Vendors & partners",
-    href: "/pocket-manager5/features/contact-list",
-    icon: Phone,
-    accent: "from-rose-500/20 via-slate-950/10 to-slate-950/80",
-    variant: "compact",
-  },
-  {
     title: "Repairs & Maintenance",
     subtitle: "Work orders & repairs",
     href: "/pocket-manager5/features/repairs",
     icon: FileWarning,
     accent: "from-rose-500/40 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+];
+
+const TRAINING_TILE_CONFIG: WorkspaceTileMeta[] = [
+  {
+    title: "Training Portal",
+    subtitle: "CTT + guides",
+    href: "/pocket-manager5/features/employee-training",
+    icon: GraduationCap,
+    accent: "from-emerald-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+  {
+    title: "Development Portal",
+    subtitle: "Career tracks",
+    href: "/pocket-manager5/features/employee-training",
+    icon: BarChart3,
+    accent: "from-cyan-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+  {
+    title: "Games",
+    subtitle: "Interactive challenges",
+    href: "/pocket-manager5/features/games",
+    icon: Gamepad2,
+    accent: "from-violet-500/25 via-slate-950/10 to-slate-950/80",
+    variant: "compact",
+  },
+  {
+    title: "Training Aids",
+    subtitle: "Job aids & downloads",
+    href: "/pocket-manager5/features/employee-training",
+    icon: ClipboardCheck,
+    accent: "from-amber-500/25 via-slate-950/10 to-slate-950/80",
     variant: "compact",
   },
 ];
@@ -802,10 +828,11 @@ function TrainingMatrixPanel({ roster, summary }: { roster: StaffPreview[]; summ
       </div>
       <div className="mt-4 overflow-x-auto">
         <div className="min-w-[960px]">
-          <div
-            className="grid text-[11px] font-semibold uppercase tracking-widest text-slate-400"
-            style={{ gridTemplateColumns: `220px repeat(${TRAINING_COLUMN_LABELS.length}, minmax(110px, 1fr))` }}
-          >
+          <div>
+            <style>{`.pm-grid-${TRAINING_COLUMN_LABELS.length}{grid-template-columns:220px repeat(${TRAINING_COLUMN_LABELS.length}, minmax(110px,1fr))}`}</style>
+            <div
+              className={`grid text-[11px] font-semibold uppercase tracking-widest text-slate-400 pm-grid-${TRAINING_COLUMN_LABELS.length}`}
+            >
             <div className="px-3 py-2">Employee</div>
             {TRAINING_COLUMN_LABELS.map((label) => (
               <div key={label} className="px-3 py-2 text-center">
@@ -816,8 +843,7 @@ function TrainingMatrixPanel({ roster, summary }: { roster: StaffPreview[]; summ
           {rows.map((row) => (
             <div
               key={row.id}
-              className="grid border-t border-white/5 text-sm"
-              style={{ gridTemplateColumns: `220px repeat(${TRAINING_COLUMN_LABELS.length}, minmax(110px, 1fr))` }}
+              className={`grid border-t border-white/5 text-sm pm-grid-${TRAINING_COLUMN_LABELS.length}`}
             >
               <div className="flex items-center justify-between gap-3 px-3 py-3">
                 <div>
@@ -841,6 +867,7 @@ function TrainingMatrixPanel({ roster, summary }: { roster: StaffPreview[]; summ
             </div>
           ))}
         </div>
+      </div>
       </div>
       {!hasRoster && (
         <p className="mt-3 text-xs text-slate-400">Add employees in Staff Management to replace the placeholder grid.</p>
@@ -1032,16 +1059,17 @@ function CoachingLogHighlights({ coaching }: { coaching: CoachingPreview }) {
         </div>
       </div>
       <div className="mt-4 flex h-28 items-end gap-1">
-        {last14.map((entry) => (
-          <div key={entry.date} className="flex-1">
-            <div
-              className="w-full rounded-t-sm pm5-teal-soft"
-              style={{ height: `${(entry.count / maxCount) * 100}%` }}
-              aria-hidden="true"
-            />
-            <p className="mt-1 text-center text-[10px] text-slate-500">{formatDayLabel(entry.date)}</p>
-          </div>
-        ))}
+        {last14.map((entry) => {
+          const pct = Math.round((entry.count / maxCount) * 100);
+          const idClass = `coaching_${entry.date.replace(/[^0-9a-zA-Z]/g, '_')}_${pct}`;
+          return (
+            <div key={entry.date} className="flex-1">
+              <style>{`.${idClass}{height:${(entry.count / maxCount) * 100}%}`}</style>
+              <div className={`w-full rounded-t-sm pm5-teal-soft ${idClass}`} aria-hidden="true" />
+              <p className="mt-1 text-center text-[10px] text-slate-500">{formatDayLabel(entry.date)}</p>
+            </div>
+          );
+        })}
       </div>
       <div className="mt-4 space-y-3">
         {recent.length ? (
@@ -1150,9 +1178,9 @@ function ProfileSnapshotPanel({ snapshot }: { snapshot: PocketManagerSnapshot })
           <p className="mt-1 text-3xl font-bold text-pm5-teal">{trainingPercentDisplay}</p>
           <p className="text-xs text-slate-400">{inTrainingText}</p>
           <div className="mt-3 h-1.5 rounded-full bg-slate-900">
+            <style>{`.pm-training-${Math.round(trainingPercentValue)}{width:${Math.max(0, Math.min(100, trainingPercentValue))}%}`}</style>
             <div
-              className="h-full rounded-full pm5-teal-soft transition-all"
-              style={{ width: `${Math.max(0, Math.min(100, trainingPercentValue))}%` }}
+              className={`h-full rounded-full pm5-teal-soft transition-all pm-training-${Math.round(trainingPercentValue)}`}
             />
           </div>
           <p className="mt-3 text-xs text-slate-400">
@@ -1315,8 +1343,6 @@ function PeopleWorkspaceSection({ shopNumber }: { shopNumber: number | string | 
 }
 
 function OpsHubSection({ shopId }: { shopId: string | null | undefined }) {
-  const appendShopHref = useShopHrefAppender();
-  const contactListHref = appendShopHref("/pocket-manager5/features/phone-sheet") ?? "/pocket-manager5/features/phone-sheet";
   return (
     <SectionCard
       title="OPS Hub"
@@ -1324,27 +1350,13 @@ function OpsHubSection({ shopId }: { shopId: string | null | undefined }) {
       accent="emerald"
       actionHref="/pocket-manager5/features/ops"
       quickLinks={[]}
-      compact
     >
       <div className="space-y-4">
-        {/* Repairs moved into the compact OPS tiles grid to sit below SoLinks and to the right of Claims */}
-
-        {/* OPS tiles arranged as two rows: 4 items on top, 5 items on bottom */}
-        <div className="grid gap-3">
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-            {OPS_TILE_CONFIG.slice(0, 4).map((tile) => (
-              <WorkspaceTile key={tile.title} {...tile} />
-            ))}
-          </div>
-
-          <div className="grid gap-3 grid-cols-2 sm:grid-cols-5">
-            {OPS_TILE_CONFIG.slice(4, 9).map((tile) => (
-              <WorkspaceTile key={tile.title} {...tile} />
-            ))}
-          </div>
+        <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 xl:grid-cols-4">
+          {OPS_TILE_CONFIG.map((tile) => (
+            <WorkspaceTile key={tile.title} {...tile} />
+          ))}
         </div>
-
-        {/* Contact list now rendered as a compact tile in the OPS grid (below Claims) */}
 
         <MiniPosSection shopId={shopId} variant="inline" />
       </div>
@@ -1528,6 +1540,18 @@ function PeopleBannersLarge({ shopNumber }: { shopNumber: number | string | null
   );
 }
 
+function TrainingDevelopmentSection() {
+  return (
+    <SectionCard title="Training & Development" eyebrow="Learning hub" accent="azure" actionHref="/pocket-manager5/features/employee-training" actionLabel="Open training">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {TRAINING_TILE_CONFIG.map((tile) => (
+          <WorkspaceTile key={tile.title} {...tile} />
+        ))}
+      </div>
+    </SectionCard>
+  );
+}
+
 // Simple mirrored admin management section (copy of Manager's Clipboard but scoped for admin tasks)
 function AdminManagementSection() {
   return (
@@ -1680,9 +1704,10 @@ export default function PocketManagerPage() {
     <main className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto w-full max-w-none flex flex-col gap-6 px-4 py-10">
         <HeroSection heroName={heroName} loginEmail={loginEmail} appendShopHref={appendShopHref} />
-        <div className="grid gap-6 justify-center" style={{ gridTemplateColumns: 'repeat(3, 30%)' }}>
+        <div className="grid gap-6 lg:grid-cols-3">
           <div className="space-y-6">
             <ManagersClipboardSection />
+            <OpsHubSection shopId={shopMeta?.id} />
           </div>
 
           <div className="space-y-6">
@@ -1691,8 +1716,8 @@ export default function PocketManagerPage() {
           </div>
 
           <div className="space-y-6">
-            <OpsHubSection shopId={shopMeta?.id} />
             <PeopleBannersLarge shopNumber={shopMeta?.shop_number} />
+            <TrainingDevelopmentSection />
           </div>
         </div>
         {canSeeDmWorkspace && (
@@ -1709,4 +1734,3 @@ export default function PocketManagerPage() {
     </main>
   );
 }
-

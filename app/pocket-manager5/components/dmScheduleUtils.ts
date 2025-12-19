@@ -9,10 +9,14 @@ export const DM_VISIT_BADGES: Record<string, string> = {
   "Quarterly Audit": "border-amber-400/40 bg-amber-500/10 text-amber-100",
   "Training Visit": "border-pink-400/40 bg-pink-500/10 text-pink-100",
   "1 on 1": "border-fuchsia-400/40 bg-fuchsia-500/10 text-fuchsia-100",
+  "Night Visit": "border-indigo-400/40 bg-indigo-500/10 text-indigo-100",
   Admin: "border-slate-500/50 bg-slate-500/10 text-slate-100",
   "Project Day": "border-sky-400/40 bg-sky-500/10 text-sky-100",
   "Full throttle Friday": "border-rose-400/40 bg-rose-500/10 text-rose-100",
   "Discussion Visit": "border-indigo-400/40 bg-indigo-500/10 text-indigo-100",
+  "In Person": "border-emerald-400/40 bg-emerald-500/10 text-emerald-100",
+  "Teams meet": "border-cyan-400/40 bg-cyan-500/10 text-cyan-100",
+  "RDO Visit": "border-orange-400/40 bg-orange-500/10 text-orange-100",
   Off: "border-slate-700/60 bg-slate-800/50 text-slate-300",
 };
 

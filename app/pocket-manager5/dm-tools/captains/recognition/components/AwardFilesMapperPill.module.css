@@ -1,0 +1,104 @@
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal {
+  width: 100%;
+  max-width: 900px;
+  max-height: 96vh;
+  overflow: auto;
+  padding: 16px;
+  background: #0f172a;
+  border-radius: 8px;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.muted {
+  color: #94a3b8;
+  margin-bottom: 12px;
+}
+
+.content {
+  color: #cbd5e1;
+}
+
+.twoColGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.columnStack {
+  display: grid;
+  gap: 8px;
+}
+
+.spacedTop {
+  margin-top: 12px;
+}
+
+.metricItem {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  background: rgba(255,255,255,0.01);
+}
+
+.metricLabel {
+  flex: 0 0 42%;
+  color: #e6eef8;
+  font-size: 13px;
+}
+
+.metricSelectWrap {
+  flex: 1 1 auto;
+}
+
+.selectFull {
+  width: 100%;
+}
+
+.columnHeader {
+  color: #e6eef8;
+  margin-bottom: 8px;
+}
+
+.columnDesc {
+  color: #94a3b8;
+  margin-bottom: 8px;
+}
+
+.buttonRow {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

@@ -37,7 +37,7 @@ export default function AwardsShowPage({ searchParams }: { searchParams?: any })
           <h1 className="text-2xl">Awards Show — {mode === "host" ? "Host" : "Audience"}</h1>
           <div className="flex items-center gap-4">
             <div className="text-sm text-slate-300">Theme</div>
-            <select value={runtime?.theme_id ?? "theme1"} onChange={(e) => void setTheme(e.target.value ?? "theme1")} className="bg-slate-900 text-white rounded-md px-2 py-1">
+            <select aria-label="Awards show theme" value={runtime?.theme_id ?? "theme1"} onChange={(e) => void setTheme(e.target.value ?? "theme1")} className="bg-slate-900 text-white rounded-md px-2 py-1">
               {THEME_IDS.map((t) => <option key={t} value={t}>{THEMES[t].name}</option>)}
             </select>
           </div>

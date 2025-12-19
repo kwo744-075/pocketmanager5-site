@@ -22,6 +22,8 @@ type OnePagerRow = {
   source?: SourceKey;
 };
 
+import styles from "./OnePagerGrid.module.css";
+
 export default function OnePagerGrid({
   qualifierPreview,
   getTopEmployeeLeaders,
@@ -198,13 +200,13 @@ export default function OnePagerGrid({
   };
 
   return (
-    <section style={{ borderRadius: 6, border: "1px solid rgba(148,163,184,0.06)", background: "transparent", padding: 0 }}>
-      <div style={{ padding: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+    <section className={styles.root}>
+      <div className={styles.header}>
         <div>
-          <div style={{ fontSize: 11, letterSpacing: 1, color: "#94a3b8", textTransform: "uppercase" }}>Rankings one-pager</div>
-          <div style={{ fontSize: 16, fontWeight: 700, color: "#fff" }}>Top KPI winners</div>
+          <div className={styles.metaLabel}>Rankings one-pager</div>
+          <div className={styles.title}>Top KPI winners</div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: 'center' }}>
+        <div className={styles.actions}>
           <button
             type="button"
             onClick={() => { setShowAddModal(true); }}
@@ -218,16 +220,16 @@ export default function OnePagerGrid({
       {/* inline add form removed; Add Award opens modal only */}
 
       {showAddModal ? (
-        <div role="dialog" aria-modal style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-          <div style={{ width: '100%', maxWidth: 520, background: '#0b1220', padding: 16, borderRadius: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h3 style={{ color: '#fff', fontSize: 16, fontWeight: 700 }}>Add Award</h3>
+        <div role="dialog" aria-modal className={styles.overlay}>
+          <div className={styles.modal}>
+            <div className={styles.modalHeader}>
+              <h3 className={styles.modalTitle}>Add Award</h3>
               <div>
                 <button onClick={() => setShowAddModal(false)} className="rounded bg-rose-600/80 px-3 py-1 text-xs font-semibold text-white">Close</button>
               </div>
             </div>
 
-            <div className="grid gap-3">
+            <div className={styles.modalGrid}>
               <label className="text-sm text-slate-300">Given for (KPI)</label>
               <input value={newRow.givenFor} onChange={(e) => setNewRow({ ...newRow, givenFor: e.target.value })} placeholder="e.g. Sales vs Budget" className="rounded border bg-slate-900/40 p-2 text-sm" />
 
@@ -237,7 +239,7 @@ export default function OnePagerGrid({
               <label className="text-sm text-slate-300">Shop #</label>
               <input value={newRow.shopNumber ?? ""} onChange={(e) => setNewRow({ ...newRow, shopNumber: e.target.value ? Number(e.target.value) : undefined })} placeholder="Shop #" className="rounded border bg-slate-900/40 p-2 text-sm" />
 
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <div className={styles.modalActions}>
                 <button onClick={() => setShowAddModal(false)} className="rounded border px-3 py-1 text-xs text-slate-200">Cancel</button>
                 <button onClick={() => handleAddManualFromModal()} className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white">Add Award</button>
               </div>
@@ -246,49 +248,42 @@ export default function OnePagerGrid({
         </div>
       ) : null}
 
-      <div style={{ overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+      <div className={styles.tableWrap}>
+        <table className={styles.table}>
           <colgroup>
-            <col style={{ width: "29%" }} />
-            <col style={{ width: "11%" }} />
-            <col style={{ width: "9%" }} />
-            <col style={{ width: "23%" }} />
-            <col style={{ width: "19%" }} />
-            <col style={{ width: "9%" }} />
+            <col className={styles.col1} />
+            <col className={styles.col2} />
+            <col className={styles.col3} />
+            <col className={styles.col4} />
+            <col className={styles.col5} />
+            <col className={styles.col6} />
           </colgroup>
           <thead>
-            <tr style={{ background: "#111827", color: "#cbd5e1", textTransform: "uppercase", fontSize: 11 }}>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>KPI</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>District</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Shop #</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Employee Top Spot</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Shop Manager</th>
-              <th style={{ border: "1px solid #111", padding: 6, textAlign: "left" }}>Actions</th>
+            <tr className={styles.theadRow}>
+              <th className={styles.thCell}>KPI</th>
+              <th className={styles.thCell}>District</th>
+              <th className={styles.thCell}>Shop #</th>
+              <th className={styles.thCell}>Employee Top Spot</th>
+              <th className={styles.thCell}>Shop Manager</th>
+              <th className={styles.thCell}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r, idx) => (
-              <tr
-                key={r.id}
-                style={{
-                  borderTop: "1px solid rgba(255,255,255,0.04)",
-                  color: "#e6eef8",
-                  background: idx % 2 === 0 ? "transparent" : "rgba(255,255,255,0.02)",
-                }}
-              >
-                <td style={{ padding: 4, fontWeight: 600 }}>{r.metricLabel}</td>
-                <td style={{ padding: 4 }}>{r.employeeDistrict ?? ""}</td>
-                <td style={{ padding: 4, fontWeight: 600 }}>{r.shopNumber ?? ''}</td>
-                <td style={{ padding: 4 }}>
+              <tr key={r.id} className={`${styles.row} ${idx % 2 === 0 ? "" : styles.rowOdd}`}>
+                <td className={styles.cellBold}>{r.metricLabel}</td>
+                <td className={styles.cell}>{r.employeeDistrict ?? ""}</td>
+                <td className={styles.cellBold}>{r.shopNumber ?? ''}</td>
+                <td className={styles.cell}>
                   {NO_EMPLOYEE_EDIT_KEYS.has(r.metricKey) ? (
-                    <div style={{ padding: 6, color: '#94a3b8' }}>{r.employeeName ? r.employeeName : '-'}</div>
+                    <div className={styles.employeeDisplay}>{r.employeeName ? r.employeeName : '-'}</div>
                   ) : (
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div className={styles.inputWrap}>
                       <input
                         aria-label={`Employee name for ${r.metricLabel}`}
                         title={`Employee name for ${r.metricLabel}`}
                         placeholder="Employee name"
-                        style={{ width: '70%', padding: 6, fontSize: 12, borderRadius: 6, background: "transparent", border: "1px solid rgba(255,255,255,0.04)", color: r.confirmed ? '#16a34a' : undefined, textAlign: 'left' }}
+                        className={`${styles.input} ${r.confirmed ? styles.confirmed : ''}`}
                         value={r.employeeName}
                         onChange={(e) => {
                           const next = [...rows];
@@ -301,12 +296,12 @@ export default function OnePagerGrid({
                     </div>
                   )}
                 </td>
-                <td style={{ padding: 4 }}>
+                <td className={styles.cell}>
                   <input
                     aria-label={`Shop manager for ${r.metricLabel}`}
                     title={`Shop manager for ${r.metricLabel}`}
                     placeholder="Shop manager"
-                    style={{ width: '100%', padding: 6, fontSize: 12, borderRadius: 6, background: 'transparent', border: '1px solid rgba(255,255,255,0.04)' }}
+                    className={styles.inputFull}
                     value={r.shopManager ?? ''}
                     onChange={(e) => {
                       const next = [...rows];
@@ -317,9 +312,9 @@ export default function OnePagerGrid({
                     }}
                   />
                 </td>
-                
-                <td style={{ padding: 4 }}>
-                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end' }}>
+
+                <td className={styles.cell}>
+                  <div className={styles.actionsCell}>
                     <input type="checkbox" aria-label={`Confirm winner for ${r.metricLabel}`} title={`Confirm winner for ${r.metricLabel}`} checked={Boolean(r.confirmed)} onChange={() => handleConfirmToggle(idx)} />
                     <button
                       type="button"
@@ -330,7 +325,7 @@ export default function OnePagerGrid({
                     </button>
                     <button type="button" onClick={() => handleReassign(idx)} className="rounded-full px-2 py-1 text-xs bg-slate-700 text-slate-200">Reassign</button>
                     {r.manual ? (
-                      <button type="button" onClick={() => handleRemove(idx)} style={{ padding: "6px 8px", fontSize: 12, color: "#ff6b6b" }}>Remove</button>
+                      <button type="button" onClick={() => handleRemove(idx)} className={styles.removeBtn}>Remove</button>
                     ) : null}
                   </div>
                 </td>

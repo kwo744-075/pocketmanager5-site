@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import styles from './ColumnSourceMapper.module.css';
 
 type SourceKey = "employee" | "powerRanker" | "customRegion" | "nps" | "donations" | "none";
 
@@ -58,38 +59,37 @@ export default function ColumnSourceMapper({ mapper, onChange }: { mapper: Mappe
   const headers = cols.sampleHeaders ?? [];
 
   return (
-    <div style={{ display: 'grid', gap: 10 }}>
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div className={styles.columnStack}>
+      <div className={styles.flexRowWrap}>
         {(['employee','powerRanker','customRegion','nps','donations'] as SourceKey[]).map((s) => (
           <button key={s} onClick={() => setActiveSource(s)} className={`rounded px-3 py-1 text-xs ${activeSource===s? 'bg-slate-700 text-white':'bg-slate-900/30 text-slate-300'}`}>
             {SOURCE_LABELS[s]}
           </button>
         ))}
       </div>
-
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-        <input type="file" accept=".csv,.xlsx,.xls,.txt" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
-        <div style={{ color: '#94a3b8', fontSize: 12 }}>{headers.length ? `Detected ${headers.length} columns` : 'No sample loaded'}</div>
+      <div className={styles.rowCenter}>
+        <input aria-label={`Upload sample file for ${SOURCE_LABELS[activeSource]}`} type="file" accept=".csv,.xlsx,.xls,.txt" onChange={(e) => handleFile(e.target.files?.[0] ?? null)} />
+        <div className={styles.infoText}>{headers.length ? `Detected ${headers.length} columns` : 'No sample loaded'}</div>
       </div>
 
       {headers.length ? (
-        <div style={{ display: 'grid', gap: 8 }}>
+        <div className={styles.columnStack}>
           <label className="text-sm text-slate-300">Employee name column</label>
-          <select value={cols.nameCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, nameCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="Employee name column" value={cols.nameCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, nameCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
             {headers.map((h) => <option key={h} value={h}>{h}</option>)}
           </select>
 
           <label className="text-sm text-slate-300">Shop # column</label>
-          <select value={cols.shopCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, shopCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="Shop number column" value={cols.shopCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, shopCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
             {headers.map((h) => <option key={h} value={h}>{h}</option>)}
           </select>
 
           <label className="text-sm text-slate-300">KPI value column (if applicable)</label>
-          <select value={cols.metricCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, metricCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
+          <select aria-label="KPI value column" value={cols.metricCol ?? ''} onChange={(e) => { onChange({ ...mapper, columns: { ...mapper.columns, [activeSource]: { ...cols, metricCol: e.target.value } } }); }} className="rounded border bg-slate-900/40 p-2 text-sm">
             <option value="">(not set)</option>
-            {headers.map((h) => <option key={h} value={h}>{h}</option>)}
+            {headers.map((h, idx) => <option key={`${h}-${idx}`} value={h}>{h}</option>)}
           </select>
         </div>
       ) : null}

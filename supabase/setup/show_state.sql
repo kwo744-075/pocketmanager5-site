@@ -7,5 +7,17 @@ create table if not exists show_state (
 );
 
 alter table show_state enable row level security;
-create policy "select_show_state" on show_state for select using ( true );
-create policy "update_show_state" on show_state for update using ( auth.uid() is not null );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'show_state' AND policyname = 'select_show_state'
+  ) THEN
+    EXECUTE $$CREATE POLICY "select_show_state" ON show_state FOR SELECT USING ( true );$$;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'show_state' AND policyname = 'update_show_state'
+  ) THEN
+    EXECUTE $$CREATE POLICY "update_show_state" ON show_state FOR UPDATE USING ( auth.uid() is not null );$$;
+  END IF;
+END $$;

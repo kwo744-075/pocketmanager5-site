@@ -1434,7 +1434,7 @@ export default function PulseCheckPage() {
 
         if (weeklyError) throw weeklyError;
 
-        const weeklySums = (weeklyCheckIns ?? []).reduce(
+        const weeklySumsFallback = (weeklyCheckIns ?? []).reduce(
           (acc, row) => ({
             cars: acc.cars + (row.cars || 0),
             sales: acc.sales + (row.sales || 0),
@@ -1449,8 +1449,8 @@ export default function PulseCheckPage() {
         );
 
         setDailyTotals(dailySums);
-        setWeeklyTotals(weeklySums);
-        setWeeklyEveningTotals(weeklySums); // Approximation
+        setWeeklyTotals(weeklySumsFallback);
+        setWeeklyEveningTotals(weeklySumsFallback); // Approximation
       } catch (fallbackErr) {
         console.error("loadTotals fallback error", fallbackErr);
         // Use mock data for testing when database is corrupted

@@ -76,31 +76,106 @@ ALTER TABLE IF EXISTS public.dm_list ENABLE ROW LEVEL SECURITY;
 
 -- Example policy: allow selects on rows if user is an admin or created_by matches auth.uid()
 -- Replace `auth.uid()` checks with your membership logic or supabase functions that check shop ownership.
-CREATE POLICY IF NOT EXISTS "select_own_or_admin_labor" ON public.labor_entries USING (
-  (created_by IS NOT NULL AND created_by = auth.uid())
-  OR (exists(SELECT 1 FROM public.user_roles ur WHERE ur.user_id = auth.uid() AND ur.role = 'admin'))
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'labor_entries' AND policyname = 'select_own_or_admin_labor'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "select_own_or_admin_labor"
+      ON public.labor_entries
+      USING (
+        (created_by IS NOT NULL AND created_by = auth.uid())
+        OR auth.role() = 'service_role'
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS "insert_own_labor" ON public.labor_entries FOR INSERT WITH CHECK (
-  (created_by = auth.uid())
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'labor_entries' AND policyname = 'insert_own_labor'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "insert_own_labor"
+      ON public.labor_entries FOR INSERT WITH CHECK (
+        (created_by = auth.uid())
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS "select_own_or_admin_deposits" ON public.deposit_entries USING (
-  (created_by IS NOT NULL AND created_by = auth.uid())
-  OR (exists(SELECT 1 FROM public.user_roles ur WHERE ur.user_id = auth.uid() AND ur.role = 'admin'))
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'deposit_entries' AND policyname = 'select_own_or_admin_deposits'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "select_own_or_admin_deposits"
+      ON public.deposit_entries
+      USING (
+        (created_by IS NOT NULL AND created_by = auth.uid())
+        OR auth.role() = 'service_role'
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS "insert_own_deposits" ON public.deposit_entries FOR INSERT WITH CHECK (
-  (created_by = auth.uid())
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'deposit_entries' AND policyname = 'insert_own_deposits'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "insert_own_deposits"
+      ON public.deposit_entries FOR INSERT WITH CHECK (
+        (created_by = auth.uid())
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS "select_dm_list" ON public.dm_list USING (
-  (created_by IS NOT NULL AND created_by = auth.uid())
-  OR (exists(SELECT 1 FROM public.user_roles ur WHERE ur.user_id = auth.uid() AND ur.role IN ('admin','dm')))
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'dm_list' AND policyname = 'select_dm_list'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "select_dm_list"
+      ON public.dm_list
+      USING (
+        (created_by IS NOT NULL AND created_by = auth.uid())
+        OR auth.role() = 'service_role'
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
-CREATE POLICY IF NOT EXISTS "insert_dm_list" ON public.dm_list FOR INSERT WITH CHECK (
-  (created_by = auth.uid())
-);
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public' AND tablename = 'dm_list' AND policyname = 'insert_dm_list'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "insert_dm_list"
+      ON public.dm_list FOR INSERT WITH CHECK (
+        (created_by = auth.uid())
+      );
+    $policy$;
+  END IF;
+END
+$$;
 
 -- TODO: Add more granular policies to scope by shop membership, region, and DM roles.

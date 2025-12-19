@@ -1,3 +1,6 @@
+// Client-only: CaptainLanding interactions rely on client handlers
+"use client";
+
 import { Boxes, ClipboardList, FileWarning, Package } from "lucide-react";
 import { CaptainsTopBar } from "../components/CaptainsTopBar";
 import { CaptainLanding, type CaptainLandingCard } from "../components/CaptainLanding";

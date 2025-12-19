@@ -1,5 +1,5 @@
-﻿import { DmReviewForm } from "@/app/pocket-manager5/components/DmReviewForm";
+﻿import { ReviewPresenterPage } from "@/app/pocket-manager5/_shared/review-presenter/ReviewPresenterPage";
 
 export default function DmDailyReviewPage() {
-  return <DmReviewForm mode="daily" />;
+  return <ReviewPresenterPage mode="DM" />;
 }

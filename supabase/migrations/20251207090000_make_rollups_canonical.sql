@@ -11,6 +11,63 @@
 -- NOTE: This file is intended to be applied to staging first. It contains
 -- backfill steps which may be expensive on large datasets.
 
+-- Ensure check_ins table exists (minimal schema) so subsequent steps are safe/idempotent
+CREATE TABLE IF NOT EXISTS check_ins (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id uuid NOT NULL,
+  check_in_date date NOT NULL,
+  is_submitted boolean DEFAULT false,
+  cars integer,
+  sales numeric,
+  big4 integer,
+  coolants integer,
+  diffs integer,
+  donations numeric,
+  mobil1 integer,
+  staffing integer,
+  fuel_filters integer DEFAULT 0,
+  submitted_at timestamptz,
+  time_slot text
+);
+
+-- Ensure rollup tables exist with the columns referenced below
+CREATE TABLE IF NOT EXISTS shop_daily_totals (
+  shop_id uuid,
+  check_in_date date,
+  total_cars integer DEFAULT 0,
+  total_sales numeric DEFAULT 0,
+  total_big4 integer DEFAULT 0,
+  total_coolants integer DEFAULT 0,
+  total_diffs integer DEFAULT 0,
+  total_donations numeric DEFAULT 0,
+  total_mobil1 integer DEFAULT 0,
+  total_staffing integer DEFAULT 0,
+  total_fuel_filters integer DEFAULT 0,
+  last_submission_time timestamptz,
+  last_submission_slot text,
+  checkins_completed integer DEFAULT 0,
+  updated_at timestamptz DEFAULT now(),
+  PRIMARY KEY (shop_id, check_in_date)
+);
+
+CREATE TABLE IF NOT EXISTS shop_wtd_totals (
+  shop_id uuid,
+  week_start date,
+  "current_date" date,
+  total_cars integer DEFAULT 0,
+  total_sales numeric DEFAULT 0,
+  total_big4 integer DEFAULT 0,
+  total_coolants integer DEFAULT 0,
+  total_diffs integer DEFAULT 0,
+  total_donations numeric DEFAULT 0,
+  total_mobil1 integer DEFAULT 0,
+  total_fuel_filters integer DEFAULT 0,
+  days_with_data integer DEFAULT 0,
+  last_updated timestamptz,
+  updated_at timestamptz DEFAULT now(),
+  PRIMARY KEY (shop_id, week_start)
+);
+
 -- 1) Ensure `fuel_filters` exists on check_ins
 -- Add column with default and not-null in one idempotent statement
 ALTER TABLE IF EXISTS check_ins
@@ -184,7 +241,7 @@ BEGIN
     AND check_in_date <= v_check_in_date;
 
   INSERT INTO shop_wtd_totals (
-    shop_id, week_start, current_date,
+    shop_id, week_start, "current_date",
     total_cars, total_sales, total_big4, total_coolants, total_diffs, total_donations, total_mobil1, total_fuel_filters,
     days_with_data, last_updated, updated_at
   ) VALUES (
@@ -194,7 +251,7 @@ BEGIN
   )
   ON CONFLICT (shop_id, week_start)
   DO UPDATE SET
-    current_date = EXCLUDED.current_date,
+    "current_date" = EXCLUDED."current_date",
     total_cars = EXCLUDED.total_cars,
     total_sales = EXCLUDED.total_sales,
     total_big4 = EXCLUDED.total_big4,
@@ -269,9 +326,9 @@ WHERE s.shop_id = src.shop_id
 UPDATE shop_wtd_totals w
 SET total_fuel_filters = COALESCE(src.total_fuel_filters, 0)
 FROM (
-  SELECT shop_id, week_start, COALESCE(SUM(total_fuel_filters), 0) AS total_fuel_filters
+  SELECT shop_id, date_trunc('week', check_in_date)::date AS week_start, COALESCE(SUM(total_fuel_filters), 0) AS total_fuel_filters
   FROM shop_daily_totals
-  GROUP BY shop_id, week_start
+  GROUP BY shop_id, date_trunc('week', check_in_date)::date
 ) src
 WHERE w.shop_id = src.shop_id
   AND w.week_start = src.week_start;
@@ -286,9 +343,9 @@ BEGIN
     UPDATE shop_wtd_evening_totals w
     SET total_fuel_filters = COALESCE(src.total_fuel_filters, 0)
     FROM (
-      SELECT shop_id, week_start, COALESCE(SUM(total_fuel_filters), 0) AS total_fuel_filters
+      SELECT shop_id, date_trunc('week', check_in_date)::date AS week_start, COALESCE(SUM(total_fuel_filters), 0) AS total_fuel_filters
       FROM shop_daily_totals
-      GROUP BY shop_id, week_start
+      GROUP BY shop_id, date_trunc('week', check_in_date)::date
     ) src
     WHERE w.shop_id = src.shop_id
       AND w.week_start = src.week_start;

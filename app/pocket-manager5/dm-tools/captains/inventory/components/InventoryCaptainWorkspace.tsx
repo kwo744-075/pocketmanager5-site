@@ -35,6 +35,7 @@ import type {
   ShopDayInventoryStatus,
   CategoryVariance,
 } from "@/lib/inventory-captain/types";
+import { InventoryPivotBoard } from "./InventoryPivotBoard";
 
 const PERIOD_OPTIONS = [
   { label: "This Week", value: "thisWeek" },
@@ -256,6 +257,7 @@ export function InventoryCaptainWorkspace() {
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const [latestRunId, setLatestRunId] = useState<string | null>(null);
   const [exportJobs, setExportJobs] = useState<InventoryExportJob[]>([]);
+  const [includeRegionDirectory, setIncludeRegionDirectory] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -359,7 +361,41 @@ export function InventoryCaptainWorkspace() {
 
   const shopTableRef = useRef<HTMLDivElement | null>(null);
 
-  const aggregates = useMemo(() => buildShopAggregates(shopStatuses, shopDirectory), [shopDirectory, shopStatuses]);
+  const baseAggregates = useMemo(() => buildShopAggregates(shopStatuses, shopDirectory), [shopDirectory, shopStatuses]);
+
+  const directoryShops = useMemo(() => {
+    return Object.values(shopDirectory).filter((entry) => {
+      if (region !== REGION_ALL_OPTION && entry.regionName !== region) return false;
+      if (district !== DISTRICT_ALL_OPTION && entry.districtName !== district) return false;
+      return true;
+    });
+  }, [district, region, shopDirectory]);
+
+  const aggregates = useMemo(() => {
+    if (!includeRegionDirectory || !directoryShops.length || !shopStatuses.length) {
+      return baseAggregates;
+    }
+    const map = new Map<number, ShopAggregate>();
+    baseAggregates.forEach((agg) => map.set(agg.storeNumber, agg));
+    directoryShops.forEach((entry) => {
+      if (typeof entry.shopNumber !== "number" || map.has(entry.shopNumber)) return;
+      map.set(entry.shopNumber, {
+        storeNumber: entry.shopNumber,
+        storeName: entry.shopName ?? null,
+        region: entry.regionName ?? undefined,
+        district: entry.districtName ?? undefined,
+        categories: CATEGORY_ORDER.reduce((acc, key) => {
+          acc[key] = { qty: 0, value: 0 };
+          return acc;
+        }, {} as Record<InventoryCategory, CategoryVariance>),
+        totalVariance: 0,
+        daysCounted: 0,
+        daysAvailable: 1,
+      });
+    });
+    return Array.from(map.values()).sort((a, b) => a.storeNumber - b.storeNumber);
+  }, [baseAggregates, directoryShops, includeRegionDirectory, shopStatuses.length]);
+
   const totalShops = aggregates.length;
   const shopsWithCounts = aggregates.filter((shop) => shop.daysCounted > 0).length;
   const shopsMissingCounts = Math.max(0, totalShops - shopsWithCounts);
@@ -396,6 +432,19 @@ export function InventoryCaptainWorkspace() {
       );
     });
   }, [aggregates, searchTerm, showOnlyMissing]);
+
+  const outliers = useMemo(() => {
+    return aggregates
+      .map((shop) => ({
+        storeNumber: shop.storeNumber,
+        storeName: shop.storeName,
+        district: shop.district,
+        missingCounts: Math.max(0, shop.daysAvailable - shop.daysCounted),
+        variance: shop.totalVariance,
+      }))
+      .sort((a, b) => b.missingCounts - a.missingCounts || Math.abs(b.variance) - Math.abs(a.variance))
+      .slice(0, 10);
+  }, [aggregates]);
 
   const presetRange = useCallback(
     (value: PeriodValue) => {
@@ -615,8 +664,12 @@ export function InventoryCaptainWorkspace() {
           shopsMissingCounts={shopsMissingCounts}
           worstVariance={worstVariance}
           onShowMissing={scrollToShops}
+          includeRegionDirectory={includeRegionDirectory}
+          onToggleRegionDirectory={setIncludeRegionDirectory}
+          outliers={outliers}
         />
       </div>
+      <InventoryPivotBoard />
       <div className="rounded-3xl border border-slate-900/70 bg-slate-950/60">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-900/60 px-6 py-4">
           <div className="flex gap-2">
@@ -950,6 +1003,9 @@ function DashboardPanel({
   shopsMissingCounts,
   worstVariance,
   onShowMissing,
+  includeRegionDirectory,
+  onToggleRegionDirectory,
+  outliers,
 }: {
   totalShops: number;
   shopsWithCounts: number;
@@ -957,6 +1013,9 @@ function DashboardPanel({
   shopsMissingCounts: number;
   worstVariance: { storeNumber: number; variance: number } | null;
   onShowMissing: () => void;
+  includeRegionDirectory: boolean;
+  onToggleRegionDirectory: (value: boolean) => void;
+  outliers: { storeNumber: number; storeName?: string | null; district?: string; missingCounts: number; variance: number }[];
 }) {
   const cards = [
     {
@@ -991,30 +1050,61 @@ function DashboardPanel({
   ];
 
   return (
-    <section className="grid gap-4 sm:grid-cols-2">
-      {cards.map((card) => (
-        <motion.div
-          key={card.label}
-          whileHover={{ y: -4 }}
-          className="rounded-3xl border border-slate-900/70 bg-slate-950/60 p-5 shadow-[0_10px_40px_rgba(0,0,0,0.35)]"
-        >
-          <div className="flex items-center justify-between text-sm text-slate-400">
-            <span>{card.label}</span>
-            <card.icon className={`h-5 w-5 ${card.accent}`} />
+    <section className="space-y-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-900/70 bg-slate-950/70 px-4 py-3 text-sm text-slate-300">
+        <span>Summary covers {includeRegionDirectory ? "all shops in region (zeros added for missing counts)" : "only shops present in the upload"}.</span>
+        <label className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs font-semibold text-slate-200">
+          <input
+            type="checkbox"
+            className="h-4 w-4 rounded border-slate-700"
+            checked={includeRegionDirectory}
+            onChange={(event) => onToggleRegionDirectory(event.target.checked)}
+          />
+          Show all shops in region
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {cards.map((card) => (
+          <motion.div
+            key={card.label}
+            whileHover={{ y: -4 }}
+            className="rounded-3xl border border-slate-900/70 bg-slate-950/60 p-4 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+          >
+            <div className="flex items-center justify-between text-sm text-slate-400">
+              <span>{card.label}</span>
+              <card.icon className={`h-5 w-5 ${card.accent}`} />
+            </div>
+            <div className="mt-3 text-3xl font-semibold text-white">{card.primary}</div>
+            <div className="text-sm text-slate-400">{card.secondary}</div>
+            {card.action ? (
+              <button
+                type="button"
+                onClick={card.action}
+                className="mt-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-rose-200"
+              >
+                Jump <ArrowUp className="h-3.5 w-3.5" />
+              </button>
+            ) : null}
+          </motion.div>
+        ))}
+      </div>
+      <div className="rounded-2xl border border-slate-900/70 bg-slate-950/70 p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-[0.3em] text-slate-500">Outliers</p>
+            <p className="text-sm text-slate-300">Top 10 worst missing counts or dollars.</p>
           </div>
-          <div className="mt-3 text-3xl font-semibold text-white">{card.primary}</div>
-          <div className="text-sm text-slate-400">{card.secondary}</div>
-          {card.action ? (
-            <button
-              type="button"
-              onClick={card.action}
-              className="mt-3 inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.3em] text-rose-200"
-            >
-              Jump <ArrowUp className="h-3.5 w-3.5" />
-            </button>
-          ) : null}
-        </motion.div>
-      ))}
+          <select className="rounded-full border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100">
+            <option>Top outlier shops</option>
+            {outliers.map((outlier) => (
+              <option key={outlier.storeNumber} className="text-slate-900">
+                #{outlier.storeNumber} {outlier.storeName ? `- ${outlier.storeName}` : ""} ({outlier.district ?? "Unknown"}) • missing {outlier.missingCounts} • {formatVariance(outlier.variance)}
+              </option>
+            ))}
+          </select>
+        </div>
+        {!outliers.length ? <p className="mt-2 text-xs text-slate-500">No outliers found for this selection.</p> : null}
+      </div>
     </section>
   );
 }

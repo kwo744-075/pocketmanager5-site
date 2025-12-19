@@ -9,7 +9,17 @@ create table if not exists show_reactions (
 );
 
 alter table show_reactions enable row level security;
-create policy "insert_reaction" on show_reactions for insert using (
-  auth.uid() is not null
-);
-create policy "select_reaction" on show_reactions for select using ( true );
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'show_reactions' AND policyname = 'insert_reaction'
+  ) THEN
+    EXECUTE $$CREATE POLICY "insert_reaction" ON show_reactions FOR INSERT USING ( auth.uid() is not null );$$;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies WHERE schemaname = 'public' AND tablename = 'show_reactions' AND policyname = 'select_reaction'
+  ) THEN
+    EXECUTE $$CREATE POLICY "select_reaction" ON show_reactions FOR SELECT USING ( true );$$;
+  END IF;
+END $$;

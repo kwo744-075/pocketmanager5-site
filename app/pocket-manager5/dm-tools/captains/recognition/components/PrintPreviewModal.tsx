@@ -2,6 +2,7 @@
 
 import React, { useEffect } from 'react';
 import type { ShowThemeId } from '@/lib/recognitionShowThemes';
+import styles from './PrintPreviewModal.module.css';
 
 export default function PrintPreviewModal({ open, onClose, filter, theme }: { open: boolean; onClose: () => void; filter: any; theme: ShowThemeId }) {
   useEffect(() => {
@@ -23,7 +24,7 @@ export default function PrintPreviewModal({ open, onClose, filter, theme }: { op
         </div>
         <div className="mt-4 space-y-6">
           {/* Render a simple slide per selected filter - in a real implementation this would render the real one-pager */}
-          <section style={{ height: '90vh', pageBreakAfter: 'always' }} className="rounded border border-slate-800/60 bg-slate-950/60 p-6">
+          <section className={`${styles.slide} rounded border border-slate-800/60 bg-slate-950/60 p-6`}>
             <h2 className="text-2xl text-white">Demo Slide</h2>
             <p className="text-sm text-slate-400">Filter: {JSON.stringify(filter)}</p>
             <div className="mt-4 text-white">Theme: {theme}</div>

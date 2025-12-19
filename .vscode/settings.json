@@ -1,5 +1,6 @@
 {
   "files.associations": {
-    "supabase/migrations/*.sql": "pgsql"
+    "supabase/setup/*.sql": "postgres",
+    "supabase/migrations/*.sql": "postgres"
   }
 }

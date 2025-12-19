@@ -1,9 +1,14 @@
-"use client";
+﻿"use client";
 
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import Chip from "@/app/components/Chip";
 import type { FormEvent } from "react";
 import { useRouter } from "next/navigation";
+import { autoFitTextClass } from "@/lib/ui/autoFitText";
+import { AIScheduleAssumptionsModal } from "@/app/pocket-manager5/features/dm-schedule/_components/AIScheduleAssumptionsModal";
+import { VisitPlanModal } from "@/app/pocket-manager5/features/dm-schedule/_components/VisitPlanModal";
+import { Tooltip } from "@/app/pocket-manager5/features/dm-schedule/_components/Tooltip";
+import { supabase } from "@/lib/supabaseClient";
 import {
   DM_DAY_NAMES,
   DM_STATUS_DOTS,
@@ -91,6 +96,8 @@ const numericPeriodDateFormatter = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
   year: "numeric",
 });
+
+const hoverDayFormatter = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "numeric", day: "numeric" });
 
 const formatPeriodRangeLabel = (start: Date, end: Date) =>
   `${numericPeriodDateFormatter.format(start)} - ${numericPeriodDateFormatter.format(end)}`;
@@ -205,9 +212,8 @@ type PlannerData = {
   coverageHighlight: string;
   totalVisits: number;
   adminBlocks: number;
-  weekProgress: number;
-  visitCompletionPct: number;
   today: Date;
+  coverageMix: Record<string, { standard: number; quarterly: number; admin: number; plan: number; total: number }>;
 };
 
 const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: Date): PlannerData => {
@@ -237,7 +243,7 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
 
   const periodRange = useMemo(() => {
     if (periodRangeProp) return periodRangeProp;
-    return `${shortDateFormatter.format(activePeriodInfo.startDate)} – ${shortDateFormatter.format(activePeriodInfo.endDate)}`;
+    return `${shortDateFormatter.format(activePeriodInfo.startDate)}  ${shortDateFormatter.format(activePeriodInfo.endDate)}`;
   }, [periodRangeProp, activePeriodInfo.startDate, activePeriodInfo.endDate]);
 
   const visitMix = useMemo(
@@ -254,6 +260,13 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     () => coverageSummaryProp ?? buildCoverageSummary(activeEntries),
     [coverageSummaryProp, activeEntries],
   );
+
+  const periodId = useMemo(
+    () => `P${activePeriodInfo.period}-${activePeriodInfo.startDate.getFullYear()}`,
+    [activePeriodInfo.period, activePeriodInfo.startDate],
+  );
+
+  const [coverageMix, setCoverageMix] = useState<Record<string, { standard: number; quarterly: number; admin: number; plan: number; total: number }>>({});
 
   
 
@@ -276,7 +289,7 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
   const nextEntriesByDate = useMemo(() => groupEntriesByDate(nextEntries), [nextEntries]);
 
   const nextPeriodRange = useMemo(
-    () => `${shortDateFormatter.format(nextPeriodInfo.startDate)} – ${shortDateFormatter.format(nextPeriodInfo.endDate)}`,
+    () => `${shortDateFormatter.format(nextPeriodInfo.startDate)}  ${shortDateFormatter.format(nextPeriodInfo.endDate)}`,
     [nextPeriodInfo.startDate, nextPeriodInfo.endDate],
   );
 
@@ -328,6 +341,36 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     return `${shopsWithTwo} ${label} locked twice`;
   }, [coverageSummary]);
 
+  useEffect(() => {
+    let active = true;
+    supabase
+      .from("dm_schedule_shop_mix_vw")
+      .select("*")
+      .eq("period_id", periodId)
+      .then(({ data, error }) => {
+        if (!active) return;
+        if (error) {
+          console.warn("dm schedule mix load failed", error);
+          return;
+        }
+        const map: Record<string, { standard: number; quarterly: number; admin: number; plan: number; total: number }> = {};
+        (data ?? []).forEach((row: any) => {
+          const key = String(row.shop_number);
+          map[key] = {
+            standard: Number(row.standard_visits ?? 0),
+            quarterly: Number(row.quarterly_audits ?? 0),
+            admin: Number(row.admin_days ?? 0),
+            plan: Number(row.plan_to_win_days ?? 0),
+            total: Number(row.total_entries ?? 0),
+          };
+        });
+        setCoverageMix(map);
+      });
+    return () => {
+      active = false;
+    };
+  }, [periodId]);
+
   const totalVisits = useMemo(
     () => activeEntries.filter((entry) => entry.visitType !== "Off").length,
     [activeEntries],
@@ -338,18 +381,6 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
       activeEntries.filter((entry) => entry.visitType === "Admin" || entry.visitType === "Project Day").length,
     [activeEntries],
   );
-
-  const weekProgress = useMemo(() => {
-    if (!activePeriodInfo.weeksInPeriod) return 0;
-    return Math.min(100, Math.round((activePeriodInfo.weekOfPeriod / activePeriodInfo.weeksInPeriod) * 100));
-  }, [activePeriodInfo.weekOfPeriod, activePeriodInfo.weeksInPeriod]);
-
-  const visitCompletionPct = useMemo(() => {
-    const required = dueChecklist.reduce((total, item) => total + item.required, 0);
-    if (!required) return 0;
-    const satisfied = dueChecklist.reduce((total, item) => total + Math.min(item.actual, item.required), 0);
-    return Math.min(100, Math.round((satisfied / required) * 100));
-  }, [dueChecklist]);
 
   return {
     today,
@@ -363,8 +394,7 @@ const useDmSchedulePlannerData = (inputs: PlannerDataInputs = {}, anchorDate?: D
     coverageHighlight,
     totalVisits,
     adminBlocks,
-    weekProgress,
-    visitCompletionPct,
+    coverageMix,
   };
 };
 
@@ -389,6 +419,19 @@ export function DmSchedulePlanner({
   const router = useRouter();
   const [internalSelectedDate, setInternalSelectedDate] = useState<string | null>(null);
   const [internalSelectedPanelKey, setInternalSelectedPanelKey] = useState<string | null>(null);
+  const [compactText, setCompactText] = useState(false);
+  const [visitModal, setVisitModal] = useState<{
+    open: boolean;
+    date: string | null;
+    shop: string | null;
+    initial?: { visitType?: string; notes?: string };
+  }>({
+    open: false,
+    date: null,
+    shop: null,
+    initial: undefined,
+  });
+  const [aiWizardOpen, setAiWizardOpen] = useState(false);
   const [selectedDayDetail, setSelectedDayDetail] = useState<{
     day: PeriodDay;
     entries: SampleScheduleEntry[];
@@ -516,11 +559,12 @@ export function DmSchedulePlanner({
         setInternalSelectedPanelKey(panelKey);
       }
 
-      if (onDaySelect) {
-        onDaySelect(day, entries);
-      }
-
-      setSelectedDayDetail({ day, entries });
+      setVisitModal({
+        open: true,
+        date: day.iso,
+        shop: entries[0]?.shopId ?? null,
+        initial: entries[0] ? { visitType: entries[0].visitType, notes: (entries[0] as any).notes } : undefined,
+      });
     },
     [selectedDate, onDaySelect],
   );
@@ -531,13 +575,14 @@ export function DmSchedulePlanner({
 
   const handleEditVisit = useCallback(
     (entry: SampleScheduleEntry) => {
-      const params = new URLSearchParams({ date: entry.iso });
-      if (entry.shopId) {
-        params.set("shop", entry.shopId);
-      }
-      router.push(`/pocket-manager5/forms/${computedFormSlug}?${params.toString()}`);
+      setVisitModal({
+        open: true,
+        date: entry.iso,
+        shop: entry.shopId ?? null,
+        initial: { visitType: entry.visitType, notes: (entry as any).notes },
+      });
     },
-    [router, computedFormSlug],
+    [],
   );
 
   const handleAddVisit = useCallback(
@@ -571,25 +616,17 @@ export function DmSchedulePlanner({
         return;
       }
 
-      // fallback to full form navigation
-      const params = new URLSearchParams({ date: dayIso });
-      if (shop) {
-        params.set("shop", shop);
-      }
-      if (visitType) {
-        params.set("visitType", visitType);
-      }
-      if (shopNumber && !params.has("shop")) {
-        params.set("shop", shopNumber);
-      }
-      router.push(`/pocket-manager5/forms/${computedFormSlug}?${params.toString()}`);
+      // fallback to modal
+      setVisitModal({ open: true, date: dayIso, shop, initial: { visitType } });
     },
-    [activeSelectedPanelKey, periodPanels, shopNumber, router, computedFormSlug],
+    [activeSelectedPanelKey, periodPanels, shopNumber],
   );
 
   const renderCalendar = useCallback(
     (grid: PeriodDay[][], entryLookup: Record<string, SampleScheduleEntry[]>, panelKey: string) => {
       const MAX_VISIBLE = 3;
+      const clampClass = compactText ? "line-clamp-2" : "line-clamp-3";
+      const thresholds = compactText ? { large: 55, medium: 95, small: 150 } : undefined;
       return (
         <div className="dm-print-surface mt-4 rounded-2xl border border-slate-900/30 bg-slate-950/30 p-3 print:border-slate-300 print:bg-white print:text-slate-900">
           <div className="grid grid-cols-7 gap-1 text-[10px] uppercase tracking-[0.35em] text-slate-500">
@@ -606,6 +643,8 @@ export function DmSchedulePlanner({
                   const dayEntries = entryLookup[day.iso] ?? [];
                   const visibleEntries = dayEntries.slice(0, MAX_VISIBLE);
                   const overflow = Math.max(0, dayEntries.length - visibleEntries.length);
+                  const dayContent = dayEntries.map((entry) => `${formatShopLabel(entry.locationLabel)} - ${entry.visitType}`).join(" · ");
+                  const sizeClass = autoFitTextClass(dayContent, thresholds);
                   const isPanelActive = !activeSelectedPanelKey || activeSelectedPanelKey === panelKey;
                   const isSelected = isPanelActive && activeSelectedDate === day.iso;
                   const dayLabelTone = day.isToday
@@ -613,19 +652,17 @@ export function DmSchedulePlanner({
                     : isSelected
                       ? "text-cyan-100"
                       : "text-slate-200";
-
                   const cardTone = day.isToday
                     ? "border-emerald-400/70 bg-emerald-500/10"
                     : isSelected
                       ? "border-cyan-400/70 bg-cyan-500/10"
                       : "border-slate-800/60 bg-slate-950/30 hover:border-slate-600/70";
-
                   return (
                     <button
                       key={`${panelKey}-${day.iso}`}
                       type="button"
                       onClick={() => handleDaySelection(panelKey, day, dayEntries)}
-                      className={`dm-calendar-day rounded-2xl border px-2 py-2 text-left text-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 print:border-slate-300 print:bg-white print:text-slate-900 ${cardTone}`}
+                      className={`dm-calendar-day group relative min-w-0 rounded-2xl border px-2 py-2 text-left text-slate-100 transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-300 print:border-slate-300 print:bg-white print:text-slate-900 ${cardTone}`}
                     >
                       <div className="flex items-center justify-between text-[11px] font-semibold">
                         <span className={dayLabelTone}>{day.dayNumber}</span>
@@ -634,27 +671,44 @@ export function DmSchedulePlanner({
                           {isSelected && !day.isToday && <span className="text-cyan-300">Editing</span>}
                         </div>
                       </div>
-                      <div className="mt-1 space-y-1">
+                      <div className={`mt-1 min-w-0 space-y-1 overflow-hidden ${clampClass}`}>
                         {visibleEntries.map((entry) => (
-                          <Chip
-                            key={`${panelKey}-${entry.iso}-${entry.visitType}-${entry.locationLabel}`}
-                            className={`dm-visit-pill flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[9px] font-semibold leading-none print:border-slate-300 print:bg-white print:text-slate-900 ${
-                              DM_VISIT_BADGES[entry.visitType] ?? "border-slate-700/60 text-slate-200"
-                            }`}
-                          >
-                            <span
-                              className={`h-1.5 w-1.5 rounded-full ${
-                                entry.status ? DM_STATUS_DOTS[entry.status] : DM_STATUS_DOTS.planned
-                              }`}
-                            />
-                            <div className="flex w-full items-center justify-between gap-2">
-                              <span className="truncate">{formatShopLabel(entry.locationLabel)}</span>
-                              <span className="text-right uppercase text-white/80">{entry.visitType}</span>
+                          <Fragment key={`${panelKey}-${entry.iso}-${entry.visitType}-${entry.locationLabel}`}>
+                            <Chip
+                              className={`dm-visit-pill flex min-w-0 items-center gap-1 rounded-full border px-1.5 py-0.5 ${sizeClass} font-semibold leading-none ${
+                                DM_VISIT_BADGES[entry.visitType] ?? "border-slate-700/60 text-slate-200"
+                              } print:hidden`}
+                            >
+                              <span
+                                className={`h-1.5 w-1.5 rounded-full ${
+                                  entry.status ? DM_STATUS_DOTS[entry.status] : DM_STATUS_DOTS.planned
+                                }`}
+                              />
+                              <div className="flex min-w-0 w-full items-center justify-between gap-2">
+                                <span className="truncate">{formatShopLabel(entry.locationLabel)}</span>
+                                <span className="shrink-0 text-right uppercase text-white/80">{entry.visitType}</span>
+                              </div>
+                            </Chip>
+                            <div className="hidden print:block text-[10px] text-slate-900">
+                              {formatShopLabel(entry.locationLabel)} â€” {entry.visitType}
                             </div>
-                          </Chip>
+                          </Fragment>
                         ))}
                         {overflow > 0 && <p className="text-[9px] text-slate-500">+{overflow} more</p>}
                         {dayEntries.length === 0 && <p className="text-[9px] text-slate-600">Open</p>}
+                      </div>
+                      <div className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-[320px] max-w-[90vw] -translate-x-1/2 rounded-2xl border border-slate-700/70 bg-slate-950/95 p-3 text-white opacity-0 shadow-2xl shadow-black/40 transition group-hover:opacity-100 print:hidden">
+                        <div className="flex items-center justify-between gap-3 text-xs font-semibold">
+                          <span className="text-white">{hoverDayFormatter.format(day.date)}</span>
+                          <span className="text-white/60">
+                            {dayEntries.length ? `${dayEntries.length} item${dayEntries.length === 1 ? "" : "s"}` : "Open"}
+                          </span>
+                        </div>
+                        <div className="mt-2 text-sm text-white/90 whitespace-pre-wrap break-words">
+                          {dayEntries.length
+                            ? dayEntries.map((entry) => `${formatShopLabel(entry.locationLabel)} - ${entry.visitType}`).join(" · ")
+                            : "No entries yet."}
+                        </div>
                       </div>
                     </button>
                   );
@@ -665,7 +719,7 @@ export function DmSchedulePlanner({
         </div>
       );
     },
-    [activeSelectedDate, activeSelectedPanelKey, handleDaySelection],
+    [activeSelectedDate, activeSelectedPanelKey, compactText, handleDaySelection],
   );
 
   const buildPanelEmailPayload = useCallback(
@@ -681,8 +735,8 @@ export function DmSchedulePlanner({
     const sortedEntries = [...flattenedEntries].sort((a, b) => a.date.getTime() - b.date.getTime());
     const visitLines = sortedEntries.length
       ? sortedEntries.map((entry) => {
-          const focusSuffix = entry.focus ? ` – ${entry.focus}` : "";
-          return `${shortDateFormatter.format(entry.date)} · ${entry.visitType} @ ${formatShopLabel(entry.locationLabel)}${focusSuffix}`;
+          const focusSuffix = entry.focus ? `  ${entry.focus}` : "";
+          return `${shortDateFormatter.format(entry.date)}  ${entry.visitType} @ ${formatShopLabel(entry.locationLabel)}${focusSuffix}`;
         })
       : ["No visits are scheduled yet."];
 
@@ -709,8 +763,8 @@ export function DmSchedulePlanner({
     ];
 
     return {
-      subject: `Period ${panel.info.period} schedule – Pocket Manager`,
-      body: bodyLines.join("\n"),
+      subject: `Period ${panel.info.period} schedule  Pocket Manager`,
+      body: bodyLines.join("`n"),
     };
   }, []);
 
@@ -1098,6 +1152,22 @@ export function DmSchedulePlanner({
                   >
                     {yearViewMode === "full-year" ? "Full year: On" : "Full year"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompactText((prev) => !prev)}
+                    className={`rounded-full border px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] transition ${
+                      compactText ? "border-cyan-300 bg-cyan-500/10 text-cyan-100" : "border-slate-700/70 text-slate-200"
+                    }`}
+                  >
+                    {compactText ? "Compact: On" : "Compact text"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAiWizardOpen(true)}
+                    className="rounded-full border border-violet-300/70 bg-violet-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.25em] text-violet-100 transition hover:border-violet-200"
+                  >
+                    AI Schedule
+                  </button>
                 </div>
             </div>
           </div>
@@ -1168,6 +1238,32 @@ export function DmSchedulePlanner({
         </div>
 
       </div>
+      <VisitPlanModal
+        open={visitModal.open}
+        onOpenChange={(open) => setVisitModal((prev) => ({ ...prev, open }))}
+        date={visitModal.date}
+        shopNumber={visitModal.shop}
+        initialVisit={visitModal.initial}
+        onSaved={() => {
+          setSelectedDayDetail(null);
+          setVisitModal((prev) => ({ ...prev, initial: undefined }));
+        }}
+      />
+      <AIScheduleAssumptionsModal
+        open={aiWizardOpen}
+        onOpenChange={setAiWizardOpen}
+        onGenerate={async ({ periodId, assumptions }) => {
+          await fetch("/api/dm-schedule/ai-generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              periodId,
+              scope: { shopNumbers: DM_COVERAGE_SHOPS.map((s) => Number(s)) },
+              assumptions,
+            }),
+          }).catch((err) => console.error("ai generate failed", err));
+        }}
+      />
 
         {selectedDayDetail && (
           <DayVisitQuickPanel
@@ -1284,7 +1380,7 @@ export function DmSchedulePlanner({
                           {rdEmail ? "Update email" : "Set RD email"}
                         </button>
                         {rdEmail && (
-                          <span className="text-[10px] font-normal text-slate-400">→ {rdEmail}</span>
+                          <span className="text-[10px] font-normal text-slate-400"> {rdEmail}</span>
                         )}
                       </div>
                       <span className="text-[11px] font-normal text-slate-200">
@@ -1340,7 +1436,7 @@ export function DmSchedulePlanner({
                           <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
                             <span className="font-semibold text-emerald-200">Visit mix:&nbsp;</span>
                             <span className="text-slate-200">
-                              {visibleVisitMix.map((mix) => `${mix.type} – ${mix.count}`).join(" · ")}
+                              {visibleVisitMix.map((mix) => `${mix.type}  ${mix.count}`).join(" · ")}
                             </span>
                           </p>
                         ) : (
@@ -1417,61 +1513,51 @@ export function DmCoverageTracker({ scale = 1, anchorDate, ...props }: DmCoverag
     coverageHighlight,
     totalVisits,
     adminBlocks,
-    weekProgress,
-    visitCompletionPct,
+    coverageMix,
   } = useDmSchedulePlannerData(props, anchorDate);
   const coverageTiles = coverageSummary.slice(0, 12);
 
   const card = (
-    <div className="rounded-3xl border border-slate-800/70 bg-slate-950/70 p-4">
+    <div className="rounded-3xl border border-white/10 bg-slate-950/70 p-4 text-white">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-[11px] uppercase tracking-[0.3em] text-slate-500">Coverage + tracker</p>
-          <p className="text-xs text-slate-300">Mirror the mobile locks and visit pacing.</p>
+          <p className="text-[11px] uppercase tracking-[0.3em] text-white/60">Coverage + tracker</p>
+          <p className="text-xs text-white/80">Mirror the mobile locks and visit pacing.</p>
         </div>
         <span className="text-[11px] font-semibold uppercase tracking-[0.25em] text-cyan-200">{coverageHighlight}</span>
       </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-2">
-              <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Days scheduled</p>
-          <p className="mt-1 text-xl font-semibold text-white">{totalVisits}</p>
-          <p className="text-[10px] text-slate-500">Target 12</p>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-white/85">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Days scheduled</p>
+          <p className="mt-1 text-2xl font-semibold text-white">{totalVisits}</p>
+          <p className="text-[10px] text-white/55">Target 12</p>
         </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-2">
-          <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Admin / project</p>
-          <p className="mt-1 text-xl font-semibold text-white">{adminBlocks}</p>
-          <p className="text-[10px] text-slate-500">Home office days</p>
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-white/85">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Admin / project</p>
+          <p className="mt-1 text-2xl font-semibold text-white">{adminBlocks}</p>
+          <p className="text-[10px] text-white/55">Home office days</p>
         </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-2">
-          <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Week progress</p>
-          <p className="text-xs text-slate-400">
-            W{activePeriodInfo.weekOfPeriod} / {activePeriodInfo.weeksInPeriod}
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-white/85">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/60">Period</p>
+          <p className="mt-1 text-lg font-semibold text-white">
+            {activePeriodInfo.weekOfPeriod}/{activePeriodInfo.weeksInPeriod} weeks
           </p>
-          <div className="mt-2 h-1.5 rounded-full bg-slate-800">
-            <div className="h-full rounded-full bg-emerald-400" style={{ width: `${weekProgress}%` }} />
-          </div>
-        </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-2">
-          <p className="text-[9px] uppercase tracking-[0.35em] text-slate-500">Visit completion</p>
-          <p className="text-xs text-slate-400">{visitCompletionPct}% to plan</p>
-          <div className="mt-2 h-1.5 rounded-full bg-slate-800">
-            <div className="h-full rounded-full bg-cyan-400" style={{ width: `${visitCompletionPct}%` }} />
-          </div>
+          <p className="text-[10px] text-white/55">Live pacing</p>
         </div>
       </div>
 
       <div className="mt-5 grid gap-4 lg:grid-cols-2">
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Required visits</p>
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-white/85">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/65">Required visits</p>
           <ul className="mt-2 space-y-2">
             {dueChecklist.map((item) => (
               <li
                 key={item.type}
-                className="flex items-center justify-between rounded-xl border border-slate-800/60 bg-slate-900/40 px-3 py-2"
+                className="flex items-center justify-between rounded-xl border border-white/10 bg-slate-900/40 px-3 py-2"
               >
                 <div>
-                  <p className="text-[11px] text-slate-400">{item.type}</p>
+                  <p className="text-[11px] text-white/70">{item.type}</p>
                   <p className="text-sm font-semibold text-white">
                     {item.actual} / {item.required}
                   </p>
@@ -1483,42 +1569,59 @@ export function DmCoverageTracker({ scale = 1, anchorDate, ...props }: DmCoverag
             ))}
           </ul>
         </div>
-        <div className="rounded-2xl border border-slate-800/70 bg-slate-950/60 p-3">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Visit mix</p>
-          <ul className="mt-2 space-y-2 text-sm text-slate-200">
+        <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-3 text-white/85">
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/65">Visit mix</p>
+          <ul className="mt-2 space-y-2 text-sm text-white/85">
             {visitMix.map((mix) => (
               <li key={mix.type} className="flex items-center justify-between">
                 <span>{mix.type}</span>
-                <span className="text-slate-400">{mix.count}</span>
+                <span className="text-white/65">{mix.count}</span>
               </li>
             ))}
-            {!visitMix.length && <li className="text-slate-500">No visits logged yet.</li>}
+            {!visitMix.length && <li className="text-white/60">No visits logged yet.</li>}
           </ul>
         </div>
       </div>
 
       <div className="mt-6">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-[10px] uppercase tracking-[0.35em] text-slate-500">Shop coverage grid</p>
-          <p className="text-[10px] text-slate-500">Showing up to 12 shops</p>
+          <p className="text-[10px] uppercase tracking-[0.3em] text-white/65">Shop coverage grid</p>
+          <p className="text-[10px] text-white/60">Showing up to 12 shops</p>
         </div>
         {coverageTiles.length ? (
           <div className="mt-3 grid gap-2 sm:grid-cols-3 lg:grid-cols-6">
             {coverageTiles.map((shop) => (
-              <div
+              <Tooltip
                 key={shop.shopId}
-                className={`flex min-h-[110px] flex-col justify-between rounded-2xl border px-3 py-2 text-left ${shop.toneClass}`}
+                content={
+                  <div className="space-y-1 text-sm text-white">
+                    <p className="font-semibold">{shop.label}</p>
+                    <p className="text-white/80">
+                      Scheduled: {coverageMix[String(shop.shopId)]?.standard ?? 0} Standard •{" "}
+                      {coverageMix[String(shop.shopId)]?.quarterly ?? 0} Quarterly •{" "}
+                      {coverageMix[String(shop.shopId)]?.admin ?? 0} Admin •{" "}
+                      {coverageMix[String(shop.shopId)]?.plan ?? 0} Plan To Win
+                    </p>
+                    <p className="text-white/60">
+                      {coverageMix[String(shop.shopId)]?.total ? "Live mix" : "No visits scheduled yet"}
+                    </p>
+                  </div>
+                }
               >
-                <div>
-                  <p className="text-[11px] text-slate-200/80">{shop.label}</p>
-                  <p className="text-xl font-semibold text-white">{shop.count} visits</p>
+                <div
+                  className={`flex min-h-[80px] flex-col justify-between rounded-2xl border border-white/10 px-3 py-2 text-left ${shop.toneClass}`}
+                >
+                  <div>
+                    <p className="text-[11px] text-white/80">{shop.label}</p>
+                    <p className="text-lg font-semibold text-white">{shop.count} visits</p>
+                  </div>
+                  <p className={`text-[10px] font-semibold ${shop.badgeClass}`}>{shop.statusLabel}</p>
                 </div>
-                <p className={`text-[10px] font-semibold ${shop.badgeClass}`}>{shop.statusLabel}</p>
-              </div>
+              </Tooltip>
             ))}
           </div>
         ) : (
-          <div className="mt-3 rounded-2xl border border-dashed border-slate-700/70 bg-slate-900/40 p-4 text-sm text-slate-400">
+          <div className="mt-3 rounded-2xl border border-dashed border-white/15 bg-slate-900/40 p-4 text-sm text-white/70">
             Map shops to see coverage pacing.
           </div>
         )}
@@ -1527,12 +1630,11 @@ export function DmCoverageTracker({ scale = 1, anchorDate, ...props }: DmCoverag
   );
 
   if (scale !== 1) {
+    const s = String(scale).replace('.', '_').replace(/[^0-9_\-]/g, '');
     return (
       <div className="flex justify-center">
-        <div
-          style={{ transform: `scale(${scale})`, transformOrigin: "top center" }}
-          className="w-full"
-        >
+        <style>{`.dm-scale-${s}{transform: scale(${scale}); transform-origin: top center;}`}</style>
+        <div className={`w-full dm-scale-${s}`}>
           {card}
         </div>
       </div>
@@ -1608,7 +1710,7 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
             className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] uppercase tracking-[0.25em] text-slate-300"
             aria-label="Close quick add"
           >
-            ✕
+            
           </button>
         </div>
 
@@ -1689,7 +1791,7 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
                 isSubmitting ? "opacity-60 cursor-not-allowed" : ""
               }`}
             >
-              {isSubmitting ? "Adding…" : "Add visit"}
+              {isSubmitting ? "Adding" : "Add visit"}
             </button>
           </div>
         </form>
@@ -1697,3 +1799,10 @@ function DayVisitQuickPanel({ day, entries, onClose, onEdit, onAdd, defaultShop 
     </div>
   );
 }
+
+
+
+
+
+
+

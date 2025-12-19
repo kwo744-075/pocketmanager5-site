@@ -38,7 +38,7 @@ export default async function PocketManagerFormPage({
     initialValues.shopNumber = resolvedShopParam;
   }
 
-  // If a people employee profile id is provided, prefill the form with existing data.
+  // Prefill employee profile if id provided
   const resolvedId = typeof (resolvedSearch as any)?.id === "string" ? (resolvedSearch as any).id : undefined;
   if (form.slug === "people-employee-profile" && resolvedId) {
     try {
@@ -64,13 +64,29 @@ export default async function PocketManagerFormPage({
     ? new Date(resolvedDateParam).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" })
     : null;
 
-  // If `wizard=1` was passed for the people profile form, render the client-side wizard
+  // Wizard mode for employee profile
   type SearchParamsShape = { wizard?: string };
   const resolvedSearchTyped = resolvedSearch as unknown as SearchParamsShape;
   const isWizard = form.slug === "people-employee-profile" && resolvedSearchTyped.wizard === "1";
 
   if (isWizard) {
-    return <EmployeeProfileWizardClient shopNumber={resolvedShopParam ?? null} initialValues={Object.keys(initialValues).length ? initialValues : undefined} />;
+    return (
+      <EmployeeProfileWizardClient
+        shopNumber={resolvedShopParam ?? null}
+        initialValues={Object.keys(initialValues).length ? initialValues : undefined}
+      />
+    );
+  }
+
+  // Visit plan uses the lean modal-friendly renderer
+  if (form.slug === "dm-visit-plan") {
+    return (
+      <main className="min-h-screen bg-slate-950 text-slate-100">
+        <div className="mx-auto max-w-3xl px-4 py-8">
+          <FormRenderer form={form} initialValues={Object.keys(initialValues).length ? initialValues : undefined} />
+        </div>
+      </main>
+    );
   }
 
   return (
@@ -80,7 +96,7 @@ export default async function PocketManagerFormPage({
           href="/pocket-manager5"
           className="inline-flex items-center gap-2 text-sm font-semibold text-pm5-teal transition hover:text-pm5-teal"
         >
-          <span aria-hidden>↩</span> Pocket Manager5
+          <span aria-hidden>PM5</span> Pocket Manager5
         </Link>
         <section className="rounded-3xl border border-slate-900/70 bg-slate-950/70 p-6">
           <div className="flex flex-wrap items-center justify-between gap-4">
@@ -89,22 +105,14 @@ export default async function PocketManagerFormPage({
               <h1 className="mt-1 text-3xl font-semibold text-white">{form.title}</h1>
               <p className="mt-2 text-sm text-slate-300">{form.description}</p>
             </div>
-              <div className="space-y-2 text-right text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
-              <p className="text-slate-300">Feature · {feature?.title ?? form.feature}</p>
-              {form.supabaseTable && <p className="text-pm5-teal">Supabase · {form.supabaseTable}</p>}
+            <div className="space-y-2 text-right text-[11px] font-semibold uppercase tracking-[0.3em] text-slate-400">
+              <p className="text-slate-300">Feature • {feature?.title ?? form.feature}</p>
+              {form.supabaseTable && <p className="text-pm5-teal">Supabase • {form.supabaseTable}</p>}
             </div>
           </div>
         </section>
 
-        <FormRenderer
-          form={form}
-          initialValues={Object.keys(initialValues).length ? initialValues : undefined}
-          sectionHeaderBadges={
-            selectedDateLabel && form.slug === "dm-visit-plan"
-              ? { "Visit details": selectedDateLabel }
-              : undefined
-          }
-        />
+        <FormRenderer form={form} initialValues={Object.keys(initialValues).length ? initialValues : undefined} />
       </div>
     </main>
   );

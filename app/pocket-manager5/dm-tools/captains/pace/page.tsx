@@ -1,3 +1,5 @@
+"use client";
+
 import { BarChart3, LineChart, Radar, TrendingUp } from "lucide-react";
 import { CaptainsTopBar } from "../components/CaptainsTopBar";
 import { CaptainLanding, type CaptainLandingCard } from "../components/CaptainLanding";
