@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 
 import { usePocketHierarchy } from "@/hooks/usePocketHierarchy";
@@ -232,7 +233,12 @@ export default function EmployeeSchedulingTable() {
                   Download schedule template (CSV)
                 </button>
                 <div className="text-sm text-slate-400">or</div>
-                <a href="/pocket-manager5/features/employee-scheduling/table" className="rounded-md border border-slate-700/70 px-3 py-1 text-sm text-slate-200">Open table route</a>
+                <Link
+                  href="/pocket-manager5/features/employee-scheduling/table"
+                  className="rounded-md border border-slate-700/70 px-3 py-1 text-sm text-slate-200"
+                >
+                  Open table route
+                </Link>
               </div>
 
               <div className="mt-4 overflow-x-auto">
